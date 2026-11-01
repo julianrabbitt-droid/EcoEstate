@@ -1,7 +1,7 @@
 # EcoEstate
 
 EcoEstate, rebuilt to run without Base44. The React frontend is the same code as
-the live site at ecoestate-homes.com. A small Node server replaces Base44's
+the original Base44 site (ecoestate-homes.com); it now runs at ecoestate.org. A small Node server replaces Base44's
 backend: database, accounts, file storage, AI, Google Maps and the backend
 functions.
 

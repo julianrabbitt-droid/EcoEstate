@@ -16,7 +16,7 @@ const args = process.argv.slice(2);
 const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
 // Real emails link to APP_URL; a localhost link would look suspicious to spam
 // filters, so the test uses the live site's address when developing locally.
-const siteUrl = /localhost|127\.0\.0\.1/.test(APP_URL) ? 'https://ecoestate-homes.com' : APP_URL;
+const siteUrl = /localhost|127\.0\.0\.1/.test(APP_URL) ? 'https://ecoestate.org' : APP_URL;
 const emails = {
   verification: verificationEmail({ code, minutes: 10 }),
   'password-reset': resetPasswordEmail({ url: `${siteUrl}/reset-password?token=sample-${crypto.randomBytes(8).toString('hex')}`, minutes: 60 }),

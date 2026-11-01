@@ -14,7 +14,7 @@ const BRAND = {
 };
 const SERIF = "'Fraunces', Georgia, 'Times New Roman', serif";
 const SANS = "'Inter Tight', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif";
-const SITE = 'ecoestate-homes.com';
+const SITE = 'ecoestate.org';
 
 const escape = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 

@@ -9,7 +9,7 @@
 import turfArea from '@turf/area';
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org';
-const USER_AGENT = 'EcoEstate lawn API (https://ecoestate-homes.com)';
+const USER_AGENT = 'EcoEstate lawn API (https://ecoestate.org)';
 const SQM_TO_SQFT = 10.7639;
 
 // Kinds of places whose outline is a property; cities, counties, roads,

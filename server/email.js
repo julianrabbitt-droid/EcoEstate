@@ -5,7 +5,7 @@
 import { recordUsage } from './usage.js';
 
 const RESEND_URL = 'https://api.resend.com/emails';
-const FROM = process.env.EMAIL_FROM || 'EcoEstate <no-reply@ecoestate-homes.com>';
+const FROM = process.env.EMAIL_FROM || 'EcoEstate <no-reply@ecoestate.org>';
 
 export const emailConfigured = () => Boolean(process.env.RESEND_API_KEY);
 

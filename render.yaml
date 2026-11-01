@@ -15,7 +15,7 @@ services:
       - key: NODE_VERSION
         value: "22"
       - key: APP_URL
-        sync: false # https://ecoestate-us.com once the domain is connected
+        sync: false # https://ecoestate.org
       - key: ADMIN_EMAILS
         sync: false
       - key: JWT_SECRET
