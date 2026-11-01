@@ -4,7 +4,7 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 
 // Referral program: share a link; each friend who subscribes gets $5 off their
-// first month and gives you one free month of Premium.
+// first month and gives you one free month of Pro.
 export default function Invite() {
   const [info, setInfo] = useState(null);
   const [error, setError] = useState('');
@@ -34,8 +34,8 @@ export default function Invite() {
         Give $5, get a <em className="italic text-accent">free month</em>
       </h1>
       <p className="mt-3 max-w-xl text-[14px] leading-relaxed text-muted-foreground">
-        Share your link. Friends get $5 off their first month of EcoEstate Premium, and you get one free month ($10 credit)
-        for every friend who subscribes. Credits apply automatically to your next Premium bill, or your first one if you
+        Share your link. Friends get $5 off their first month of EcoEstate Pro, and you get one free month ($10 credit)
+        for every friend who subscribes. Credits apply automatically to your next Pro bill, or your first one if you
         subscribe later.
       </p>
 

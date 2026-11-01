@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { startCheckout } from '@/lib/checkout';
 
 // Shown on the Analysis step. Full Auto Scans and the 3D Garden View are free
-// for every signed-in user; anonymous users are asked to sign in. Premium
+// for every signed-in user; anonymous users are asked to sign in. Pro
 // ($10/month) adds the community, project tracking and project exports, and is
 // free for students with a school email.
 export default function FullAutoScanUpsell() {
@@ -51,7 +51,7 @@ export default function FullAutoScanUpsell() {
         </div>
         <h2 className="mt-2 font-display text-2xl tracking-tight">Thanks for subscribing</h2>
         <p className="mt-1.5 text-[13px] text-muted-foreground">
-          Your EcoEstate Premium plan includes the community, project tracking and project exports. Invite friends:
+          Your EcoEstate Pro plan includes the community, project tracking and project exports. Invite friends:
           they get $5 off, you get a free month.
         </p>
       </section>
@@ -67,7 +67,7 @@ export default function FullAutoScanUpsell() {
         </div>
         <h2 className="mt-2 font-display text-2xl tracking-tight">Community and tracking are unlocked</h2>
         <p className="mt-1.5 text-[13px] text-muted-foreground">
-          Your verified school email unlocks the community and project tracking at no cost. Premium adds project
+          Your verified school email unlocks the community and project tracking at no cost. Pro adds project
           exports.
         </p>
         <Button onClick={handlePurchase} disabled={purchasing} variant="outline" className="mt-4 rounded-full px-6">
@@ -76,7 +76,7 @@ export default function FullAutoScanUpsell() {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Redirecting to checkout…
             </>
           ) : (
-            <>Upgrade to Premium for project exports — $10/month</>
+            <>Upgrade to Pro for project exports — $10/month</>
           )}
         </Button>
         {error && <p className="mt-2 text-[12px] text-destructive">{error}</p>}
@@ -120,9 +120,9 @@ export default function FullAutoScanUpsell() {
         <ScanLine className="h-4 w-4 text-accent" />
         <span className="label-xs">Upgrade</span>
       </div>
-      <h2 className="mt-2 font-display text-2xl tracking-tight">Track your project with Premium</h2>
+      <h2 className="mt-2 font-display text-2xl tracking-tight">Track your project with Pro</h2>
       <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-muted-foreground">
-        Scanning and the 3D Garden View are free. EcoEstate Premium ($10/month) adds the community, project tracking
+        Scanning and the 3D Garden View are free. EcoEstate Pro ($10/month) adds the community, project tracking
         (progress, photos, water and money savings) and project exports. Students get the community and tracking free
         with a school email. Invite friends: they get $5 off, you get a free month.
       </p>
@@ -140,7 +140,7 @@ export default function FullAutoScanUpsell() {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Redirecting to checkout…
             </>
           ) : (
-            <>Upgrade to Premium — $10/month</>
+            <>Upgrade to Pro — $10/month</>
           )}
         </Button>
         <Button asChild variant="outline" className="rounded-full px-6">

@@ -11,7 +11,7 @@ import { emailDomain, isSchoolDomain } from '../../student.js';
 // and amount "0" — no payment, no webhook. Idempotent.
 
 // A verified school email unlocks the 3D Garden View AND the Full Auto Scan at
-// no cost — the same entitlements as EcoEstate Premium, granted via the
+// no cost — the same entitlements as EcoEstate Pro, granted via the
 // '3d_view' purchase record the entitlement checks read. The same check also
 // runs automatically on sign-in (server/student.js); this is the manual path.
 const UNLOCK_PRODUCTS = {

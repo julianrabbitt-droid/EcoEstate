@@ -11,7 +11,7 @@ const TABS = [
 ];
 
 // Community feed + map and private messages, switched by the `tab` query param.
-// Members only (Premium or student unlock); everyone else sees an upsell.
+// Members only (Pro or student unlock); everyone else sees an upsell.
 export default function Social() {
   const [params, setParams] = useSearchParams();
   const { member, loading, refresh } = usePremiumAccess();

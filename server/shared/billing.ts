@@ -1,7 +1,7 @@
 import Stripe from 'stripe';
 import { users } from '../db.js';
 
-// EcoEstate Premium billing on Stripe: a $10/month subscription, plus referrals.
+// EcoEstate Pro billing on Stripe: a $10/month subscription, plus referrals.
 // A friend who subscribes with a referral code gets $5 off their first month
 // (a one-time coupon); the person who referred them gets one free month, as a
 // $10 credit on their Stripe customer balance (applied to their next invoice,
@@ -28,7 +28,7 @@ export async function premiumPriceId(s: Stripe): Promise<string> {
   const found = await s.prices.list({ lookup_keys: [PRICE_LOOKUP_KEY], active: true, limit: 1 });
   if (found.data[0]) return (priceId = found.data[0].id);
   const product = await s.products.create({
-    name: 'EcoEstate Premium',
+    name: 'EcoEstate Pro',
     description: 'Community, project tracking and project exports.',
   });
   const price = await s.prices.create({
@@ -94,7 +94,7 @@ export async function referrerForCode(base44, code: unknown, user) {
   return account.appUserId;
 }
 
-// Records an active Premium subscription for the user, once per checkout, and
+// Records an active Pro subscription for the user, once per checkout, and
 // rewards the referrer. Safe to call from both the return page and the webhook.
 export async function fulfillCheckout(base44, s: Stripe, session: Stripe.Checkout.Session) {
   const appUserId = session.client_reference_id || session.metadata?.appUserId;
@@ -110,7 +110,7 @@ export async function fulfillCheckout(base44, s: Stripe, session: Stripe.Checkou
       appUserId,
       buyerEmail: session.customer_details?.email || '',
       productId: 'premium',
-      productName: 'EcoEstate Premium',
+      productName: 'EcoEstate Pro',
       quantity: 1,
       amount: String((session.amount_total ?? PREMIUM_USD * 100) / 100),
       recurringAmount: String(PREMIUM_USD),
@@ -146,7 +146,7 @@ async function rewardReferrer(base44, s: Stripe, referrerId: string, refereeId: 
   }
 }
 
-// Keeps the Premium purchase in step with the Stripe subscription.
+// Keeps the Pro purchase in step with the Stripe subscription.
 export async function syncSubscription(base44, subscription: Stripe.Subscription) {
   const purchases = base44.asServiceRole.entities.Base44Purchase;
   const rows = (await purchases.filter({ subscriptionId: subscription.id })).items ?? [];

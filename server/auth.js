@@ -42,7 +42,7 @@ async function appUserForClerk(clerkId) {
         });
   } else if (!row.email) {
     // A phone-only account may have added and verified an email since (for
-    // example a school email, which unlocks Premium features).
+    // example a school email, which unlocks Pro features).
     const account = await clerk.users.getUser(clerkId);
     const added = account.emailAddresses.find((e) => e.verification?.status === 'verified');
     const address = added ? normEmail(added.emailAddress) : null;

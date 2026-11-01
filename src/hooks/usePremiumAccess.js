@@ -8,11 +8,11 @@ const PENDING_FLAG = 'ecoestate_premium_pending';
 // Base44Purchase records (admin-only writes — the server-verified record is the
 // unlock, never a client flag):
 //  - premium: an active paid 'premium' subscription (status 'paid').
-//  - member: Premium, OR a paid/student '3d_view' unlock (free school email).
+//  - member: Pro, OR a paid/student '3d_view' unlock (free school email).
 //    Members get the community (Social) and project tracking (My projects).
 //    `threeD` is a legacy alias of `member` (the unlock's product id is
 //    '3d_view'). Scanning and the 3D Garden View are free for everyone.
-//  - unlimited: true when Premium. Project exports are Premium-only.
+//  - unlimited: true when Pro. Project exports are Pro-only.
 export function usePremiumAccess() {
   const { user, isAuthenticated, authChecked } = useAuth();
   const [state, setState] = useState({ premium: false, threeD: false, member: false, unlimited: false });

@@ -1,7 +1,7 @@
 import { createClientFromRequest } from '../../sdk.js';
 import { fulfillCheckout, stripeClient } from '../../shared/billing.ts';
 
-// Called when the buyer returns from Stripe Checkout, so Premium unlocks right
+// Called when the buyer returns from Stripe Checkout, so Pro unlocks right
 // away even before (or without) the webhook. Body: { sessionId }.
 export default async function (req) {
   try {

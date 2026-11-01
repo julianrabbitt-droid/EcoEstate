@@ -69,7 +69,7 @@ function checkRequired(schema, data) {
   }
 }
 
-// Premium members: an active Premium purchase or a free student unlock (both
+// Pro members: an active Pro purchase or a free student unlock (both
 // written only by the server), or an admin.
 const MEMBER_PRODUCTS = new Set(['premium', '3d_view']);
 export async function isPremiumMember(user) {
@@ -90,7 +90,7 @@ export function entityService(name, user, { service = false } = {}) {
   let premiumChecked = false;
   const requirePremium = async () => {
     if (!schema.premium || service || premiumChecked) return;
-    if (!(await isPremiumMember(user))) throw new HttpError(402, 'Community and project tracking are part of EcoEstate Premium.');
+    if (!(await isPremiumMember(user))) throw new HttpError(402, 'Community and project tracking are part of EcoEstate Pro.');
     premiumChecked = true;
   };
 
@@ -98,7 +98,7 @@ export function entityService(name, user, { service = false } = {}) {
     async filter(query = {}, { sort, limit, skip } = {}) {
       await requirePremium();
       if (schema.premiumList && !service && !(await isPremiumMember(user))) {
-        throw new HttpError(402, 'Saving and browsing your properties is part of EcoEstate Premium.');
+        throw new HttpError(402, 'Saving and browsing your properties is part of EcoEstate Pro.');
       }
       const visible = (await records.find(name, query, { sort })).filter((r) => can('read', r));
       const start = Number(skip) || 0;

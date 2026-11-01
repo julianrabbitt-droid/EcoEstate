@@ -2,7 +2,7 @@ import { createClientFromRequest } from '../../sdk.js';
 import { APP_URL } from '../../config.js';
 import { billingAccount, premiumPriceId, referralCouponId, referrerForCode, stripeClient } from '../../shared/billing.ts';
 
-// Starts a Stripe Checkout for EcoEstate Premium ($10/month). Signed-in users
+// Starts a Stripe Checkout for EcoEstate Pro ($10/month). Signed-in users
 // only, so the subscription is tied to their account. Body: { referralCode? } —
 // a valid code from another user gives $5 off the first month (new subscribers
 // only) and earns that user a free month once this payment succeeds.
@@ -16,10 +16,10 @@ export default async function (req) {
     }
     const base44 = createClientFromRequest(req);
     const user = await base44.auth.me().catch(() => null);
-    if (!user) return Response.json({ error: 'Sign in to subscribe to Premium.' }, { status: 401 });
+    if (!user) return Response.json({ error: 'Sign in to subscribe to Pro.' }, { status: 401 });
 
     const active = await base44.asServiceRole.entities.Base44Purchase.filter({ appUserId: user.id, productId: 'premium', status: 'paid' }, { limit: 1 });
-    if (active.items?.length) return Response.json({ error: 'You already have EcoEstate Premium.' }, { status: 409 });
+    if (active.items?.length) return Response.json({ error: 'You already have EcoEstate Pro.' }, { status: 409 });
 
     const body = await req.json().catch(() => ({}));
     const referrerId = await referrerForCode(base44, body.referralCode, user);

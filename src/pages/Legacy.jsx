@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useProject } from '@/hooks/useProjects';
 import { ArrowRight, Bird, Droplets, Leaf, Loader2, TrendingUp } from 'lucide-react';
@@ -239,7 +239,7 @@ export default function Legacy() {
             <p className="label-xs">My projects</p>
             <h2 className="mt-1.5 font-display text-2xl tracking-tight">Track your conversion</h2>
             <p className="mt-1 max-w-xl text-[13px] text-muted-foreground">
-              Log progress, photos and your real water and money savings as you convert this lawn. Part of Premium ($10/month), free for students with a school email.
+              Log progress, photos and your real water and money savings as you convert this lawn. Part of Pro ($10/month), free for students with a school email.
             </p>
           </div>
           <Button asChild className="rounded-full">

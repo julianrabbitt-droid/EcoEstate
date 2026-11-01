@@ -34,7 +34,6 @@ export function usePlantPhotos(plants = []) {
       })
       .catch(() => { needed.forEach((p) => cache.set(p.id, null)); });
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ids]);
 
   return photos;

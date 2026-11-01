@@ -21,7 +21,7 @@ export function savedReferral() {
   }
 }
 
-// Starts Stripe Checkout for Premium, applying a saved referral code.
+// Starts Stripe Checkout for Pro, applying a saved referral code.
 // Resolves to the function response ({ data: { redirectUrl } }).
 export function startCheckout() {
   return base44.functions.invoke('create-checkout', { referralCode: savedReferral() || undefined });
@@ -32,7 +32,7 @@ export async function openBillingPortal() {
   if (res?.data?.redirectUrl) window.location.href = res.data.redirectUrl;
 }
 
-// After Stripe sends the buyer back, unlock Premium straight away.
+// After Stripe sends the buyer back, unlock Pro straight away.
 export async function confirmCheckout(sessionId) {
   const res = await base44.functions.invoke('confirm-checkout', { sessionId });
   if (res?.data?.premium) {

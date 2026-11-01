@@ -91,7 +91,7 @@ export async function autoUnlockStudent(user) {
   }
   try {
     if (await isSchoolDomain(domain)) {
-      if (await grantStudentUnlock(user)) console.log(`[student] unlocked Premium features for user ${user.id} (${domain})`);
+      if (await grantStudentUnlock(user)) console.log(`[student] unlocked Pro features for user ${user.id} (${domain})`);
     }
     checked.add(user.id);
   } catch {

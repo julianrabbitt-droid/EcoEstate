@@ -42,7 +42,7 @@ const FEATURES = {
   },
 };
 
-// Shown on Social, My projects and My properties to users without Premium or the student
+// Shown on Social, My projects and My properties to users without Pro or the student
 // unlock. Scanning and the 3D Garden View are free for everyone.
 export default function TrackingUpsell({ onUnlocked, feature = 'tracking' }) {
   const { title, blurb, benefits: BENEFITS } = FEATURES[feature] || FEATURES.tracking;
@@ -82,11 +82,11 @@ export default function TrackingUpsell({ onUnlocked, feature = 'tracking' }) {
     <section className="surface p-6">
       <div className="flex items-center gap-2">
         <Sprout className="h-4 w-4 text-accent" />
-        <span className="label-xs">Premium feature</span>
+        <span className="label-xs">Pro feature</span>
       </div>
       <h2 className="mt-2 font-display text-2xl tracking-tight">{title}</h2>
       <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-muted-foreground">
-        {blurb} Included with EcoEstate Premium ($10/month), and free with a verified school email. Invite friends:
+        {blurb} Included with EcoEstate Pro ($10/month), and free with a verified school email. Invite friends:
         they get $5 off, you get a free month.
       </p>
       <ul className="mt-3 flex flex-col gap-1.5 text-[12px] text-muted-foreground">
@@ -103,7 +103,7 @@ export default function TrackingUpsell({ onUnlocked, feature = 'tracking' }) {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Redirecting to checkout…
             </>
           ) : (
-            <>Upgrade to Premium — $10/month</>
+            <>Upgrade to Pro — $10/month</>
           )}
         </Button>
         <Button onClick={claimStudent} disabled={claiming} variant="outline" className="rounded-full px-6">

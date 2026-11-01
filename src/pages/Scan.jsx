@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Leaf, Loader2, MapPin } from 'lucide-react';
+import { ArrowRight, Leaf, Loader2 } from 'lucide-react';
 import { getLawn, getLawnForParcel, measureArea, mergeLawnOutlines } from '@/api/lawnApi';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import MethodPicker from '@/components/scan/MethodPicker';
 import SatelliteMethod from '@/components/scan/SatelliteMethod';
 import UploadMethod from '@/components/scan/UploadMethod';
@@ -483,7 +482,7 @@ export default function Scan() {
             <h2 className="mt-3 font-display text-2xl tracking-tight">Scanning and 3D are free.</h2>
             <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
               Sign in to run unlimited Full Auto Scans and explore your garden in the full 3D view, including the
-              orbit camera and first-person walk-through, at no cost. EcoEstate Premium ($10/month) adds the
+              orbit camera and first-person walk-through, at no cost. EcoEstate Pro ($10/month) adds the
               community, project tracking and project exports, and is free for students with a school email. Manual
               outlining, analysis and planning are always free.
             </p>

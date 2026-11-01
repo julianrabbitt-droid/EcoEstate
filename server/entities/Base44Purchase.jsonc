@@ -64,7 +64,7 @@
     "tokensUsed": {
       "type": "number",
       "default": 0,
-      "description": "Full Auto Scans consumed in the current token period (Premium only)."
+      "description": "Full Auto Scans consumed in the current token period (Pro only)."
     },
     "tokenPeriod": {
       "type": "string",

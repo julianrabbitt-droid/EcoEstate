@@ -82,7 +82,7 @@ export default function MyProjects() {
 
   const heading = (
     <div>
-      <p className="label-xs">Premium</p>
+      <p className="label-xs">Pro</p>
       <h1 className="mt-2 font-display text-3xl tracking-tight sm:text-[2.4rem]">My projects</h1>
     </div>
   );

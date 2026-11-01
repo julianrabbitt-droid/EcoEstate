@@ -2,7 +2,7 @@ import { createClientFromRequest } from '../../sdk.js';
 import { hasPremiumFeatures } from '../../shared/entitlements.ts';
 
 // Starts tracking a scanned property's conversion (My projects, a paid
-// feature: EcoEstate Premium or the free student/educator unlock). Tracked
+// feature: EcoEstate Pro or the free student/educator unlock). Tracked
 // projects are created here with the service role, after checking the
 // entitlement server-side; the entity itself only allows admins to create.
 // Body: { projectId }. Idempotent per property.
@@ -12,7 +12,7 @@ export default async function (req) {
     const user = await base44.auth.me().catch(() => null);
     if (!user) return Response.json({ error: 'Sign in to track a project.' }, { status: 401 });
     if (!(await hasPremiumFeatures(base44, user.id))) {
-      return Response.json({ error: 'Project tracking is part of EcoEstate Premium, or free with a school email.' }, { status: 402 });
+      return Response.json({ error: 'Project tracking is part of EcoEstate Pro, or free with a school email.' }, { status: 402 });
     }
     const { projectId } = await req.json().catch(() => ({}));
     if (typeof projectId !== 'string' || !projectId) return Response.json({ error: 'Choose a property to track.' }, { status: 400 });

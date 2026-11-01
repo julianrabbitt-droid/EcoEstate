@@ -1,6 +1,6 @@
 {
   "name": "Project",
-  // Listing saved properties (My properties) is a Premium feature; opening,
+  // Listing saved properties (My properties) is a Pro feature; opening,
   // creating and editing a scan stay free.
   "premiumList": true,
   "type": "object",

@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from '@/components/ui/use-toast';
 import { captureReferral, confirmCheckout } from '@/lib/checkout';
 
-// Remembers referral codes from shared links, and finishes a Premium checkout
+// Remembers referral codes from shared links, and finishes a Pro checkout
 // when Stripe sends the buyer back (?checkout=success&session_id=...).
 export default function CheckoutReturn() {
   const location = useLocation();
@@ -24,11 +24,11 @@ export default function CheckoutReturn() {
     }
     confirmCheckout(sessionId)
       .then((ok) => {
-        if (ok) toast({ title: 'Welcome to EcoEstate Premium!' });
+        if (ok) toast({ title: 'Welcome to EcoEstate Pro!' });
         window.location.replace(clean); // reload so every page sees the new access
       })
       .catch(() => {
-        toast({ title: 'Payment received', description: 'Premium will unlock in a minute. Refresh if it doesn’t.' });
+        toast({ title: 'Payment received', description: 'Pro will unlock in a minute. Refresh if it doesn’t.' });
         navigate(clean, { replace: true });
       });
   }, [location.search, location.pathname, navigate]);

@@ -27,7 +27,7 @@ export default function AccountMenu() {
   const { premium, threeD, loading, refresh } = usePremiumAccess();
   const [checkingOut, setCheckingOut] = useState(false);
 
-  const planLabel = premium ? 'Premium' : threeD ? 'Student' : 'Free';
+  const planLabel = premium ? 'Pro' : threeD ? 'Student' : 'Free';
   const PlanIcon = premium ? Crown : threeD ? GraduationCap : Leaf;
 
   const handleUpgrade = async () => {
@@ -90,7 +90,7 @@ export default function AccountMenu() {
         {!premium && (
           <DropdownMenuItem onClick={handleUpgrade} disabled={checkingOut} className="gap-2">
             <Crown className="h-4 w-4 text-accent" />
-            {checkingOut ? 'Opening checkout…' : 'Upgrade to Premium'}
+            {checkingOut ? 'Opening checkout…' : 'Upgrade to Pro'}
           </DropdownMenuItem>
         )}
         {premium && (

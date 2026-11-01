@@ -1,6 +1,6 @@
 {
   "name": "TrackedProject",
-  // Premium feature (community or project tracking): only EcoEstate Premium
+  // Pro feature (community or project tracking): only EcoEstate Pro
   // members, student unlocks and admins can use this entity at all.
   "premium": true,
   "type": "object",

@@ -7,7 +7,7 @@ import { useProjects } from '@/hooks/useProjects';
 import { usePremiumAccess } from '@/hooks/usePremiumAccess';
 import TrackingUpsell from '@/components/tracking/TrackingUpsell';
 
-// My properties is a Premium feature (or free with a school email); scanning
+// My properties is a Pro feature (or free with a school email); scanning
 // and the 3D view stay free, and a scan's own pages open from its link.
 export default function Projects() {
   const { member, loading: accessLoading, refresh } = usePremiumAccess();

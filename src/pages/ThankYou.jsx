@@ -7,7 +7,7 @@ export default function ThankYou() {
       <div className="max-w-md text-center space-y-4">
         <h1 className="text-3xl font-semibold">Thank you for your purchase</h1>
         <p className="text-muted-foreground">
-          Your payment was received. EcoEstate Premium (community, project tracking and exports) unlocks in a moment.
+          Your payment was received. EcoEstate Pro (community, project tracking and exports) unlocks in a moment.
         </p>
         <Link to="/projects" className="inline-block rounded-md bg-primary px-5 py-2 text-primary-foreground">
           Back to my properties
