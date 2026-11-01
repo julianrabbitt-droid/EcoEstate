@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
+import { AuthenticateWithRedirectCallback } from '@clerk/clerk-react';
 import PageNotFound from './lib/PageNotFound';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import CheckoutReturn from '@/components/CheckoutReturn';
@@ -33,11 +34,27 @@ function ToSocial({ tab }) {
   return <Navigate to={`/social?${params}`} replace />;
 }
 
+// Where Google sends people back after sign-in. A first-time Google user is
+// turned into a sign-up, which may need Clerk's "continue" step.
+const SsoCallback = () => (
+  <AuthenticateWithRedirectCallback
+    signInUrl="/login"
+    signUpUrl="/register"
+    continueSignUpUrl="/register/continue"
+    signInFallbackRedirectUrl="/"
+    signUpFallbackRedirectUrl="/"
+  />
+);
+
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError } = useAuth();
+  const { pathname } = useLocation();
+  // Sign-in and sign-up pages run Clerk's own flows; never swap them out for
+  // the loading spinner mid-flow (that restarts the Google return step).
+  const onAuthPage = /^\/(login|register)(\/|$)/.test(pathname);
 
   // Show loading spinner while checking app public settings or auth
-  if (isLoadingPublicSettings || isLoadingAuth) {
+  if (!onAuthPage && (isLoadingPublicSettings || isLoadingAuth)) {
     return (
       <div className="fixed inset-0 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
@@ -54,6 +71,8 @@ const AuthenticatedApp = () => {
   return (
     <Routes>
       <Route path="/ThankYou" element={<ThankYou />} />
+      <Route path="/login/sso-callback" element={<SsoCallback />} />
+      <Route path="/register/sso-callback" element={<SsoCallback />} />
       <Route path="/login/*" element={<Login />} />
       <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
       <Route path="/reset-password" element={<Navigate to="/login" replace />} />
