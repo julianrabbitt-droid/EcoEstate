@@ -48,8 +48,11 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error('User auth check failed:', error);
       setUser(null);
+      // Signed in with Clerk but our server didn't accept it: show an error
+      // instead of sending them to /login (Clerk would bounce them straight
+      // back, looping forever).
       if (error.status === 401 || error.status === 403) {
-        setAuthError({ type: 'auth_required', message: 'Authentication required' });
+        setAuthError({ type: 'account_unavailable', message: 'We couldn’t load your EcoEstate account.' });
       }
     } finally {
       setUserLoaded(true);

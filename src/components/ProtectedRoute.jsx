@@ -9,6 +9,26 @@ const DefaultFallback = () => (
   </div>
 );
 
+function AccountUnavailable() {
+  const { logout } = useAuth();
+  return (
+    <div className="mx-auto max-w-md px-5 py-24 text-center">
+      <h1 className="font-display text-3xl tracking-tight">We couldn’t load your account</h1>
+      <p className="mt-3 text-[13.5px] leading-relaxed text-muted-foreground">
+        You’re signed in, but EcoEstate couldn’t confirm it just now. Please try again in a minute, or sign out and back in.
+      </p>
+      <div className="mt-6 flex justify-center gap-2">
+        <button type="button" onClick={() => window.location.reload()} className="rounded-full border border-border px-4 py-2 text-[13px]">
+          Try again
+        </button>
+        <button type="button" onClick={() => logout()} className="rounded-full bg-primary px-4 py-2 text-[13px] text-primary-foreground">
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthenticatedElement }) {
   const { isAuthenticated, isLoadingAuth, authChecked, authError, checkUserAuth } = useAuth();
 
@@ -25,6 +45,9 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
   if (authError) {
     if (authError.type === 'user_not_registered') {
       return <UserNotRegisteredError />;
+    }
+    if (authError.type === 'account_unavailable') {
+      return <AccountUnavailable />;
     }
     return unauthenticatedElement;
   }
