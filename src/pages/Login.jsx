@@ -1,5 +1,6 @@
 import { SignIn } from "@clerk/clerk-react";
 import { safeReturnTo } from "@/lib/authReturnTo";
+import SchoolEmailNote from "@/components/SchoolEmailNote";
 
 export default function Login() {
   const returnTo = safeReturnTo();
@@ -11,6 +12,7 @@ export default function Login() {
         signUpUrl="/register"
         fallbackRedirectUrl={returnTo}
       />
+      <SchoolEmailNote />
     </div>
   );
 }

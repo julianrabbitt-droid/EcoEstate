@@ -106,6 +106,7 @@ export function publicUser(row) {
     ...(row.data || {}),
     id: row.id,
     email: row.email,
+    phone: row.phone ?? null,
     full_name: row.full_name,
     role: row.role,
     created_date: row.created_date,
@@ -126,11 +127,11 @@ export const users = {
     const [row] = await sql`SELECT * FROM users WHERE email = ${String(email).trim().toLowerCase()}`;
     return row ?? null;
   },
-  async create({ clerkId, email, fullName, role }) {
+  async create({ clerkId, email = null, phone = null, fullName, role }) {
     const ts = now();
     const [row] = await sql`
-      INSERT INTO users (id, clerk_id, email, full_name, role, created_date, updated_date)
-      VALUES (${newId()}, ${clerkId}, ${String(email).trim().toLowerCase()}, ${fullName || null}, ${role}, ${ts}, ${ts})
+      INSERT INTO users (id, clerk_id, email, phone, full_name, role, created_date, updated_date)
+      VALUES (${newId()}, ${clerkId}, ${email ? String(email).trim().toLowerCase() : null}, ${phone}, ${fullName || null}, ${role}, ${ts}, ${ts})
       RETURNING *`;
     return row;
   },
