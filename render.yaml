@@ -35,6 +35,10 @@ services:
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
       - key: GEOCODIO_API_KEY
+        sync: false # lawn service: address lookups
+      - key: DEFAULT_WATER_PRICE
+        sync: false # lawn service: same values as lawn-api/.env
+      - key: DEFAULT_REBATE_PER_SQFT
         sync: false
       - key: RESEND_API_KEY
         sync: false
