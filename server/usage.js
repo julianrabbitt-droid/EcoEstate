@@ -3,7 +3,7 @@
 // list price. Free tiers are noted but not subtracted, so totals are an upper
 // bound until a service's free allowance runs out.
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { db, now } from './db.js';
+import { now, sql } from './db.js';
 
 // List prices in USD. Check these against each provider's pricing page.
 export const PRICES = {
@@ -16,18 +16,7 @@ export const PRICES = {
   rapidapi_zillow: { per: 'request', usd: Number(process.env.RAPIDAPI_COST_PER_CALL || 0), free: 'depends on your RapidAPI plan' },
 };
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS usage (
-    ts TEXT NOT NULL,
-    session_id TEXT,
-    user_id TEXT,
-    service TEXT NOT NULL,
-    units REAL NOT NULL,
-    cost_usd REAL NOT NULL,
-    detail TEXT
-  );
-  CREATE INDEX IF NOT EXISTS usage_session ON usage(session_id, ts);
-`);
+
 
 const context = new AsyncLocalStorage();
 
@@ -42,27 +31,19 @@ export function recordUsage(service, units = 1, detail = null) {
   const price = PRICES[service];
   if (!price || !(units > 0)) return;
   const { sessionId = null, userId = null } = context.getStore() ?? {};
-  db.prepare('INSERT INTO usage (ts, session_id, user_id, service, units, cost_usd, detail) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
-    now(),
-    sessionId,
-    userId,
-    service,
-    units,
-    units * price.usd,
-    detail
+  sql`INSERT INTO usage (ts, session_id, user_id, service, units, cost_usd, detail)
+       VALUES (${now()}, ${sessionId}, ${userId}, ${service}, ${units}, ${units * price.usd}, ${detail})`.catch((e) =>
+    console.warn('usage record failed:', e.message)
   );
 }
 
 /** Cost per session, newest first: [{ sessionId, user, started, ended, totalUsd, services: { name: { units, usd } } }]. */
-export function usageBySession({ limit = 50 } = {}) {
-  const rows = db
-    .prepare(
-      `SELECT u.session_id, u.service, SUM(u.units) units, SUM(u.cost_usd) usd, MIN(u.ts) started, MAX(u.ts) ended,
-              MAX(users.email) email
-         FROM usage u LEFT JOIN users ON users.id = u.user_id
-        GROUP BY u.session_id, u.service`
-    )
-    .all();
+export async function usageBySession({ limit = 50 } = {}) {
+  const rows = await sql`
+    SELECT u.session_id, u.service, SUM(u.units)::float8 units, SUM(u.cost_usd)::float8 usd, MIN(u.ts) started, MAX(u.ts) ended,
+           MAX(users.email) email
+      FROM usage u LEFT JOIN users ON users.id = u.user_id
+     GROUP BY u.session_id, u.service`;
   const sessions = new Map();
   for (const r of rows) {
     const key = r.session_id ?? '(no session id)';

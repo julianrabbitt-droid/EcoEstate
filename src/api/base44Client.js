@@ -2,11 +2,11 @@
 // app already uses (auth, entities, functions, integrations, app) but talks to
 // this project's own API server in server/index.js instead of Base44.
 
-export const TOKEN_KEY = 'base44_access_token';
-
-export function getAccessToken() {
+// Clerk session token for the signed-in user (null when signed out or Clerk
+// has not loaded yet). Clerk sets window.Clerk once it has loaded.
+export async function getAccessToken() {
   try {
-    return window.localStorage.getItem(TOKEN_KEY);
+    return (await window.Clerk?.session?.getToken()) || null;
   } catch {
     return null;
   }
@@ -27,31 +27,6 @@ export function sessionId() {
   }
 }
 
-function setAccessToken(token) {
-  try {
-    if (token) window.localStorage.setItem(TOKEN_KEY, token);
-    else {
-      window.localStorage.removeItem(TOKEN_KEY);
-      window.localStorage.removeItem('token');
-    }
-  } catch {
-    /* storage unavailable */
-  }
-}
-
-// After a Google sign-in the server redirects back with ?access_token=...;
-// store it and strip it from the address bar.
-(function captureTokenFromUrl() {
-  if (typeof window === 'undefined') return;
-  const url = new URL(window.location.href);
-  const token = url.searchParams.get('access_token');
-  if (url.searchParams.get('clear_access_token') === 'true') setAccessToken(null);
-  if (!token) return;
-  setAccessToken(token);
-  url.searchParams.delete('access_token');
-  window.history.replaceState(null, '', url.pathname + url.search + url.hash);
-})();
-
 class ApiError extends Error {
   constructor(message, status, data) {
     super(message);
@@ -65,7 +40,7 @@ async function request(method, path, body, { raw = false } = {}) {
   const headers = {};
   const sid = sessionId();
   if (sid) headers['X-Session-Id'] = sid;
-  const token = getAccessToken();
+  const token = await getAccessToken();
   if (token) headers.Authorization = `Bearer ${token}`;
   let payload;
   if (body instanceof FormData) payload = body;
@@ -122,7 +97,7 @@ const auth = {
   me: () => request('GET', '/auth/me'),
   updateMe: (data) => request('PATCH', '/auth/me', data),
   async isAuthenticated() {
-    if (!getAccessToken()) return false;
+    if (!(await getAccessToken())) return false;
     try {
       await auth.me();
       return true;
@@ -130,30 +105,18 @@ const auth = {
       return false;
     }
   },
-  async loginViaEmailPassword(email, password) {
-    const res = await request('POST', '/auth/login', { email, password });
-    setAccessToken(res.access_token);
-    return res;
-  },
-  register: ({ email, password, full_name }) => request('POST', '/auth/register', { email, password, full_name }),
-  verifyOtp: ({ email, otpCode }) => request('POST', '/auth/verify-otp', { email, otpCode }),
-  resendOtp: (email) => request('POST', '/auth/resend-otp', { email }),
-  resetPasswordRequest: (email) => request('POST', '/auth/reset-password-request', { email }),
-  resetPassword: ({ resetToken, newPassword }) => request('POST', '/auth/reset-password', { resetToken, newPassword }),
-  loginWithProvider(provider, returnTo = '/') {
-    window.location.href = `/api/auth/${encodeURIComponent(provider)}?returnTo=${encodeURIComponent(returnTo)}`;
-  },
-  setToken: (token) => setAccessToken(token),
-  // Like the Base44 SDK: clear the session, then go to redirectUrl or reload
-  // so every part of the app sees the signed-out state.
-  logout(redirectUrl) {
-    setAccessToken(null);
-    if (redirectUrl) window.location.href = redirectUrl;
-    else window.location.reload();
+  // Sign out of Clerk, then go to redirectUrl (default "/").
+  async logout(redirectUrl = '/') {
+    try {
+      await window.Clerk?.signOut();
+    } catch {
+      /* ignore */
+    }
+    window.location.href = redirectUrl;
   },
   redirectToLogin(returnTo = window.location.href) {
     const url = new URL(returnTo, window.location.origin);
-    window.location.href = `/login?returnTo=${encodeURIComponent(url.pathname + url.search)}`;
+    window.location.href = `/login?redirect_url=${encodeURIComponent(url.pathname + url.search)}`;
   },
 };
 

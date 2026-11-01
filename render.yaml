@@ -1,0 +1,44 @@
+# Render blueprint: one web service runs the site, the API and the lawn
+# measurement service (scripts/start-production.mjs). Secrets marked
+# sync: false are entered in the Render dashboard, never committed.
+services:
+  - type: web
+    name: ecoestate
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:production
+    healthCheckPath: /api/app/public-settings
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: APP_URL
+        sync: false # https://ecoestate-us.com once the domain is connected
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true # signs private photo links
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        value: https://lzstqfqslvaxyaxqelkv.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: VITE_CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: GEOCODIO_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false

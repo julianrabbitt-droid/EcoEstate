@@ -105,7 +105,8 @@ export default function OAuthConsent() {
         // signed-in user — the same auth the approve/deny call sends; without
         // it the display request is anonymous and shows no tools.
         const infoHeaders = {};
-        if (appParams.token) infoHeaders.Authorization = "Bearer " + appParams.token;
+        const token = await appParams.getToken();
+        if (token) infoHeaders.Authorization = "Bearer " + token;
         const res = await fetch(
           `/api/apps/${appParams.appId}/mcp/consent-info?handle=${encodeURIComponent(ctx)}`,
           { credentials: "include", headers: infoHeaders },
@@ -137,7 +138,7 @@ export default function OAuthConsent() {
           const encoded = encodeURIComponent(returnTo);
           redirecting = true; // keep the spinner while the browser navigates
           window.location.href =
-            (data.login_path || "/login") + "?returnTo=" + encoded + "&from_url=" + encoded;
+            (data.login_path || "/login") + "?redirect_url=" + encoded;
           return;
         }
         setInfo(data);
@@ -156,7 +157,8 @@ export default function OAuthConsent() {
       const headers = { "Content-Type": "application/json" };
       // Cookie-backed sessions carry no token; sending "Bearer null" would
       // shadow the valid cookie, so add the header only when a token exists.
-      if (appParams.token) headers.Authorization = "Bearer " + appParams.token;
+      const token = await appParams.getToken();
+      if (token) headers.Authorization = "Bearer " + token;
       const res = await fetch(`/api/apps/${appParams.appId}/mcp/authorize-grant`, {
         method: "POST",
         credentials: "include",
@@ -173,7 +175,7 @@ export default function OAuthConsent() {
           const returnTo = window.location.pathname + "?ctx=" + encodeURIComponent(ctx);
           const encoded = encodeURIComponent(returnTo);
           window.location.href =
-            ((info && info.login_path) || "/login") + "?returnTo=" + encoded + "&from_url=" + encoded;
+            ((info && info.login_path) || "/login") + "?redirect_url=" + encoded;
           return;
         }
         // These all come AFTER the single-use handle is atomically consumed

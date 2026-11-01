@@ -13,8 +13,6 @@ import AppShell from '@/components/AppShell';
 import ThankYou from './pages/ThankYou';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
-import ForgotPassword from '@/pages/ForgotPassword';
-import ResetPassword from '@/pages/ResetPassword';
 // Add page imports here
 import Scan from '@/pages/Scan';
 import Analysis from '@/pages/Analysis';
@@ -56,10 +54,10 @@ const AuthenticatedApp = () => {
   return (
     <Routes>
       <Route path="/ThankYou" element={<ThankYou />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/login/*" element={<Login />} />
+      <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
+      <Route path="/reset-password" element={<Navigate to="/login" replace />} />
+      <Route path="/register/*" element={<Register />} />
       {/* Add your page Route elements here */}
       <Route element={<AppShell />}>
         <Route path="/" element={<Scan />} />

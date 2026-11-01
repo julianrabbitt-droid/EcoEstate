@@ -35,7 +35,8 @@ lawnRouter.use(async (req, res) => {
   const env = lawnEnv();
   const query = new URLSearchParams(req.query).toString();
   const headers = { Accept: 'application/json' };
-  if (env.APP_API_KEY) headers['x-api-key'] = env.APP_API_KEY;
+  const key = env.APP_API_KEY || process.env.APP_API_KEY; // file locally, env var on the host
+  if (key) headers['x-api-key'] = key;
   if (req.method === 'POST') headers['Content-Type'] = 'application/json';
 
   let upstream;

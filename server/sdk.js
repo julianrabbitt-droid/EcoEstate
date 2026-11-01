@@ -21,8 +21,8 @@ function entitiesFor(getUser, service) {
         if (typeof name !== 'string') return undefined;
         const svc = async () => entityService(name, await getUser(), { service });
         return {
-          filter: async (q, opts) => asList((await svc()).filter(q, typeof opts === 'string' ? { sort: opts } : opts)),
-          list: async (sort, limit) => asList((await svc()).filter({}, { sort, limit })),
+          filter: async (q, opts) => asList(await (await svc()).filter(q, typeof opts === 'string' ? { sort: opts } : opts)),
+          list: async (sort, limit) => asList(await (await svc()).filter({}, { sort, limit })),
           get: async (id) => (await svc()).get(id),
           create: async (data) => (await svc()).create(data),
           bulkCreate: async (rows) => (await svc()).bulkCreate(rows),

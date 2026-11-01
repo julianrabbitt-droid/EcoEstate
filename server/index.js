@@ -3,7 +3,6 @@ import path from 'node:path';
 import express from 'express';
 import { authRouter, userFromHeader } from './auth.js';
 import { IS_PROD, PORT, ROOT } from './config.js';
-import { emailConfigured } from './email.js';
 import { entityService } from './entities.js';
 import { filesRouter } from './files.js';
 import { runFunction } from './functions.js';
@@ -16,7 +15,7 @@ app.set('trust proxy', true);
 
 // Resolve the signed-in user (if any) for every API request.
 app.use('/api', async (req, _res, next) => {
-  req.user = await userFromHeader(req.headers.authorization);
+  req.user = await userFromHeader(req.headers.authorization).catch(() => null);
   next();
 });
 
@@ -26,22 +25,22 @@ app.use('/api', usageContext);
 app.use('/api/auth', authRouter);
 
 // What each session cost in paid API calls (admins only).
-app.get('/api/admin/usage', (req, res) => {
+app.get('/api/admin/usage', async (req, res) => {
   if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
-  res.json({ sessions: usageBySession({ limit: Math.min(500, Number(req.query.limit) || 50) }) });
+  res.json({ sessions: await usageBySession({ limit: Math.min(500, Number(req.query.limit) || 50) }) });
 });
 app.use('/api/files', filesRouter);
 
 app.get('/api/app/public-settings', (_req, res) => {
-  res.json({ id: 'ecoestate', public_settings: { name: 'EcoEstate', google_login: !!process.env.GOOGLE_CLIENT_ID } });
+  res.json({ id: 'ecoestate', public_settings: { name: 'EcoEstate' } });
 });
 
 // ---- Entities ----
 const entities = express.Router();
 entities.use(express.json({ limit: '5mb' }));
-const handle = (fn) => (req, res) => {
+const handle = (fn) => async (req, res) => {
   try {
-    res.json(fn(entityService(req.params.entity, req.user), req.body || {}, req));
+    res.json(await fn(entityService(req.params.entity, req.user), req.body || {}, req));
   } catch (err) {
     const status = err.status || 500;
     if (status >= 500) console.error(err);
@@ -76,7 +75,5 @@ if (IS_PROD && fs.existsSync(dist)) {
 app.listen(PORT, () => {
   console.log(`EcoEstate API listening on http://localhost:${PORT}`);
   if (!process.env.GOOGLE_MAPS_API_KEY) console.warn('  ! GOOGLE_MAPS_API_KEY is not set — features that need it will return an error.');
-  if (!emailConfigured()) {
-    console.warn('  ! RESEND_API_KEY is not set — verification codes and password resets will be printed here, not emailed.');
-  }
+  if (!process.env.CLERK_SECRET_KEY) console.warn('  ! CLERK_SECRET_KEY is not set — nobody can sign in.');
 });

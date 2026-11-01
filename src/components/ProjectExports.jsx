@@ -168,7 +168,7 @@ export default function ProjectExports({ projectId, project, design }) {
           </>
         ) : (
           <Button asChild className="mt-4 rounded-full">
-            <Link to={`/login?returnTo=${encodeURIComponent(`/project/${projectId}/plan`)}`}>
+            <Link to={`/login?redirect_url=${encodeURIComponent(`/project/${projectId}/plan`)}`}>
               <Lock className="mr-2 h-4 w-4" /> Sign in to unlock
             </Link>
           </Button>

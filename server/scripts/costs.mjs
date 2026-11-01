@@ -4,7 +4,7 @@
 //   npm run costs -- 100     last 100 sessions
 import { PRICES, usageBySession } from '../usage.js';
 
-const sessions = usageBySession({ limit: Number(process.argv[2]) || 20 });
+const sessions = await usageBySession({ limit: Number(process.argv[2]) || 20 });
 if (!sessions.length) {
   console.log('No paid API calls recorded yet.');
   process.exit(0);
@@ -20,3 +20,4 @@ for (const s of sessions) {
 }
 console.log(`\nTotal for these ${sessions.length} sessions: ${usd(grand)} at list price (before free allowances).`);
 console.log('Free allowances:', Object.entries(PRICES).map(([k, p]) => `${k}: ${p.free}`).join('; '));
+process.exit(0);

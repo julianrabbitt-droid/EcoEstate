@@ -56,10 +56,10 @@ export async function isSchoolDomain(domain) {
 }
 
 /** Record the free unlock for a user (idempotent). */
-export function grantStudentUnlock(user) {
+export async function grantStudentUnlock(user) {
   const purchases = entityService('Base44Purchase', null, { service: true });
-  if (purchases.filter({ productId: PRODUCT_ID, appUserId: user.id, status: 'paid' }, { limit: 1 }).length) return false;
-  purchases.create({
+  if ((await purchases.filter({ productId: PRODUCT_ID, appUserId: user.id, status: 'paid' }, { limit: 1 })).length) return false;
+  await purchases.create({
     checkoutSessionId: `student_${user.id}_${PRODUCT_ID}_${Date.now()}`,
     status: 'paid',
     appUserId: user.id,
@@ -91,7 +91,7 @@ export async function autoUnlockStudent(user) {
   }
   try {
     if (await isSchoolDomain(domain)) {
-      if (grantStudentUnlock(user)) console.log(`[student] unlocked 3D features for user ${user.id} (${domain})`);
+      if (await grantStudentUnlock(user)) console.log(`[student] unlocked Premium features for user ${user.id} (${domain})`);
     }
     checked.add(user.id);
   } catch {

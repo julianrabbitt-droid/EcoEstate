@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { db } from '../db.js';
+import { users } from '../db.js';
 
 // EcoEstate Premium billing on Stripe: a $10/month subscription, plus referrals.
 // A friend who subscribes with a referral code gets $5 off their first month
@@ -128,9 +128,8 @@ export async function fulfillCheckout(base44, s: Stripe, session: Stripe.Checkou
 async function rewardReferrer(base44, s: Stripe, referrerId: string, refereeId: string) {
   const referrals = base44.asServiceRole.entities.Referral;
   if ((await referrals.filter({ refereeId }, { limit: 1 })).items?.length) return; // one reward per friend
-  const userById = (id: string) => db.prepare('SELECT id, email, full_name FROM users WHERE id = ?').get(id) as any;
-  const referrer = userById(referrerId);
-  const referee = userById(refereeId);
+  const referrer: any = await users.byId(referrerId);
+  const referee: any = await users.byId(refereeId);
   const record = { referrerId, refereeId, refereeFirstName: String(referee?.full_name || '').split(' ')[0] || 'A friend' };
   if (!referrer) return referrals.create({ ...record, status: 'failed' });
   try {
