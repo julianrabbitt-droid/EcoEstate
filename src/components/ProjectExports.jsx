@@ -2,16 +2,16 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Download, FileText, Loader2, Lock, Share2, Table2 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
-import { base44 } from '@/api/base44Client';
 import { usePremiumAccess } from '@/hooks/usePremiumAccess';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { plantById } from '@/data/nativePlants';
 import { financials, money, num } from '@/lib/landscapeMath';
+import { startCheckout } from '@/lib/checkout';
 
 // Premium project export: a printable PDF brief and a materials spreadsheet,
-// plus a share action. Gated behind EcoEstate Premium ($5/month) — not the free
-// student 3D unlock. When locked, the user can subscribe inline or sign in.
+// plus a share action. Gated behind EcoEstate Premium ($10/month) — not the free
+// student unlock. When locked, the user can subscribe inline or sign in.
 export default function ProjectExports({ projectId, project, design }) {
   const { isAuthenticated, authChecked } = useAuth();
   const { premium: unlocked, loading, refresh } = usePremiumAccess();
@@ -126,7 +126,7 @@ export default function ProjectExports({ projectId, project, design }) {
     setPurchasing(true);
     sessionStorage.setItem('ecoestate_premium_pending', '1');
     try {
-      const res = await base44.functions.invoke('create-checkout', { productId: 'premium' });
+      const res = await startCheckout();
       const url = res?.data?.redirectUrl;
       if (!url) throw new Error('No checkout URL returned');
       window.location.href = url;
@@ -148,8 +148,8 @@ export default function ProjectExports({ projectId, project, design }) {
         <h2 className="mt-2 font-display text-2xl tracking-tight">Download & share your project</h2>
         <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-muted-foreground">
           Hand a printable PDF brief and a materials spreadsheet to a nursery, crew, or volunteer group, or share the
-          whole plan in one tap. Included with EcoEstate Premium — along with the 3D Garden View and unlimited Full
-          Auto Scans.
+          whole plan in one tap. Included with EcoEstate Premium ($10/month), along with the community and project
+          tracking. Scanning and the 3D Garden View are free for everyone.
         </p>
         {isAuthenticated ? (
           <>
@@ -160,7 +160,7 @@ export default function ProjectExports({ projectId, project, design }) {
                 </>
               ) : (
                 <>
-                  <Lock className="mr-2 h-4 w-4" /> Subscribe to Premium — $5/month
+                  <Lock className="mr-2 h-4 w-4" /> Subscribe to Premium — $10/month
                 </>
               )}
             </Button>

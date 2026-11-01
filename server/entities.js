@@ -71,9 +71,21 @@ function checkRequired(schema, data) {
 
 // Returns an entity API for one caller. `service: true` bypasses access rules,
 // which is what backend functions get through base44.asServiceRole.
+// Premium members: an active Premium purchase or a free student unlock (both
+// written only by the server), or an admin.
+const MEMBER_PRODUCTS = new Set(['premium', '3d_view']);
+export function isPremiumMember(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  return records.find('Base44Purchase', { appUserId: user.id, status: 'paid' }).some((p) => MEMBER_PRODUCTS.has(p.productId));
+}
+
 export function entityService(name, user, { service = false } = {}) {
   const schema = schemas[name];
   if (!schema) throw new HttpError(404, `Unknown entity ${name}`);
+  if (schema.premium && !service && !isPremiumMember(user)) {
+    throw new HttpError(402, 'Community and project tracking are part of EcoEstate Premium.');
+  }
   const rls = schema.rls || {};
   const can = (op, record) => service || evalRule(rls[op], record, user);
   const view = (r) => (service ? r : hideFields(schema, r, user));

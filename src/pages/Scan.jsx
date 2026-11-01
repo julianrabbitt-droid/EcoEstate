@@ -328,12 +328,10 @@ export default function Scan() {
           </p>
           {note && <p className="mt-3 max-w-md text-xs leading-relaxed text-muted-foreground">{note}</p>}
 
-          {!autoAccess.loading && !autoAccess.unlimited && (
+          {!autoAccess.loading && autoAccess.needsSignIn && (
             <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-[11px] font-medium text-foreground shadow-sm">
               <Leaf className="h-3.5 w-3.5 text-accent" />
-              {autoAccess.needsSignIn
-                ? '10 free Full Auto Scans available with sign-in'
-                : `${autoAccess.remaining} free Full Auto Scan${autoAccess.remaining === 1 ? '' : 's'} left this month`}
+              Sign in to run a free Full Auto Scan
             </div>
           )}
 
@@ -392,10 +390,8 @@ export default function Scan() {
                 <div className="border-b border-border/70 bg-secondary/30 px-4 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
                   Enter an address to scan your lawn, or measure it manually below — either way we'll calculate the
                   impact of replacing it with a native garden.
-                  {!autoAccess.loading && !autoAccess.unlimited && autoAccess.remaining > 0 && (
-                    <span className="ml-1 text-foreground">
-                      You have {autoAccess.remaining} free Full Auto Scan{autoAccess.remaining === 1 ? '' : 's'} left this month.
-                    </span>
+                  {!autoAccess.loading && autoAccess.needsSignIn && (
+                    <span className="ml-1 text-foreground">Sign in to run a free Full Auto Scan.</span>
                   )}
                 </div>
               )}
@@ -479,16 +475,16 @@ export default function Scan() {
         <div className="mx-auto grid w-full max-w-6xl gap-10 px-5 sm:grid-cols-2">
           <div className="surface p-6">
             <div className="flex items-center gap-2">
-              <span className="label-xs">10 free scans for everyone</span>
+              <span className="label-xs">Free for everyone</span>
               <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-accent">
-                Monthly
+                Unlimited
               </span>
             </div>
-            <h2 className="mt-3 font-display text-2xl tracking-tight">10 free Full Auto Scans every month.</h2>
+            <h2 className="mt-3 font-display text-2xl tracking-tight">Scanning and 3D are free.</h2>
             <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
-              Every signed-in user gets 10 free Full Auto Scans each month, plus a fixed-angle 3D Garden View. Sign in
-              with a verified school email to unlock unlimited scans, the interactive orbit camera and the
-              first-person walk-through at no cost — or get it all with EcoEstate Premium ($5/month). Manual
+              Sign in to run unlimited Full Auto Scans and explore your garden in the full 3D view, including the
+              orbit camera and first-person walk-through, at no cost. EcoEstate Premium ($10/month) adds the
+              community, project tracking and project exports, and is free for students with a school email. Manual
               outlining, analysis and planning are always free.
             </p>
           </div>

@@ -1,5 +1,8 @@
 {
   "name": "Comment",
+  // Premium feature (community or project tracking): only EcoEstate Premium
+  // members, student unlocks and admins can use this entity at all.
+  "premium": true,
   "type": "object",
   "properties": {
     "post_id": {

@@ -7,7 +7,6 @@ import { fetchSatelliteFrame, privateStreetView, tracePropertyFrame } from '../.
 import { describeBuildingFromFootprint } from '../../shared/propertyEstimate.ts';
 import { scanPropertyLawns } from '../../shared/propertyScanSearch.ts';
 import { fetchPublicParcel } from '../../shared/publicParcels.ts';
-import { consumeFullScanToken } from '../../shared/entitlements.ts';
 
 const COORD_PRECISION = 1e5;
 function cacheKeyFor(lat, lng) { return `${Math.round(lat * COORD_PRECISION)},${Math.round(lng * COORD_PRECISION)}`; }
@@ -90,21 +89,12 @@ export default async function (req) {
         }
       } catch (e) { console.warn('Scan cache read failed:', e?.message); }
     }
-    // The full 4-point search is a Premium feature with a monthly token budget;
-    // never trust the client flag. Resolve entitlement server-side and consume
-    // one token on success.
+    // The full 4-point search is free for any signed-in account.
     let full = false;
     if (body.full === true) {
       const caller = await base44.auth.me().catch((e) => (e.status === 401 ? null : Promise.reject(e)));
       if (!caller) {
         return Response.json({ error: 'Sign in to run the Full Auto Scan.' }, { status: 401 });
-      }
-      const r = await consumeFullScanToken(base44, caller.id, caller.email);
-      if (!r.ok) {
-        const msg = r.reason === 'locked'
-          ? "You've used all 10 free Full Auto Scans this month. Upgrade to EcoEstate Premium, or sign in with a verified school email, for unlimited scans. You can still outline your lawn manually."
-          : 'Full Auto Scan is unavailable right now.';
-        return Response.json({ error: msg }, { status: 402 });
       }
       full = true;
     }

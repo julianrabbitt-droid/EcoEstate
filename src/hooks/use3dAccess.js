@@ -1,8 +1,3 @@
-import { usePremiumAccess } from './usePremiumAccess';
-
-// 3D Garden View access: Premium subscribers OR a free student 3d_view unlock.
+// The 3D Garden View (orbit camera, walk-through) is free for everyone.
 // Kept as a thin wrapper for existing callers.
-export const use3dAccess = () => {
-  const { threeD: unlocked, loading, refresh } = usePremiumAccess();
-  return { unlocked, loading, refresh };
-};
+export const use3dAccess = () => ({ unlocked: true, loading: false, refresh: async () => null });

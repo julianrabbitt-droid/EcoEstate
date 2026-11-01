@@ -2,6 +2,8 @@ import { useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import Community from '@/pages/Community';
 import Messages from '@/pages/Messages';
+import TrackingUpsell from '@/components/tracking/TrackingUpsell';
+import { usePremiumAccess } from '@/hooks/usePremiumAccess';
 
 const TABS = [
   { id: 'community', label: 'Community' },
@@ -9,8 +11,10 @@ const TABS = [
 ];
 
 // Community feed + map and private messages, switched by the `tab` query param.
+// Members only (Premium or student unlock); everyone else sees an upsell.
 export default function Social() {
   const [params, setParams] = useSearchParams();
+  const { member, loading, refresh } = usePremiumAccess();
   const tab = params.get('tab') === 'messages' ? 'messages' : 'community';
 
   const selectTab = (id) => {
@@ -24,6 +28,12 @@ export default function Social() {
       <p className="label-xs">Social</p>
       <h1 className="mt-2 font-display text-3xl tracking-tight sm:text-[2.4rem]">Progress, examples & neighbors</h1>
 
+      {loading ? null : !member ? (
+        <div className="mt-6">
+          <TrackingUpsell feature="community" onUnlocked={refresh} />
+        </div>
+      ) : (
+        <>
       <div className="mt-5 inline-flex gap-1 rounded-full border border-border/70 p-1">
         {TABS.map((t) => (
           <button
@@ -41,6 +51,8 @@ export default function Social() {
       </div>
 
       <div className="mt-6">{tab === 'messages' ? <Messages /> : <Community />}</div>
+        </>
+      )}
     </div>
   );
 }

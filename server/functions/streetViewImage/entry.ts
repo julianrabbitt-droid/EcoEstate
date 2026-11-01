@@ -1,16 +1,13 @@
 import { createClientFromRequest } from '../../sdk.js';
 import { fetchStreetView } from '../../shared/streetView.ts';
-import { has3dView } from '../../shared/entitlements.ts';
 
 export default async function (req) {
   try {
     const base44 = createClientFromRequest(req);
-    // Street View imagery is a paid 3D-view resource; verify the caller's paid
-    // (or student-unlocked) 3d_view entitlement before spending Maps quota.
+    // Street View imagery costs Maps quota, so it needs a signed-in account
+    // (the 3D Garden View itself is free).
     const caller = await base44.auth.me().catch((e) => (e.status === 401 ? null : Promise.reject(e)));
-    if (!caller || !(await has3dView(base44, caller.id))) {
-      return Response.json({ error: '3D Garden View is a paid feature.' }, { status: 402 });
-    }
+    if (!caller) return Response.json({ error: 'Sign in to see street views.' }, { status: 401 });
     const body = await req.json().catch(() => ({}));
     const lat = Number(body.lat);
     const lng = Number(body.lng);

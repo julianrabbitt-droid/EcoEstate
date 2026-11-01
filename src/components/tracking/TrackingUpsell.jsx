@@ -2,18 +2,38 @@ import { useState } from 'react';
 import { GraduationCap, Leaf, Loader2, Sprout } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
+import { startCheckout } from '@/lib/checkout';
 
-const BENEFITS = [
-  'Connect a scanned property to a real-world project',
-  'Log progress updates with photos as you convert the lawn',
-  'Track money spent, rebates received and your actual water bills',
-  'See water saved, net cost and payback time computed from your own numbers',
-  'Optionally share an approximate pin on the community map',
-];
+const FEATURES = {
+  tracking: {
+    title: 'Track your lawn conversion',
+    blurb:
+      'My projects turns a scanned property into a living record of the real work: progress photos, plants, spending and water bills — then shows the water and money you save.',
+    benefits: [
+      'Connect a scanned property to a real-world project',
+      'Log progress updates with photos as you convert the lawn',
+      'Track money spent, rebates received and your actual water bills',
+      'See water saved, net cost and payback time computed from your own numbers',
+      'Project exports: printable PDF brief and materials spreadsheet',
+    ],
+  },
+  community: {
+    title: 'Join the EcoEstate community',
+    blurb:
+      'The community is where neighbors share progress, swap examples and message each other, with a map of tracked properties near you.',
+    benefits: [
+      'Browse and post progress updates and before/after photos',
+      'Message other members privately',
+      'Explore the map of tracked properties',
+      'Project tracking and project exports are included',
+    ],
+  },
+};
 
-// Shown on My projects pages to users without Premium or the student unlock.
-// Same checkout / student-claim flow as FullAutoScanUpsell.
-export default function TrackingUpsell({ onUnlocked }) {
+// Shown on Social and My projects pages to users without Premium or the student
+// unlock. Scanning and the 3D Garden View are free for everyone.
+export default function TrackingUpsell({ onUnlocked, feature = 'tracking' }) {
+  const { title, blurb, benefits: BENEFITS } = FEATURES[feature] || FEATURES.tracking;
   const [purchasing, setPurchasing] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState('');
@@ -23,7 +43,7 @@ export default function TrackingUpsell({ onUnlocked }) {
     setPurchasing(true);
     sessionStorage.setItem('ecoestate_premium_pending', '1');
     try {
-      const res = await base44.functions.invoke('create-checkout', { productId: 'premium' });
+      const res = await startCheckout();
       const url = res?.data?.redirectUrl;
       if (!url) throw new Error('No checkout URL returned');
       window.location.href = url;
@@ -52,11 +72,10 @@ export default function TrackingUpsell({ onUnlocked }) {
         <Sprout className="h-4 w-4 text-accent" />
         <span className="label-xs">Premium feature</span>
       </div>
-      <h2 className="mt-2 font-display text-2xl tracking-tight">Track your lawn conversion</h2>
+      <h2 className="mt-2 font-display text-2xl tracking-tight">{title}</h2>
       <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-muted-foreground">
-        My projects turns a scanned property into a living record of the real work: progress photos, plants, spending
-        and water bills — then shows the environmental and economic impact. Included with EcoEstate Premium
-        ($5/month) and free with a verified school email.
+        {blurb} Included with EcoEstate Premium ($10/month), and free with a verified school email. Invite friends:
+        they get $5 off, you get a free month.
       </p>
       <ul className="mt-3 flex flex-col gap-1.5 text-[12px] text-muted-foreground">
         {BENEFITS.map((b) => (
@@ -72,7 +91,7 @@ export default function TrackingUpsell({ onUnlocked }) {
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Redirecting to checkout…
             </>
           ) : (
-            <>Upgrade to Premium — $5/month</>
+            <>Upgrade to Premium — $10/month</>
           )}
         </Button>
         <Button onClick={claimStudent} disabled={claiming} variant="outline" className="rounded-full px-6">

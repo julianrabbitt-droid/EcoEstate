@@ -4,6 +4,8 @@ import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import CheckoutReturn from '@/components/CheckoutReturn';
+import Invite from '@/pages/Invite';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
@@ -71,6 +73,7 @@ const AuthenticatedApp = () => {
           <Route path="/my-projects" element={<MyProjects />} />
           <Route path="/my-projects/:id" element={<TrackedProject />} />
           <Route path="/social" element={<Social />} />
+          <Route path="/invite" element={<Invite />} />
           <Route path="/community" element={<ToSocial tab="community" />} />
           <Route path="/messages" element={<ToSocial tab="messages" />} />
         </Route>
@@ -88,6 +91,7 @@ function App() {
       <QueryClientProvider client={queryClientInstance}>
         <Router>
           <ScrollToTop />
+          <CheckoutReturn />
           <AuthenticatedApp />
         </Router>
         <Toaster />

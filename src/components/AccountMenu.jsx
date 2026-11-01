@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, Crown, GraduationCap, Leaf, LogIn, LogOut, RefreshCw, User } from 'lucide-react';
+import { ChevronDown, Crown, Gift, GraduationCap, Leaf, LogIn, LogOut, RefreshCw, User } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { base44 } from '@/api/base44Client';
 import { useAuth } from '@/lib/AuthContext';
 import { usePremiumAccess } from '@/hooks/usePremiumAccess';
-import { useAutoScanAccess } from '@/hooks/useAutoScanAccess';
+import { openBillingPortal, startCheckout } from '@/lib/checkout';
 
 function initials(name = '') {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -25,17 +25,16 @@ export default function AccountMenu() {
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
   const { premium, threeD, loading, refresh } = usePremiumAccess();
-  const autoAccess = useAutoScanAccess();
   const [checkingOut, setCheckingOut] = useState(false);
 
-  const planLabel = premium ? 'Premium' : threeD ? 'Student 3D' : 'Free';
+  const planLabel = premium ? 'Premium' : threeD ? 'Student' : 'Free';
   const PlanIcon = premium ? Crown : threeD ? GraduationCap : Leaf;
 
   const handleUpgrade = async () => {
     setCheckingOut(true);
     sessionStorage.setItem('ecoestate_premium_pending', '1');
     try {
-      const res = await base44.functions.invoke('create-checkout', { productId: 'premium' });
+      const res = await startCheckout();
       const url = res?.data?.redirectUrl;
       if (url) window.location.href = url;
     } catch {
@@ -80,10 +79,10 @@ export default function AccountMenu() {
                 {loading
                   ? 'Checking access…'
                   : premium
-                    ? 'Unlimited scans & 3D walk-through'
+                    ? 'Community, tracking & exports'
                     : threeD
-                      ? 'Unlimited scans & 3D view'
-                      : `${autoAccess.remaining} free scan${autoAccess.remaining === 1 ? '' : 's'} left this month`}
+                      ? 'Community & project tracking'
+                      : 'Free scans & 3D view'}
               </span>
             </div>
           </div>
@@ -94,6 +93,14 @@ export default function AccountMenu() {
             {checkingOut ? 'Opening checkout…' : 'Upgrade to Premium'}
           </DropdownMenuItem>
         )}
+        {premium && (
+          <DropdownMenuItem onClick={() => openBillingPortal().catch(() => {})} className="gap-2">
+            <Crown className="h-4 w-4 text-accent" /> Manage subscription
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem onClick={() => navigate('/invite')} className="gap-2">
+          <Gift className="h-4 w-4" /> Invite friends — get a free month
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate('/projects')} className="gap-2">
           <User className="h-4 w-4" /> My properties
         </DropdownMenuItem>

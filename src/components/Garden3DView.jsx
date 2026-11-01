@@ -4,13 +4,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Leaf, Loader2, Move, ScanEye, Sun, Wand2 } from 'lucide-react';
 import WalkThroughHandle from '@/components/WalkThroughHandle';
 import WalkSpeedControl from '@/components/WalkSpeedControl';
-import WalkThroughGate from '@/components/WalkThroughGate';
 import WalkMiniMap from '@/components/WalkMiniMap';
 import { Button } from '@/components/ui/button';
 import { plantById } from '@/data/nativePlants';
 import { plantsForProject } from '@/data/regions';
 import { base44 } from '@/api/base44Client';
-import { usePremiumAccess } from '@/hooks/usePremiumAccess';
 import { ARRANGEMENTS } from '@/data/arrangements';
 import { arrangePlants, prepareBuildings, prepareLot, preparePolys, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
 
@@ -412,15 +410,9 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const [moveMode, setMoveMode] = useState(false);
   const moveModeRef = useRef(false);
   const [walkMode, setWalkMode] = useState(false);
-  const [walkLocked, setWalkLocked] = useState(false);
-  const [gateTitle, setGateTitle] = useState('Walk through your garden');
-  const { premium, threeD } = usePremiumAccess();
-  const walkUnlocked = premium || threeD;
-  // Free 3D view is a fixed angle (no orbit/zoom). Premium/student unlocks the
-  // interactive orbit camera plus the first-person walk-through.
-  const interactive = walkUnlocked;
-  const interactiveRef = useRef(walkUnlocked);
-  useEffect(() => { interactiveRef.current = walkUnlocked; }, [walkUnlocked]);
+  // The orbit camera and first-person walk-through are free for everyone.
+  const interactive = true;
+  const interactiveRef = useRef(true);
   const [walkSpeed, setWalkSpeed] = useState(4.5);
   const walkSpeedRef = useRef(4.5);
   useEffect(() => { walkSpeedRef.current = walkSpeed; }, [walkSpeed]);
@@ -939,8 +931,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     }
   }, [moveMode]);
 
-  // The orbit camera is Premium/student only. Free users get the fixed overview
-  // angle — controls are disabled entirely (no orbit, zoom, or pan). Walk mode
+  // The orbit camera is free for everyone. Walk mode
   // and move mode both override this to false regardless of tier.
   useEffect(() => {
     const t = threeRef.current;
@@ -1020,7 +1011,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const moved = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
       downPos = null;
       if (moved > 5) return; // it was an orbit drag, not a click
-      if (!interactiveRef.current) return; // free view is fixed — no focus tween
+      if (!interactiveRef.current) return;
       setPointer(e);
       raycaster.setFromCamera(pointer, camera);
       const hits = raycaster.intersectObjects(bedMeshesRef.current, false);
@@ -1102,7 +1093,6 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   // person there and enters first-person at that spot.
   const handleDrop = (e) => {
     e.preventDefault();
-    if (!walkUnlocked) { setWalkLocked(true); return; }
     const three = threeRef.current;
     if (!three) return;
     const { renderer, camera, raycaster, pointer, groundPlane } = three;
@@ -1203,19 +1193,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
             <Button variant="default" onClick={() => setWalkMode(false)} className="rounded-full" size="sm">
               Exit walk
             </Button>
-          ) : walkUnlocked ? (
-            <WalkThroughHandle />
           ) : (
-            <Button variant="outline" onClick={() => { setGateTitle('Walk through your garden'); setWalkLocked(true); }} className="rounded-full" size="sm">
-              <Move className="mr-1.5 h-4 w-4" />
-              Walk through
-            </Button>
-          )}
-          {!interactive && (
-            <Button variant="default" onClick={() => { setGateTitle('Interactive 3D view'); setWalkLocked(true); }} className="rounded-full" size="sm">
-              <ScanEye className="mr-1.5 h-4 w-4" />
-              Unlock orbit
-            </Button>
+            <WalkThroughHandle />
           )}
         </div>
       </div>
@@ -1237,13 +1216,6 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
             {origin && <WalkMiniMap project={project} getPersonGeo={getPersonGeo} />}
           </>
         )}
-        {walkLocked && !walkUnlocked && (
-          <WalkThroughGate
-            projectId={project?.id}
-            title={gateTitle}
-            onClose={() => setWalkLocked(false)}
-          />
-        )}
       </div>
 
       <p className="mt-2 flex items-center gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
@@ -1252,9 +1224,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           ? 'You are standing in the garden. WASD to move, drag to look around, Exit walk to return to the plan.'
           : moveMode
             ? 'Click a plant and drag it to a new spot on the mulch. Hit Done moving to focus again.'
-            : interactive
-              ? 'Drag to rotate · click a lawn to focus · scroll to zoom · drag the person onto the property to walk it.'
-              : 'Free 3D view — a fixed look at your garden. Unlock orbit and walk-through with Premium.'}
+            : 'Drag to rotate · click a lawn to focus · scroll to zoom · drag the person onto the property to walk it.'}
       </p>
 
       <div className="mt-4 border-t border-border/70 pt-3">

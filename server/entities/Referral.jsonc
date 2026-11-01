@@ -1,0 +1,22 @@
+{
+  "name": "Referral",
+  "type": "object",
+  // A friend who subscribed with someone's referral code. The friend got $5 off
+  // their first month; the referrer gets one free month ($10 Stripe credit).
+  // Written only by the billing functions; the referrer can read theirs.
+  "properties": {
+    "referrerId": { "type": "string" },
+    "refereeId": { "type": "string" },
+    "refereeFirstName": { "type": "string" },
+    "status": { "type": "string", "enum": ["rewarded", "failed"] },
+    "creditUsd": { "type": "number" },
+    "rewardedAt": { "type": "string", "format": "date-time" }
+  },
+  "required": ["referrerId", "refereeId"],
+  "rls": {
+    "read": { "$or": [{ "referrerId": "{{user.id}}" }, { "user_condition": { "role": "admin" } }] },
+    "create": { "user_condition": { "role": "admin" } },
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

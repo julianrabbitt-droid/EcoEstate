@@ -8,17 +8,19 @@ const PENDING_FLAG = 'ecoestate_premium_pending';
 // Base44Purchase records (admin-only writes — the server-verified record is the
 // unlock, never a client flag):
 //  - premium: an active paid 'premium' subscription (status 'paid').
-//  - threeD: Premium, OR a paid/student '3d_view' unlock (free school email).
-//  - unlimited: true when Premium (no monthly cap). The Full Auto Scan is
-//    unlocked whenever premium OR threeD is true (Premium or student email).
+//  - member: Premium, OR a paid/student '3d_view' unlock (free school email).
+//    Members get the community (Social) and project tracking (My projects).
+//    `threeD` is a legacy alias of `member` (the unlock's product id is
+//    '3d_view'). Scanning and the 3D Garden View are free for everyone.
+//  - unlimited: true when Premium. Project exports are Premium-only.
 export function usePremiumAccess() {
   const { user, isAuthenticated, authChecked } = useAuth();
-  const [state, setState] = useState({ premium: false, threeD: false, unlimited: false });
+  const [state, setState] = useState({ premium: false, threeD: false, member: false, unlimited: false });
   const [loading, setLoading] = useState(true);
 
   const check = useCallback(async () => {
     if (!isAuthenticated || !user?.id) {
-      setState({ premium: false, threeD: false, unlimited: false });
+      setState({ premium: false, threeD: false, member: false, unlimited: false });
       setLoading(false);
       return null;
     }
@@ -32,12 +34,12 @@ export function usePremiumAccess() {
       const threeDRec = list.find((p) => p.productId === '3d_view');
       const premium = !!premiumRec;
       const threeD = premium || !!threeDRec;
-      const next = { premium, threeD, unlimited: premium };
+      const next = { premium, threeD, member: threeD, unlimited: premium };
       setState(next);
       if (premium) sessionStorage.removeItem(PENDING_FLAG);
       return next;
     } catch {
-      setState({ premium: false, threeD: false, unlimited: false });
+      setState({ premium: false, threeD: false, member: false, unlimited: false });
       return null;
     } finally {
       setLoading(false);

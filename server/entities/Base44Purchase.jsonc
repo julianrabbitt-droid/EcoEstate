@@ -4,7 +4,10 @@
   "properties": {
     "checkoutSessionId": {
       "type": "string",
-      "description": "Wix checkout session id; correlation key."
+      "description": "Stripe Checkout Session id (Wix checkout id on older records); correlation key."
+    },
+    "stripeCustomerId": {
+      "type": "string"
     },
     "status": {
       "type": "string",

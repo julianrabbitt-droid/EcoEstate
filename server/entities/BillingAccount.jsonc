@@ -1,0 +1,18 @@
+{
+  "name": "BillingAccount",
+  "type": "object",
+  // One per user: their Stripe customer and referral code. Written only by the
+  // billing functions (service role); users can read their own.
+  "properties": {
+    "appUserId": { "type": "string" },
+    "stripeCustomerId": { "type": "string" },
+    "referralCode": { "type": "string" }
+  },
+  "required": ["appUserId"],
+  "rls": {
+    "read": { "$or": [{ "appUserId": "{{user.id}}" }, { "user_condition": { "role": "admin" } }] },
+    "create": { "user_condition": { "role": "admin" } },
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}
