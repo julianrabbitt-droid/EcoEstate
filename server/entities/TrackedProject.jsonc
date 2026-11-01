@@ -1,0 +1,33 @@
+{
+  "name": "TrackedProject",
+  "type": "object",
+  "properties": {
+    "projectId": { "type": "string", "title": "Scanned property (Project) id" },
+    "name": { "type": "string", "title": "Display name, e.g. the place name or street" },
+    "address": {
+      "type": "string",
+      "rls": { "read": { "$or": [{ "created_by_id": "{{user.id}}" }, { "user_condition": { "role": "admin" } }] } }
+    },
+    "center": {
+      "type": "array",
+      "title": "Exact [lat, lng] (owner only)",
+      "rls": { "read": { "$or": [{ "created_by_id": "{{user.id}}" }, { "user_condition": { "role": "admin" } }] } }
+    },
+    "mapPoint": { "type": "array", "title": "Approximate [lat, lng] for the community map (~1 km)" },
+    "ownerName": { "type": "string", "title": "First name shown on the community map" },
+    "lawnSqft": { "type": "number", "title": "Lawn area from the scan (baseline)" },
+    "startDate": { "type": "string", "format": "date" },
+    "waterPricePer1000Gal": { "type": "number", "default": 0 },
+    "baselineGallonsPerMonth": { "type": "number", "title": "Typical monthly water use before converting" },
+    "shareOnMap": { "type": "boolean", "default": false },
+    "coverPhotoUri": { "type": "string" },
+    "convertedSqft": { "type": "number", "default": 0, "title": "Latest converted area (kept in sync by the app for the map)" }
+  },
+  "required": ["projectId", "name"],
+  "rls": {
+    "read": { "$or": [{ "created_by_id": "{{user.id}}" }, { "data.shareOnMap": true }, { "user_condition": { "role": "admin" } }] },
+    "create": { "user_condition": { "role": "admin" } },
+    "update": { "$or": [{ "created_by_id": "{{user.id}}" }, { "user_condition": { "role": "admin" } }] },
+    "delete": { "$or": [{ "created_by_id": "{{user.id}}" }, { "user_condition": { "role": "admin" } }] }
+  }
+}

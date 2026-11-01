@@ -1,0 +1,59 @@
+{
+  "name": "ScanCache",
+  "type": "object",
+  "properties": {
+    "cacheKey": {
+      "type": "string",
+      "description": "Rounded lat,lng key for cache lookup"
+    },
+    "lat": {
+      "type": "number"
+    },
+    "lng": {
+      "type": "number"
+    },
+    "estimateJson": {
+      "type": "string",
+      "description": "Full scan estimate as JSON"
+    },
+    "frameJson": {
+      "type": "string",
+      "description": "Scan frame as JSON"
+    },
+    "satelliteFileUri": {
+      "type": "string"
+    },
+    "streetViewFileUri": {
+      "type": "string"
+    },
+    "searchedAround": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "cacheKey"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

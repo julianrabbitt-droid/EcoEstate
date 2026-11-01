@@ -1,0 +1,160 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Inter+Tight:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 38% 96%;
+    --foreground: 158 32% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 158 32% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 158 32% 11%;
+    --primary: 156 34% 15%;
+    --primary-foreground: 40 38% 96%;
+    --secondary: 90 16% 89%;
+    --secondary-foreground: 156 30% 16%;
+    --muted: 42 26% 92%;
+    --muted-foreground: 152 9% 38%;
+    --accent: 17 52% 51%;
+    --accent-foreground: 40 38% 97%;
+    --destructive: 0 65% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 42 18% 85%;
+    --input: 42 18% 85%;
+    --ring: 156 30% 30%;
+    --chart-1: 156 34% 26%;
+    --chart-2: 17 52% 51%;
+    --chart-3: 96 22% 52%;
+    --chart-4: 38 58% 58%;
+    --chart-5: 198 22% 46%;
+    --radius: 0.85rem;
+    --font-heading: 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
+    --font-body: 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
+    --font-display: 'Fraunces', ui-serif, Georgia, serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 158 26% 8%;
+    --foreground: 40 38% 94%;
+    --card: 158 24% 11%;
+    --card-foreground: 40 38% 94%;
+    --popover: 158 24% 11%;
+    --popover-foreground: 40 38% 94%;
+    --primary: 40 38% 94%;
+    --primary-foreground: 158 30% 12%;
+    --secondary: 158 18% 16%;
+    --secondary-foreground: 40 38% 94%;
+    --muted: 158 18% 16%;
+    --muted-foreground: 40 12% 68%;
+    --accent: 17 52% 55%;
+    --accent-foreground: 158 30% 10%;
+    --destructive: 0 62.8% 40.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 158 16% 20%;
+    --input: 158 16% 20%;
+    --ring: 40 20% 70%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body;
+  }
+
+  ::selection {
+    background: hsl(var(--accent) / 0.24);
+  }
+}
+
+@layer components {
+  .surface {
+    @apply rounded-2xl border border-border bg-card;
+  }
+
+  .label-xs {
+    @apply text-[10.5px] font-medium uppercase tracking-[0.2em] text-muted-foreground;
+  }
+
+  .field {
+    @apply h-11 w-full rounded-xl border border-border bg-card px-3 text-sm text-foreground outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/10;
+  }
+}
+
+.leaflet-container {
+  position: relative;
+  z-index: 0;
+  background: #1d2a24;
+  font-family: var(--font-body);
+}
+
+.leaflet-control-attribution {
+  font-size: 9px !important;
+  background: rgba(255, 255, 255, 0.72) !important;
+}
+
+.property-center-tooltip {
+  background: #10231c !important;
+  border: none !important;
+  color: #f7f3ea !important;
+  font-size: 10px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.04em !important;
+  padding: 2px 8px !important;
+  border-radius: 9999px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
+}
+.property-center-tooltip::before {
+  border-top-color: #10231c !important;
+}
+
+.garden-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: hsl(var(--border));
+  outline: none;
+}
+
+.garden-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  width: 18px;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  border: 3px solid hsl(var(--background));
+  box-shadow: 0 2px 8px rgba(16, 35, 28, 0.35);
+  cursor: pointer;
+}
+
+.garden-slider::-moz-range-thumb {
+  height: 14px;
+  width: 14px;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  border: 3px solid hsl(var(--background));
+  cursor: pointer;
+}

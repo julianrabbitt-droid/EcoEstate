@@ -1,0 +1,115 @@
+{
+  "name": "Base44Purchase",
+  "type": "object",
+  "properties": {
+    "checkoutSessionId": {
+      "type": "string",
+      "description": "Wix checkout session id; correlation key."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "paid",
+        "canceled"
+      ],
+      "default": "pending"
+    },
+    "orderId": {
+      "type": "string",
+      "description": "Wix order id, filled in by the webhook."
+    },
+    "appUserId": {
+      "type": "string",
+      "description": "Base44 app user who initiated checkout."
+    },
+    "buyerEmail": {
+      "type": "string"
+    },
+    "productId": {
+      "type": "string"
+    },
+    "productName": {
+      "type": "string"
+    },
+    "quantity": {
+      "type": "number",
+      "default": 1
+    },
+    "amount": {
+      "type": "string",
+      "description": "Initial amount due in major units (zero for free trials and student unlocks), e.g. \"19.99\"."
+    },
+    "recurringAmount": {
+      "type": "string",
+      "description": "Recurring subscription total in major units, separate from the initial amount due."
+    },
+    "freeTrial": {
+      "type": "boolean",
+      "description": "Trial configured by the server-owned catalog; requires an active Wix subscription before fulfillment."
+    },
+    "studentUnlock": {
+      "type": "boolean",
+      "description": "True when this grant was a free school-email 3D-view unlock (no payment, no webhook)."
+    },
+    "currency": {
+      "type": "string"
+    },
+    "subscriptionId": {
+      "type": "string"
+    },
+    "tokensUsed": {
+      "type": "number",
+      "default": 0,
+      "description": "Full Auto Scans consumed in the current token period (Premium only)."
+    },
+    "tokenPeriod": {
+      "type": "string",
+      "description": "Calendar month (YYYY-MM) the tokensUsed counter applies to; resets when it changes."
+    },
+    "paidAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "canceledAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "checkoutSessionId",
+    "status"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.appUserId": "{{user.id}}"
+        },
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

@@ -1,0 +1,105 @@
+import { useEffect, useRef, useState } from 'react';
+import { MapPin, Loader2 } from 'lucide-react';
+import { autocompleteAddresses } from '@/lib/geo';
+
+// Address input with live suggestions. Calls onChange on every keystroke and
+// onSelect(hit) when the user picks a suggestion.
+export default function AddressAutocomplete({ value, onChange, onSelect, placeholder }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [active, setActive] = useState(-1);
+  const boxRef = useRef(null);
+  const lastQuery = useRef('');
+
+  useEffect(() => {
+    const q = (value || '').trim();
+    if (q.length < 3) {
+      setSuggestions([]);
+      setOpen(false);
+      lastQuery.current = q;
+      return;
+    }
+    if (q === lastQuery.current) return;
+    lastQuery.current = q;
+    const handle = setTimeout(async () => {
+      setFetching(true);
+      const hits = await autocompleteAddresses(q);
+      setSuggestions(hits);
+      setFetching(false);
+      setOpen(hits.length > 0);
+      setActive(-1);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [value]);
+
+  useEffect(() => {
+    const onClick = (e) => {
+      if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, []);
+
+  const pick = (hit) => {
+    // Filling in the picked label must not trigger a new search.
+    lastQuery.current = (hit.label || '').trim();
+    onChange(hit.label);
+    setOpen(false);
+    setSuggestions([]);
+    setActive(-1);
+    if (onSelect) onSelect(hit);
+  };
+
+  const onKeyDown = (e) => {
+    if (!open || !suggestions.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActive((i) => Math.min(i + 1, suggestions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActive((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter' && active >= 0) {
+      e.preventDefault();
+      pick(suggestions[active]);
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div ref={boxRef} className="relative flex-1">
+      <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        onFocus={() => suggestions.length && setOpen(true)}
+        placeholder={placeholder}
+        className="h-12 w-full rounded-full border border-border bg-card pl-11 pr-10 text-[15px] shadow-sm outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+      />
+      {fetching && (
+        <Loader2 className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+      )}
+      {open && suggestions.length > 0 && (
+        <ul className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 overflow-hidden rounded-2xl border border-border bg-card py-1.5 shadow-[0_24px_50px_-24px_rgba(16,35,28,0.5)]">
+          {suggestions.map((hit, i) => (
+            <li key={`${hit.lat},${hit.lng}`}>
+              <button
+                type="button"
+                onMouseEnter={() => setActive(i)}
+                onClick={() => pick(hit)}
+                className={`flex w-full items-start gap-2.5 px-3.5 py-2.5 text-left transition ${
+                  i === active ? 'bg-secondary/70' : 'hover:bg-secondary/40'
+                }`}
+              >
+                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="text-[13px] leading-snug text-foreground">{hit.label}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

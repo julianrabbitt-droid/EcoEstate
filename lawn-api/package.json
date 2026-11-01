@@ -1,0 +1,32 @@
+{
+  "name": "lawn-to-native-api",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "preview": "node scripts/preview.mjs",
+    "discover-counties": "node scripts/discover-counties.mjs",
+    "test-homes": "node scripts/test-homes.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@turf/area": "7.1.0",
+    "@turf/boolean-point-in-polygon": "7.4.0",
+    "@turf/buffer": "7.4.0",
+    "@turf/difference": "7.4.0",
+    "@turf/intersect": "7.4.0",
+    "@turf/simplify": "7.4.0",
+    "@turf/union": "7.4.0",
+    "cors": "2.8.5",
+    "d3-contour": "4.0.2",
+    "dotenv": "16.4.5",
+    "express": "4.21.1",
+    "geotiff": "3.0.5",
+    "hyparquet": "1.31.5",
+    "hyparquet-compressors": "1.1.2",
+    "proj4": "2.22.0"
+  }
+}

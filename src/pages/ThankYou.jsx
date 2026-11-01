@@ -1,0 +1,18 @@
+import { Link } from 'react-router-dom';
+
+// create-checkout sends buyers to this page after they pay.
+export default function ThankYou() {
+  return (
+    <main className="min-h-screen flex items-center justify-center px-6">
+      <div className="max-w-md text-center space-y-4">
+        <h1 className="text-3xl font-semibold">Thank you for your purchase</h1>
+        <p className="text-muted-foreground">
+          Your payment was received. Your 3D garden view will be unlocked shortly — reopen your project to start the walkthrough.
+        </p>
+        <Link to="/projects" className="inline-block rounded-md bg-primary px-5 py-2 text-primary-foreground">
+          Back to my properties
+        </Link>
+      </div>
+    </main>
+  );
+}

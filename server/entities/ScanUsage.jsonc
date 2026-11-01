@@ -1,0 +1,52 @@
+{
+  "name": "ScanUsage",
+  "type": "object",
+  "properties": {
+    "appUserId": {
+      "type": "string",
+      "description": "Base44 app user this free-scan counter belongs to."
+    },
+    "period": {
+      "type": "string",
+      "description": "Calendar month (YYYY-MM) the count applies to; resets when it changes."
+    },
+    "count": {
+      "type": "number",
+      "default": 0,
+      "description": "Full Auto Scans consumed this month under the free tier."
+    }
+  },
+  "required": [
+    "appUserId",
+    "period"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "data.appUserId": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

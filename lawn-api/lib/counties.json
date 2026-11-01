@@ -1,0 +1,916 @@
+[
+  {
+    "key": "alameda",
+    "county": "Alameda County",
+    "label": "Alameda County parcel map",
+    "url": "https://services5.arcgis.com/ROBnTHSNjoZ2Wm1P/arcgis/rest/services/Parcels/FeatureServer/0",
+    "source": "Parcels",
+    "idField": "APN",
+    "parcels": 489651,
+    "partial": false,
+    "extent": [
+      -122.373,
+      37.454,
+      -121.469,
+      37.904
+    ]
+  },
+  {
+    "key": "alpine",
+    "county": "Alpine County",
+    "label": "Alpine County parcel map",
+    "url": "https://services1.arcgis.com/9z9tEfqo0TExR9C8/arcgis/rest/services/AlpineCountyParcels_22_23_PublicUpdate/FeatureServer/0",
+    "source": "AlpineCountyParcels_22_23_PublicUpdate",
+    "idField": "APN",
+    "parcels": 3051,
+    "partial": false,
+    "extent": [
+      -120.073,
+      38.327,
+      -119.542,
+      38.933
+    ]
+  },
+  {
+    "key": "amador",
+    "county": "Amador County",
+    "label": "Amador County parcel map",
+    "url": "https://services8.arcgis.com/uzb563eo87NppqyM/arcgis/rest/services/Amador_County_Parcels/FeatureServer/0",
+    "source": "Amador County Parcels",
+    "idField": "APN",
+    "parcels": 24388,
+    "partial": false,
+    "extent": [
+      -121.028,
+      38.218,
+      -120.072,
+      38.709
+    ]
+  },
+  {
+    "key": "butte",
+    "county": "Butte County",
+    "label": "Butte County parcel map",
+    "url": "https://services.arcgis.com/3t3QfTXFRFX44zo8/arcgis/rest/services/Butte_County_Parcel_Public_Data/FeatureServer/0",
+    "source": "Parcels - CA - Butte County",
+    "idField": "APN",
+    "parcels": 190514,
+    "partial": false,
+    "extent": [
+      -122.069,
+      39.296,
+      -121.079,
+      40.152
+    ]
+  },
+  {
+    "key": "calaveras",
+    "county": "Calaveras County",
+    "label": "Calaveras County parcel map",
+    "url": "https://services.arcgis.com/mXosPCpkF9n8TYTE/arcgis/rest/services/Calaveras_County_Parcels/FeatureServer/0",
+    "source": "Calaveras County Parcels",
+    "idField": "PARCEL",
+    "parcels": 43492,
+    "partial": false,
+    "extent": [
+      -120.996,
+      37.832,
+      -120.02,
+      38.51
+    ]
+  },
+  {
+    "key": "colusa",
+    "county": "Colusa County",
+    "label": "Colusa County parcel map",
+    "url": "https://services.arcgis.com/q3Zg9ERurv23iysr/arcgis/rest/services/Colusa_230428_3/FeatureServer/3",
+    "source": "Colusa County Parcels",
+    "idField": "APN",
+    "parcels": 17410,
+    "partial": false,
+    "extent": [
+      -122.785,
+      38.924,
+      -121.795,
+      39.415
+    ]
+  },
+  {
+    "key": "contra-costa",
+    "county": "Contra Costa County",
+    "label": "Contra Costa County parcel map",
+    "url": "https://gis.cccounty.us/arcgis/rest/services/CCMAP/Assessment_Parcels_ArcPro/MapServer/0",
+    "source": "CCMAP Assessment Parcels",
+    "idField": "APN",
+    "parcels": 387936,
+    "partial": false,
+    "extent": [
+      -122.442,
+      37.719,
+      -121.534,
+      38.098
+    ]
+  },
+  {
+    "key": "del-norte",
+    "county": "Del Norte County",
+    "label": "Del Norte County parcel map",
+    "url": "https://services3.arcgis.com/IkUDY1vRIUWiVvcz/arcgis/rest/services/Parcels_20240628/FeatureServer/0",
+    "source": "Parcels_20240628",
+    "idField": "Asmt",
+    "parcels": 16184,
+    "partial": false,
+    "extent": [
+      -124.44,
+      41.381,
+      -123.518,
+      42.001
+    ]
+  },
+  {
+    "key": "el-dorado",
+    "county": "El Dorado County",
+    "url": null,
+    "extent": [
+      -121.142,
+      38.502,
+      -119.877,
+      39.067
+    ]
+  },
+  {
+    "key": "fresno",
+    "county": "Fresno County",
+    "label": "Fresno County parcel map",
+    "url": "https://services6.arcgis.com/Gs01XZPFhKUG8tKU/arcgis/rest/services/Fresno_County_Parcels/FeatureServer/0",
+    "source": "verified by hand",
+    "idField": "APN",
+    "parcels": 296449,
+    "partial": false,
+    "extent": [
+      -120.919,
+      35.907,
+      -118.361,
+      37.586
+    ]
+  },
+  {
+    "key": "glenn",
+    "county": "Glenn County",
+    "label": "Glenn County parcel map",
+    "url": "https://services.arcgis.com/q3Zg9ERurv23iysr/arcgis/rest/services/Glenn_County/FeatureServer/0",
+    "source": "Glenn County",
+    "idField": "APN",
+    "parcels": 15167,
+    "partial": false,
+    "extent": [
+      -122.938,
+      39.383,
+      -121.857,
+      39.8
+    ]
+  },
+  {
+    "key": "humboldt",
+    "county": "Humboldt County",
+    "label": "Humboldt County parcel map",
+    "url": "https://services7.arcgis.com/xcDZAIhbyblBfhsu/arcgis/rest/services/apnhum101sp_202204111651095603/FeatureServer/0",
+    "source": "Humboldt County Parcels 10.1",
+    "idField": "APN_12",
+    "parcels": 72701,
+    "partial": false,
+    "extent": [
+      -124.482,
+      40.002,
+      -123.406,
+      41.464
+    ]
+  },
+  {
+    "key": "imperial",
+    "county": "Imperial County",
+    "label": "Imperial County parcel map",
+    "url": "https://services7.arcgis.com/RomaVqqozKczDNgd/arcgis/rest/services/Parcels_07272022/FeatureServer/0",
+    "source": "Imperial County Parcels",
+    "idField": "APN",
+    "parcels": 88490,
+    "partial": false,
+    "extent": [
+      -116.106,
+      32.618,
+      -114.463,
+      33.434
+    ]
+  },
+  {
+    "key": "inyo",
+    "county": "Inyo County",
+    "label": "Inyo County parcel map",
+    "url": "https://services.arcgis.com/q3Zg9ERurv23iysr/arcgis/rest/services/Inyo_County/FeatureServer/0",
+    "source": "Inyo County",
+    "idField": "APN",
+    "parcels": 17484,
+    "partial": false,
+    "extent": [
+      -118.79,
+      35.787,
+      -115.648,
+      37.465
+    ]
+  },
+  {
+    "key": "kern",
+    "county": "Kern County",
+    "label": "Kern County parcel map",
+    "url": "https://services5.arcgis.com/Y8jwjGUWbRjuqpG5/arcgis/rest/services/Assessor_Parcels_Land_2026_gdb/FeatureServer/0",
+    "source": "Assessor Parcels Land 2026",
+    "idField": "APN",
+    "parcels": 424125,
+    "partial": false,
+    "extent": [
+      -120.194,
+      34.789,
+      -117.617,
+      35.798
+    ]
+  },
+  {
+    "key": "kings",
+    "county": "Kings County",
+    "url": null,
+    "extent": [
+      -120.315,
+      35.789,
+      -119.475,
+      36.489
+    ]
+  },
+  {
+    "key": "lake",
+    "county": "Lake County",
+    "label": "Lake County parcel map",
+    "url": "https://services5.arcgis.com/KS6joEEoa0G4EO56/arcgis/rest/services/Lake_County_Parks_WFL1/FeatureServer/18",
+    "source": "Lake County Parks_WFL1",
+    "idField": "APN",
+    "parcels": 63996,
+    "partial": true,
+    "extent": [
+      -123.094,
+      38.671,
+      -122.34,
+      39.581
+    ]
+  },
+  {
+    "key": "lassen",
+    "county": "Lassen County",
+    "label": "Lassen County parcel map",
+    "url": "https://services.arcgis.com/q3Zg9ERurv23iysr/arcgis/rest/services/Lassen_Parcel_Final_Schema1/FeatureServer/0",
+    "source": "Lassen County Parcel",
+    "idField": "APN",
+    "parcels": 47354,
+    "partial": false,
+    "extent": [
+      -121.332,
+      39.708,
+      -119.998,
+      41.184
+    ]
+  },
+  {
+    "key": "los-angeles",
+    "county": "Los Angeles County",
+    "url": "https://public.gis.lacounty.gov/public/rest/services/LACounty_Cache/LACounty_Parcel/MapServer/0",
+    "extent": [
+      -118.952,
+      32.75,
+      -117.646,
+      34.823
+    ],
+    "label": "Los Angeles County parcel map",
+    "source": "verified by hand",
+    "idField": "AIN",
+    "parcels": 2433309,
+    "partial": false
+  },
+  {
+    "key": "madera",
+    "county": "Madera County",
+    "label": "Madera County parcel map",
+    "url": "https://services6.arcgis.com/HLgy9gbt0nSmLEUW/arcgis/rest/services/MaderaCountyParcels/FeatureServer/0",
+    "source": "MaderaCountyParcels",
+    "idField": "Parcel",
+    "parcels": 65736,
+    "partial": false,
+    "extent": [
+      -120.545,
+      36.763,
+      -119.022,
+      37.778
+    ]
+  },
+  {
+    "key": "marin",
+    "county": "Marin County",
+    "label": "Marin County parcel map",
+    "url": "https://services7.arcgis.com/eAhek1jMILbBPOVw/arcgis/rest/services/Parcels/FeatureServer/0",
+    "source": "Parcels",
+    "idField": "Parcel",
+    "parcels": 96285,
+    "partial": false,
+    "extent": [
+      -123.135,
+      37.815,
+      -122.347,
+      38.321
+    ]
+  },
+  {
+    "key": "mariposa",
+    "county": "Mariposa County",
+    "label": "Mariposa County parcel map",
+    "url": "https://services.arcgis.com/q3Zg9ERurv23iysr/arcgis/rest/services/Mariposa_Final_Schema/FeatureServer/0",
+    "source": "Mariposa County Parcels",
+    "idField": "APN",
+    "parcels": 15130,
+    "partial": false,
+    "extent": [
+      -120.395,
+      37.183,
+      -119.307,
+      37.904
+    ]
+  },
+  {
+    "key": "mendocino",
+    "county": "Mendocino County",
+    "label": "Mendocino County parcel map",
+    "url": "https://services5.arcgis.com/8y4r60VTvWj2wnDH/arcgis/rest/services/Parcels_Public_/FeatureServer/0",
+    "source": "Parcels Public ",
+    "idField": "APN",
+    "parcels": 62051,
+    "partial": false,
+    "extent": [
+      -124.135,
+      38.758,
+      -122.821,
+      40.002
+    ]
+  },
+  {
+    "key": "merced",
+    "county": "Merced County",
+    "label": "Merced County parcel map",
+    "url": "https://gis.countyofmerced.com/server/rest/services/Assessment_Parcels/FeatureServer/42",
+    "source": "Assessment Parcels",
+    "idField": "ASMT",
+    "parcels": 91366,
+    "partial": false,
+    "extent": [
+      -121.249,
+      36.74,
+      -120.052,
+      37.633
+    ]
+  },
+  {
+    "key": "modoc",
+    "county": "Modoc County",
+    "url": null,
+    "extent": [
+      -121.457,
+      41.183,
+      -119.999,
+      41.997
+    ]
+  },
+  {
+    "key": "mono",
+    "county": "Mono County",
+    "label": "Mono County parcel map",
+    "url": "https://gis.mono.ca.gov/webgis/rest/services/OpenData/Cadastral/MapServer/1",
+    "source": "verified by hand",
+    "idField": "AsmtNum",
+    "parcels": 20496,
+    "partial": false,
+    "extent": [
+      -119.651,
+      37.463,
+      -117.833,
+      38.713
+    ]
+  },
+  {
+    "key": "monterey",
+    "county": "Monterey County",
+    "label": "Monterey County parcel map",
+    "url": "https://maps.co.monterey.ca.us/server/rest/services/Land_Records/Parcels/MapServer/0",
+    "source": "verified by hand",
+    "idField": "APN",
+    "parcels": 124374,
+    "partial": false,
+    "extent": [
+      -122.052,
+      35.789,
+      -120.214,
+      36.92
+    ]
+  },
+  {
+    "key": "napa",
+    "county": "Napa County",
+    "label": "Napa County parcel map",
+    "url": "https://gis.napa.ca.gov/arcgis/rest/services/External/AccelaBasemap/MapServer/1",
+    "source": "Parcels - CA - Napa County",
+    "idField": "ASMT",
+    "parcels": 51401,
+    "partial": false,
+    "extent": [
+      -122.647,
+      38.155,
+      -122.062,
+      38.864
+    ]
+  },
+  {
+    "key": "nevada",
+    "county": "Nevada County",
+    "label": "Nevada County parcel map",
+    "url": "https://maps.nevadacountyca.gov/arcgis/rest/services/web_public/Open_Data_Layers_Nevada_County/FeatureServer/100",
+    "source": "Parcel Situs Address",
+    "idField": "APN",
+    "parcels": 68090,
+    "partial": false,
+    "extent": [
+      -121.28,
+      39.005,
+      -120.004,
+      39.527
+    ]
+  },
+  {
+    "key": "orange",
+    "county": "Orange County",
+    "label": "Orange County parcel map",
+    "url": "https://services3.arcgis.com/kBkwjVOhc0QonEjP/arcgis/rest/services/OC_Landbase_Parcels_2020/FeatureServer/0",
+    "source": "OC_Landbase_Parcels_2020",
+    "idField": "APN",
+    "parcels": 695025,
+    "partial": false,
+    "extent": [
+      -118.148,
+      33.334,
+      -117.413,
+      33.946
+    ]
+  },
+  {
+    "key": "placer",
+    "county": "Placer County",
+    "label": "Placer County parcel map",
+    "url": "https://services9.arcgis.com/NENkjkswKTzMfG3A/arcgis/rest/services/County_Parcels_-_Public_View/FeatureServer/0",
+    "source": "County Parcels - Public View",
+    "idField": "Apn",
+    "parcels": 199348,
+    "partial": false,
+    "extent": [
+      -121.484,
+      38.712,
+      -120.002,
+      39.316
+    ]
+  },
+  {
+    "key": "plumas",
+    "county": "Plumas County",
+    "label": "Plumas County parcel map",
+    "url": "https://services1.arcgis.com/SIYkiqjmENweC50g/arcgis/rest/services/Plumas_County_Parcels/FeatureServer/0",
+    "source": "verified by hand",
+    "idField": "Name",
+    "parcels": 25841,
+    "partial": false,
+    "extent": [
+      -121.498,
+      39.597,
+      -120.099,
+      40.447
+    ]
+  },
+  {
+    "key": "riverside",
+    "county": "Riverside County",
+    "label": "Riverside County parcel map",
+    "url": "https://services1.arcgis.com/RCT9RCgW4FY2e7Dk/arcgis/rest/services/Riverside_County_Parcels_CREST/FeatureServer/0",
+    "source": "Riverside_County_Parcels_CREST",
+    "idField": "APN",
+    "parcels": 842183,
+    "partial": false,
+    "extent": [
+      -117.676,
+      33.426,
+      -114.435,
+      34.08
+    ]
+  },
+  {
+    "key": "sacramento",
+    "county": "Sacramento County",
+    "label": "Sacramento County parcel map",
+    "url": "https://mapservices.gis.saccounty.net/arcgis/rest/services/PARCELS/MapServer/22",
+    "source": "Parcels - CA - Sacramento County",
+    "idField": "PARCEL_NUMBER",
+    "parcels": 600783,
+    "partial": false,
+    "extent": [
+      -121.862,
+      38.019,
+      -121.027,
+      38.736
+    ]
+  },
+  {
+    "key": "san-benito",
+    "county": "San Benito County",
+    "label": "San Benito County parcel map",
+    "url": "https://services2.arcgis.com/NjMFCzThTMQy3AJa/arcgis/rest/services/Open_Data_Parcels/FeatureServer/0",
+    "source": "Parcels Open Data",
+    "idField": "APN",
+    "parcels": 26163,
+    "partial": false,
+    "extent": [
+      -121.644,
+      36.197,
+      -120.597,
+      36.989
+    ]
+  },
+  {
+    "key": "san-bernardino",
+    "county": "San Bernardino County",
+    "label": "San Bernardino County parcel map",
+    "url": "https://services.arcgis.com/aA3snZwJfFkVyDuP/arcgis/rest/services/Parcels_for_San_Bernardino_County/FeatureServer/0",
+    "source": "SBCo Parcel Polygons",
+    "idField": "ParcelNumber",
+    "parcels": 840110,
+    "partial": false,
+    "extent": [
+      -117.803,
+      33.871,
+      -114.133,
+      35.809
+    ]
+  },
+  {
+    "key": "san-diego",
+    "county": "San Diego County",
+    "label": "San Diego County parcel map",
+    "url": "https://geo.sandag.org/server/rest/services/Hosted/Parcels/FeatureServer/0",
+    "source": "Parcels (geo.sandag.org)",
+    "idField": "apn",
+    "parcels": 1089056,
+    "partial": false,
+    "extent": [
+      -117.611,
+      32.53,
+      -116.081,
+      33.505
+    ]
+  },
+  {
+    "key": "san-francisco",
+    "county": "San Francisco County",
+    "label": "San Francisco County parcel map",
+    "type": "socrata",
+    "url": "https://data.sf.gov/resource/acdm-wktn.geojson",
+    "geometryField": "shape",
+    "where": "active=true",
+    "idField": "blklot",
+    "source": "DataSF Parcels (Active and Retired)",
+    "extent": [
+      -123.174,
+      37.642,
+      -122.282,
+      37.93
+    ]
+  },
+  {
+    "key": "san-joaquin",
+    "county": "San Joaquin County",
+    "label": "San Joaquin County parcel map",
+    "url": "https://services2.arcgis.com/GQhSReJEO6f7tsvy/arcgis/rest/services/Parcels/FeatureServer/0",
+    "source": "Parcels",
+    "idField": "APN",
+    "parcels": 253428,
+    "partial": false,
+    "extent": [
+      -121.584,
+      37.482,
+      -120.921,
+      38.3
+    ]
+  },
+  {
+    "key": "san-luis-obispo",
+    "county": "San Luis Obispo County",
+    "label": "San Luis Obispo County parcel map",
+    "url": "https://gis.slocounty.ca.gov/arcgis/rest/services/Public/SLO_CO_PARCELS/MapServer/0",
+    "source": "verified by hand",
+    "idField": "apn",
+    "parcels": 132607,
+    "partial": false,
+    "extent": [
+      -121.438,
+      34.898,
+      -119.472,
+      35.797
+    ]
+  },
+  {
+    "key": "san-mateo",
+    "county": "San Mateo County",
+    "label": "San Mateo County parcel map",
+    "url": "https://services.arcgis.com/PmM1Bg9qFLS54qH7/arcgis/rest/services/SAN_MATEO_COUNTY_ACTIVE_PARCELS_FGDB_/FeatureServer/0",
+    "source": "SAN_MATEO_COUNTY_ACTIVE_PARCELS_FGDB ",
+    "idField": "APN",
+    "parcels": 239462,
+    "partial": false,
+    "extent": [
+      -122.587,
+      37.055,
+      -122.081,
+      37.708
+    ]
+  },
+  {
+    "key": "santa-barbara",
+    "county": "Santa Barbara County",
+    "url": "https://services3.arcgis.com/hMpg7vsYb74pEKjX/ArcGIS/rest/services/ParcelBaseMap/FeatureServer/0",
+    "extent": [
+      -120.734,
+      33.413,
+      -118.964,
+      35.115
+    ],
+    "label": "Santa Barbara County parcel map",
+    "source": "verified by hand",
+    "idField": "APN",
+    "parcels": 53512,
+    "partial": false
+  },
+  {
+    "key": "santa-clara",
+    "county": "Santa Clara County",
+    "label": "Santa Clara County parcel map",
+    "url": "https://services2.arcgis.com/tcv2cMrq63AgvbHF/arcgis/rest/services/Parcels_Public_View/FeatureServer/0",
+    "source": "Parcels Public View",
+    "idField": "APN",
+    "parcels": 505060,
+    "partial": false,
+    "extent": [
+      -122.203,
+      36.893,
+      -121.208,
+      37.485
+    ]
+  },
+  {
+    "key": "santa-cruz",
+    "county": "Santa Cruz County",
+    "label": "Santa Cruz County parcel map",
+    "url": "https://services1.arcgis.com/jJfZghspGKh8J9Jm/arcgis/rest/services/Assessor_Parcels/FeatureServer/10",
+    "source": "Assessor_Parcels",
+    "idField": "APN",
+    "parcels": 97183,
+    "partial": false,
+    "extent": [
+      -122.318,
+      36.82,
+      -121.581,
+      37.286
+    ]
+  },
+  {
+    "key": "shasta",
+    "county": "Shasta County",
+    "label": "Shasta County parcel map",
+    "url": "https://services2.arcgis.com/22p1CUjMjjRWlw6O/ArcGIS/rest/services/ParcelSitusAddress/FeatureServer/0",
+    "source": "Parcels - CA - Shasta County",
+    "idField": "ASMT",
+    "parcels": 100225,
+    "partial": false,
+    "extent": [
+      -123.069,
+      40.285,
+      -121.32,
+      41.184
+    ]
+  },
+  {
+    "key": "sierra",
+    "county": "Sierra County",
+    "label": "Sierra County parcel map",
+    "url": "https://services2.arcgis.com/2yQutf5QqkjGa5Rs/arcgis/rest/services/SierraParcelAd_ExportFeature/FeatureServer/1",
+    "source": "23039 Sierra County Parcels",
+    "idField": "APN",
+    "parcels": 4874,
+    "partial": false,
+    "extent": [
+      -121.058,
+      39.392,
+      -120.001,
+      39.777
+    ]
+  },
+  {
+    "key": "siskiyou",
+    "county": "Siskiyou County",
+    "label": "Siskiyou County parcel map",
+    "url": "https://services.arcgis.com/BLN4oKB0N1YSgvY8/arcgis/rest/services/Siskiyou/FeatureServer/0",
+    "source": "Parcels - CA - Siskiyou County",
+    "idField": "APN",
+    "parcels": 53982,
+    "partial": false,
+    "extent": [
+      -123.719,
+      40.993,
+      -121.446,
+      42.01
+    ]
+  },
+  {
+    "key": "solano",
+    "county": "Solano County",
+    "label": "Solano County parcel map",
+    "url": "https://services2.arcgis.com/SCn6czzcqKAFwdGU/arcgis/rest/services/Parcels_Public_Aumentum/FeatureServer/0",
+    "source": "Parcels Public Aumentum",
+    "idField": "parcelid",
+    "parcels": 153430,
+    "partial": false,
+    "extent": [
+      -122.407,
+      38.033,
+      -121.593,
+      38.539
+    ]
+  },
+  {
+    "key": "sonoma",
+    "county": "Sonoma County",
+    "label": "Sonoma County parcel map",
+    "url": "https://services3.arcgis.com/FFbsDavSuoAXfNla/arcgis/rest/services/Sonoma_County_Parcels/FeatureServer/0",
+    "source": "Sonoma County Parcels",
+    "idField": "APN",
+    "parcels": 188252,
+    "partial": false,
+    "extent": [
+      -123.632,
+      38.073,
+      -122.347,
+      38.852
+    ]
+  },
+  {
+    "key": "stanislaus",
+    "county": "Stanislaus County",
+    "label": "Stanislaus County parcel map",
+    "url": "https://services.arcgis.com/EeYBJFxLdUojipYa/arcgis/rest/services/Public_Parcels/FeatureServer/0",
+    "source": "Parcels - CA - Stanislaus County",
+    "idField": "APN",
+    "parcels": 168915,
+    "partial": false,
+    "extent": [
+      -121.487,
+      37.135,
+      -120.387,
+      38.077
+    ]
+  },
+  {
+    "key": "sutter",
+    "county": "Sutter County",
+    "label": "Sutter County parcel map",
+    "url": "https://services.arcgis.com/q3Zg9ERurv23iysr/arcgis/rest/services/Sutter_Parcels_Final_Schema/FeatureServer/0",
+    "source": "Sutter County Parcel",
+    "idField": "APN",
+    "parcels": 40628,
+    "partial": false,
+    "extent": [
+      -121.948,
+      38.735,
+      -121.414,
+      39.306
+    ]
+  },
+  {
+    "key": "tehama",
+    "county": "Tehama County",
+    "label": "Tehama County parcel map",
+    "url": "https://services8.arcgis.com/KQDT6I4RJqihb2XD/arcgis/rest/services/Tehama_Parcels_Address/FeatureServer/14",
+    "source": "Tehama_Parcels_Address",
+    "idField": "PARCELID",
+    "parcels": 43135,
+    "partial": false,
+    "extent": [
+      -123.065,
+      39.798,
+      -121.342,
+      40.453
+    ]
+  },
+  {
+    "key": "trinity",
+    "county": "Trinity County",
+    "label": "Trinity County parcel map",
+    "url": "https://services2.arcgis.com/32siQkg0O6da8zFF/arcgis/rest/services/Parcel_Service/FeatureServer/0",
+    "source": "Parcels - CA - Trinity County",
+    "idField": "PARCEL",
+    "parcels": 16620,
+    "partial": false,
+    "extent": [
+      -123.624,
+      39.977,
+      -122.446,
+      41.368
+    ]
+  },
+  {
+    "key": "tulare",
+    "county": "Tulare County",
+    "label": "Tulare County parcel map",
+    "url": "https://services2.arcgis.com/bYBANhmQGwSSLC0l/arcgis/rest/services/Parcels_(Public_View)/FeatureServer/0",
+    "source": "Current Parcels Public View",
+    "idField": "APN",
+    "parcels": 166989,
+    "partial": false,
+    "extent": [
+      -119.573,
+      35.789,
+      -117.981,
+      36.742
+    ]
+  },
+  {
+    "key": "tuolumne",
+    "county": "Tuolumne County",
+    "label": "Tuolumne County parcel map",
+    "url": "https://services3.arcgis.com/afQpMaliVrwHS7Ud/arcgis/rest/services/Parcels_WithSiteAddress/FeatureServer/2",
+    "source": "Parcels_WithSiteAddress",
+    "idField": "Asmt",
+    "parcels": 48413,
+    "partial": false,
+    "extent": [
+      -120.653,
+      37.634,
+      -119.196,
+      38.434
+    ]
+  },
+  {
+    "key": "ventura",
+    "county": "Ventura County",
+    "label": "Ventura County parcel map",
+    "url": "https://maps.ventura.org/arcgis/rest/services/DataDownloads/CommonData/MapServer/2",
+    "source": "verified by hand",
+    "idField": "apn",
+    "parcels": 268177,
+    "partial": false,
+    "extent": [
+      -119.636,
+      33.165,
+      -118.632,
+      34.901
+    ]
+  },
+  {
+    "key": "yolo",
+    "county": "Yolo County",
+    "label": "Yolo County parcel map",
+    "url": "https://services2.arcgis.com/RETsakmE0SJfZXCd/arcgis/rest/services/Williamson_Act_Parcels_2023/FeatureServer/2",
+    "source": "Williamson Act Parcels 2023",
+    "idField": "APN",
+    "parcels": 3246,
+    "partial": true,
+    "extent": [
+      -122.422,
+      38.313,
+      -121.504,
+      38.925
+    ]
+  },
+  {
+    "key": "yuba",
+    "county": "Yuba County",
+    "label": "Yuba County parcel map",
+    "url": "https://gis.yuba.org/arcgis/rest/services/Public/Parcels_Public/MapServer/0",
+    "source": "Parcels_Public",
+    "idField": "APN",
+    "parcels": 36587,
+    "partial": false,
+    "extent": [
+      -121.636,
+      38.922,
+      -121.009,
+      39.639
+    ]
+  }
+]

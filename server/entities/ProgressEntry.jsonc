@@ -1,0 +1,23 @@
+{
+  "name": "ProgressEntry",
+  "type": "object",
+  "properties": {
+    "trackedId": { "type": "string", "title": "TrackedProject id" },
+    "date": { "type": "string", "format": "date" },
+    "convertedSqft": { "type": "number", "title": "Total lawn converted so far (cumulative)" },
+    "plantsInstalled": { "type": "number", "title": "Plants added in this update" },
+    "spentUsd": { "type": "number", "title": "Money spent in this update" },
+    "rebateUsd": { "type": "number", "title": "Rebates received in this update" },
+    "waterGallons": { "type": "number", "title": "Water used in the billing period" },
+    "waterDays": { "type": "number", "title": "Length of that billing period in days" },
+    "notes": { "type": "string" },
+    "photoUris": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["trackedId", "date"],
+  "rls": {
+    "read": { "$or": [{ "created_by_id": "{{user.id}}" }, { "user_condition": { "role": "admin" } }] },
+    "create": { "created_by_id": "{{user.id}}" },
+    "update": { "$or": [{ "created_by_id": "{{user.id}}" }, { "user_condition": { "role": "admin" } }] },
+    "delete": { "$or": [{ "created_by_id": "{{user.id}}" }, { "user_condition": { "role": "admin" } }] }
+  }
+}

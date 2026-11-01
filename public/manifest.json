@@ -1,0 +1,9 @@
+{
+  "name": "EcoEstate",
+  "short_name": "EcoEstate",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f5ef",
+  "theme_color": "#1f3a2c",
+  "icons": [{ "src": "/logo.png", "sizes": "512x512", "type": "image/png" }]
+}
