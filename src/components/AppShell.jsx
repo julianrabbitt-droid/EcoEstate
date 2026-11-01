@@ -11,19 +11,21 @@ export default function AppShell() {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur-md">
-        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-5">
-          <Link to="/" className="group flex items-center gap-2.5">
+        {/* Phones: logo and account on top, the menu on its own scrollable row
+            beneath. Wider screens: one row. */}
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-y-1 px-5 py-2 md:h-16 md:flex-nowrap md:py-0">
+          <Link to="/" className="group order-1 flex shrink-0 items-center gap-2.5">
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition group-hover:scale-105">
               <Sprout className="h-4 w-4" strokeWidth={1.8} />
             </span>
             <span className="font-display text-[19px] tracking-tight">EcoEstate</span>
           </Link>
-          <nav className="flex items-center gap-1 text-sm">
+          <nav className="order-3 -mx-2 flex w-[calc(100%+1rem)] items-center gap-1 overflow-x-auto px-1 pb-1 text-sm md:order-2 md:mx-0 md:w-auto md:overflow-visible md:p-0" style={{ scrollbarWidth: 'none' }}>
             <NavLink
               to="/"
               className={({ isActive }) =>
                 cn(
-                  'rounded-full px-3.5 py-2 transition',
+                  'shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 transition',
                   isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'
                 )
               }
@@ -34,7 +36,7 @@ export default function AppShell() {
               to="/projects"
               className={({ isActive }) =>
                 cn(
-                  'rounded-full px-3.5 py-2 transition',
+                  'shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 transition',
                   isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'
                 )
               }
@@ -45,7 +47,7 @@ export default function AppShell() {
               to="/my-projects"
               className={({ isActive }) =>
                 cn(
-                  'rounded-full px-3.5 py-2 transition',
+                  'shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 transition',
                   isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'
                 )
               }
@@ -56,7 +58,7 @@ export default function AppShell() {
               to="/social"
               className={({ isActive }) =>
                 cn(
-                  'rounded-full px-3.5 py-2 transition',
+                  'shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 transition',
                   isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'
                 )
               }
@@ -69,7 +71,9 @@ export default function AppShell() {
               </span>
             )}
           </nav>
-          <AccountMenu />
+          <div className="order-2 md:order-3">
+            <AccountMenu />
+          </div>
         </div>
       </header>
 
