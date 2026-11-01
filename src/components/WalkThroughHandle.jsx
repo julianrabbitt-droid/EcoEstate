@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import { disposeObject } from '@/lib/disposeThree';
 
 // A small 3D person figure that lives in the toolbar next to the buttons.
-// Drag it onto the 3D property to become the person and enter first-person there.
-export default function WalkThroughHandle({ size = 50 }) {
+// Drag it onto the 3D property to become the person and enter first-person there,
+// or tap/click it (touch has no HTML5 drag) to walk in from the last spot.
+export default function WalkThroughHandle({ size = 50, onActivate }) {
   const mountRef = useRef(null);
 
   useEffect(() => {
@@ -109,7 +111,9 @@ export default function WalkThroughHandle({ size = 50 }) {
 
     return () => {
       cancelAnimationFrame(frame);
+      disposeObject(scene);
       renderer.dispose();
+      renderer.forceContextLoss();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };
   }, [size]);
@@ -118,14 +122,18 @@ export default function WalkThroughHandle({ size = 50 }) {
     <div
       draggable
       onDragStart={(e) => { e.dataTransfer.setData('text/plain', 'person'); e.dataTransfer.effectAllowed = 'copy'; }}
+      role="button"
+      tabIndex={0}
+      onClick={() => onActivate?.()}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onActivate?.(); } }}
       className="flex items-center gap-2 rounded-full border border-border bg-card pl-1.5 pr-3 py-1 cursor-grab active:cursor-grabbing hover:border-primary/40 transition"
-      title="Drag onto the property to walk it"
+      title="Tap to walk through, or drag onto the property to start at a spot"
     >
       <div ref={mountRef} style={{ width: size, height: size }} className="shrink-0" />
       <span className="text-[11px] leading-tight text-muted-foreground">
-        Drag me onto
+        Tap to walk, or
         <br />
-        the property
+        drag onto the lot
       </span>
     </div>
   );

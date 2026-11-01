@@ -21,6 +21,7 @@ export default function PostCard({ post, me, onDelete }) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const isMine = me?.id && post.created_by_id === me.id;
 
   useEffect(() => {
@@ -75,12 +76,14 @@ export default function PostCard({ post, me, onDelete }) {
 
   const remove = async () => {
     if (deleting) return;
+    if (!window.confirm('Delete this post? Its comments will no longer be shown.')) return;
     setDeleting(true);
+    setDeleteError('');
     try {
       await base44.entities.Post.delete(post.id);
       onDelete?.(post.id);
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setDeleteError(e?.message || 'Couldn’t delete this post. Please try again.');
     } finally {
       setDeleting(false);
     }
@@ -105,6 +108,8 @@ export default function PostCard({ post, me, onDelete }) {
           </button>
         )}
       </div>
+
+      {deleteError && <p role="alert" className="px-5 pt-2 text-[11.5px] text-destructive">{deleteError}</p>}
 
       {post.body && <p className="px-5 pt-2 text-[13px] leading-relaxed text-foreground/90">{post.body}</p>}
 

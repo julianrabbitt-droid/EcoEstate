@@ -36,13 +36,13 @@ export async function runFunction(name, req, res) {
   // Return links for checkout come from this server-owned value, never the caller.
   headers.set('x-base44-app-url', APP_URL);
   const hasBody = !['GET', 'HEAD'].includes(req.method) && req.body?.length;
-  const request = new Request(`${APP_URL}${req.originalUrl}`, {
-    method: req.method,
-    headers,
-    body: hasBody ? req.body : undefined,
-  });
 
   try {
+    const request = new Request(`${APP_URL}${req.originalUrl}`, {
+      method: req.method,
+      headers,
+      body: hasBody ? req.body : undefined,
+    });
     const response = await handler(request);
     res.status(response.status);
     response.headers.forEach((v, k) => res.setHeader(k, v));

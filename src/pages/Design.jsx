@@ -14,6 +14,7 @@ import { autoDesign, clearanceOf, fitDesignToArea, money, mulchPerPlant, mulchTo
 import { updateProject } from '@/lib/projectStore';
 import { useProject } from '@/hooks/useProjects';
 import { usePlantPhotos } from '@/hooks/usePlantPhotos';
+import { useAutosave } from '@/hooks/useAutosave';
 
 export default function Design() {
   const { id } = useParams();
@@ -23,6 +24,8 @@ export default function Design() {
   const [entries, setEntries] = useState([]);
   const [goals, setGoals] = useState([]);
   const [arrangement, setArrangement] = useState(null);
+  // Edits save as they happen, so leaving via StepNav or the header keeps them.
+  const autosave = useAutosave(entries, (design) => updateProject(id, { design, nativeListAdjusted: false }));
 
   useEffect(() => {
     if (!project) return;
@@ -80,6 +83,7 @@ export default function Design() {
   const mulch = mulchTotals(entries);
 
   const togglePlant = (speciesId) => {
+    autosave.markDirty();
     setEntries((prev) =>
       prev.some((entry) => entry.speciesId === speciesId)
         ? prev.filter((entry) => entry.speciesId !== speciesId)
@@ -88,6 +92,7 @@ export default function Design() {
   };
 
   const setQuantity = (speciesId, delta) => {
+    autosave.markDirty();
     setEntries((prev) =>
       prev
         .map((entry) =>
@@ -98,6 +103,7 @@ export default function Design() {
   };
 
   const save = async () => {
+    autosave.cancel();
     const next = await updateProject(id, { design: entries, nativeListAdjusted: false });
     navigate(`/project/${id}/impact`, { state: { project: next } });
   };
@@ -107,6 +113,7 @@ export default function Design() {
       speciesId: s.speciesId,
       quantity: quantityForShare(s.share, s.speciesId, turfSqft),
     }));
+    autosave.markDirty();
     setEntries(picks);
     setArrangement(arr.id);
   };
@@ -155,7 +162,10 @@ export default function Design() {
           {entries.length > 0 && (
             <button
               type="button"
-              onClick={() => setEntries([])}
+              onClick={() => {
+                autosave.markDirty();
+                setEntries([]);
+              }}
               className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[11px] text-muted-foreground transition hover:border-destructive/40 hover:text-destructive"
             >
               <Trash2 className="h-3 w-3" />

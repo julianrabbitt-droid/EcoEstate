@@ -20,6 +20,7 @@ export default async function(req) {
 
     const list = plants
       .slice(0, 50)
+      .filter((p) => p && typeof p === 'object')
       .map((p) => ({ id: String(p.id), title: wikiTitle(p.scientific) }))
       .filter((p) => p.id && p.title);
     if (!list.length) return Response.json({ photos: {} });

@@ -26,10 +26,13 @@ export default function Impact() {
   const { project, loading } = useProject(id, location.state);
   const [fin, setFin] = useState(null);
   const [env, setEnv] = useState(null);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!project) return;
     let cancelled = false;
+    setError('');
     const design = project.design || [];
     const entries = design
       .map((e) => {
@@ -42,12 +45,15 @@ export default function Impact() {
       .invoke('computeLandscape', { turfSqft: project.breakdown?.turf || 0, entries, catalog, defaultPalette: defaultMixForProject(project) })
       .then(({ data }) => {
         if (cancelled) return;
-        setFin(data?.financials || null);
-        setEnv(data?.environmental || null);
+        if (!data?.financials || !data?.environmental) throw new Error('The numbers came back empty.');
+        setFin(data.financials);
+        setEnv(data.environmental);
       })
-      .catch(() => {});
+      .catch((e) => {
+        if (!cancelled) setError(e?.message || 'Couldn’t crunch the numbers.');
+      });
     return () => { cancelled = true; };
-  }, [project]);
+  }, [project, attempt]);
 
   if (loading) {
     return (
@@ -64,6 +70,18 @@ export default function Impact() {
         <h1 className="font-display text-3xl">This property scan is gone</h1>
         <Button asChild className="mt-6 rounded-full">
           <Link to="/">Scan a property</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  if (error && (!fin || !env)) {
+    return (
+      <div className="mx-auto max-w-md px-5 py-24 text-center">
+        <p className="text-[14px] font-medium">We couldn’t crunch the numbers</p>
+        <p className="mt-1.5 text-[12.5px] text-muted-foreground">{error}</p>
+        <Button onClick={() => setAttempt((n) => n + 1)} variant="outline" className="mt-5 rounded-full">
+          Retry
         </Button>
       </div>
     );

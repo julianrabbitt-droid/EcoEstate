@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { records } from './db.js';
-import { applyUpdate, matches } from './query.js';
+import { applyUpdate, matches, sortRecords } from './query.js';
 
 function parseJsonc(text) {
   const noComments = text.replace(/("(?:\\.|[^"\\])*")|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, (m, str) => str ?? '');
@@ -55,6 +55,23 @@ function defaultsFor(schema) {
   return out;
 }
 
+// Fields some callers can't see (a field-level read rule). Filtering or sorting
+// on them must only use what the caller can see, or results would leak them.
+function hiddenFieldNames(schema) {
+  return Object.entries(schema?.properties || {})
+    .filter(([, prop]) => prop.rls?.read)
+    .map(([k]) => k);
+}
+
+function mentionsField(query, names) {
+  if (!names.length || !query || typeof query !== 'object') return false;
+  return Object.entries(query).some(([k, v]) => {
+    const field = (k.startsWith('data.') ? k.slice(5) : k).split('.')[0];
+    if (names.includes(field)) return true;
+    return Array.isArray(v) ? v.some((q) => mentionsField(q, names)) : false;
+  });
+}
+
 function hideFields(schema, record, user) {
   const out = { ...record };
   for (const [k, prop] of Object.entries(schema?.properties || {})) {
@@ -72,11 +89,17 @@ function checkRequired(schema, data) {
 // Pro members: an active Pro purchase or a free student unlock (both
 // written only by the server), or an admin.
 const MEMBER_PRODUCTS = new Set(['premium', '3d_view']);
+// A test-mode Stripe purchase (made against the shared database during local
+// development) only counts while the server itself uses a test key.
+export function purchaseCounts(p) {
+  return p?.livemode !== false || !String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_live_');
+}
+
 export async function isPremiumMember(user) {
   if (!user) return false;
   if (user.role === 'admin') return true;
   const paid = await records.find('Base44Purchase', { appUserId: user.id, status: 'paid' });
-  return paid.some((p) => MEMBER_PRODUCTS.has(p.productId));
+  return paid.some((p) => MEMBER_PRODUCTS.has(p.productId) && purchaseCounts(p));
 }
 
 // Returns an entity API for one caller. `service: true` bypasses access rules,
@@ -94,11 +117,30 @@ export function entityService(name, user, { service = false } = {}) {
     premiumChecked = true;
   };
 
+  const requireListAccess = async () => {
+    if (schema.premiumList && !service && !(await isPremiumMember(user))) {
+      throw new HttpError(402, 'Saving and browsing your properties is part of EcoEstate Pro.');
+    }
+  };
+  // "updatableFields" limits what non-admins may change (e.g. a message's
+  // recipient may only mark it read, not rewrite or re-address it).
+  const limitUpdate = (data) => {
+    if (service || user?.role === 'admin' || !schema.updatableFields) return data;
+    return Object.fromEntries(Object.entries(data || {}).filter(([k]) => schema.updatableFields.includes(k)));
+  };
+
   const api = {
     async filter(query = {}, { sort, limit, skip } = {}) {
       await requirePremium();
-      if (schema.premiumList && !service && !(await isPremiumMember(user))) {
-        throw new HttpError(402, 'Saving and browsing your properties is part of EcoEstate Pro.');
+      await requireListAccess();
+      const hidden = service ? [] : hiddenFieldNames(schema);
+      const sortKey = String(sort || '').replace(/^-/, '');
+      if (mentionsField(query, hidden) || hidden.includes(sortKey)) {
+        // Match and sort on what this caller can see, not on hidden values.
+        const visible = (await records.find(name, {})).filter((r) => can('read', r)).map(view).filter((r) => matches(r, query));
+        const sorted = sortRecords(visible, sort);
+        const start = Number(skip) || 0;
+        return sorted.slice(start, limit ? start + Number(limit) : undefined);
       }
       const visible = (await records.find(name, query, { sort })).filter((r) => can('read', r));
       const start = Number(skip) || 0;
@@ -127,12 +169,13 @@ export function entityService(name, user, { service = false } = {}) {
       const r = await records.get(name, id);
       if (!r || !can('read', r)) throw new HttpError(404, `${name} not found`);
       if (!can('update', r)) throw new HttpError(403, 'You do not have permission to update this record');
-      return view(await records.update(name, id, data));
+      return view(await records.update(name, id, limitUpdate(data)));
     },
     async updateMany(query = {}, update = {}) {
       await requirePremium();
-      const targets = (await records.find(name, query)).filter((r) => can('read', r) && can('update', r));
-      for (const r of targets) await records.update(name, r.id, applyUpdate(r, update));
+      await requireListAccess();
+      const targets = (await records.find(name, query)).filter((r) => can('read', r) && can('update', r) && matches(view(r), query));
+      for (const r of targets) await records.update(name, r.id, limitUpdate(applyUpdate(r, update)));
       return { updated: targets.length };
     },
     async delete(id) {
@@ -145,7 +188,8 @@ export function entityService(name, user, { service = false } = {}) {
     },
     async deleteMany(query = {}) {
       await requirePremium();
-      const targets = (await records.find(name, query)).filter((r) => can('read', r) && can('delete', r));
+      await requireListAccess();
+      const targets = (await records.find(name, query)).filter((r) => can('read', r) && can('delete', r) && matches(view(r), query));
       for (const r of targets) await records.delete(name, r.id);
       return { deleted: targets.length };
     },

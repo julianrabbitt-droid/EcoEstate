@@ -74,7 +74,10 @@ function handleUpload(isPublic) {
 filesRouter.post('/public', ...handleUpload(true));
 filesRouter.post('/private', ...handleUpload(false));
 
+// Signed links are only handed to signed-in users (private files belong to
+// signed-in uploaders and the Pro features that show them).
 filesRouter.post('/signed-url', express.json(), (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
   try {
     res.json({ signed_url: signedUrl(req.body?.file_uri, req.body?.expires_in) });
   } catch (err) {
@@ -83,9 +86,13 @@ filesRouter.post('/signed-url', express.json(), (req, res) => {
 });
 
 filesRouter.get('/public/:id', async (req, res) => {
-  const [row] = await sql`SELECT * FROM files WHERE id = ${req.params.id} AND is_public`;
-  if (!row) return res.status(404).end();
-  await sendStored(res, row).catch(() => res.status(502).end());
+  try {
+    const [row] = await sql`SELECT * FROM files WHERE id = ${req.params.id} AND is_public`;
+    if (!row) return res.status(404).end();
+    await sendStored(res, row);
+  } catch {
+    if (!res.headersSent) res.status(502).end();
+  }
 });
 
 filesRouter.get('/private/:id', async (req, res) => {
@@ -93,9 +100,15 @@ filesRouter.get('/private/:id', async (req, res) => {
   const exp = Number(req.query.exp);
   const sig = String(req.query.sig || '');
   const expected = sign(id, exp);
-  const valid =
-    exp > Date.now() / 1000 && sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
-  const [row] = valid ? await sql`SELECT * FROM files WHERE id = ${id}` : [];
-  if (!row) return res.status(403).end();
-  await sendStored(res, row).catch(() => res.status(502).end());
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  // Compare byte lengths: timingSafeEqual throws on buffers of different sizes.
+  const valid = exp > Date.now() / 1000 && a.length === b.length && crypto.timingSafeEqual(a, b);
+  try {
+    const [row] = valid ? await sql`SELECT * FROM files WHERE id = ${id}` : [];
+    if (!row) return res.status(403).end();
+    await sendStored(res, row);
+  } catch {
+    if (!res.headersSent) res.status(502).end();
+  }
 });

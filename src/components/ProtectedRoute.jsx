@@ -29,6 +29,23 @@ function AccountUnavailable() {
   );
 }
 
+function SettingsUnavailable() {
+  const { checkAppState } = useAuth();
+  return (
+    <div className="mx-auto max-w-md px-5 py-24 text-center">
+      <h1 className="font-display text-3xl tracking-tight">EcoEstate didn’t load</h1>
+      <p className="mt-3 text-[13.5px] leading-relaxed text-muted-foreground">
+        We couldn’t reach the server just now. Check your connection and try again.
+      </p>
+      <div className="mt-6 flex justify-center">
+        <button type="button" onClick={() => checkAppState()} className="rounded-full bg-primary px-4 py-2 text-[13px] text-primary-foreground">
+          Try again
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthenticatedElement }) {
   const { isAuthenticated, isLoadingAuth, authChecked, authError, checkUserAuth } = useAuth();
 
@@ -48,6 +65,9 @@ export default function ProtectedRoute({ fallback = <DefaultFallback />, unauthe
     }
     if (authError.type === 'account_unavailable') {
       return <AccountUnavailable />;
+    }
+    if (authError.type === 'settings_unavailable') {
+      return <SettingsUnavailable />;
     }
     return unauthenticatedElement;
   }

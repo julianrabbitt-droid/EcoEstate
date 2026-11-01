@@ -6,6 +6,10 @@
       "type": "string",
       "description": "Stripe Checkout Session id (Wix checkout id on older records); correlation key."
     },
+    "livemode": {
+      "type": "boolean",
+      "description": "False for a Stripe test-mode purchase; those don't count on the live site."
+    },
     "stripeCustomerId": {
       "type": "string"
     },

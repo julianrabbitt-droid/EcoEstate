@@ -14,6 +14,25 @@ export const REFERRAL_DISCOUNT_USD = 5;
 const PRICE_LOOKUP_KEY = 'ecoestate_premium_monthly_10';
 const COUPON_ID = 'ECOESTATE_REFERRAL_5_OFF';
 
+// Local development uses a test key against the same database as the live
+// site, so Stripe ids and purchases are kept apart by mode: a test customer id
+// never reaches a live checkout, and a test purchase never unlocks Pro live.
+export const stripeLive = () => String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_live_');
+const customerField = () => (stripeLive() ? 'stripeCustomerId' : 'stripeTestCustomerId');
+
+// Creates a record that a unique index keeps to one per key; when a parallel
+// request created it first, returns that one instead.
+async function createOnce(entity, key: Record<string, unknown>, data: Record<string, unknown>) {
+  try {
+    return await entity.create(data);
+  } catch (e: any) {
+    if (e?.code !== '23505') throw e;
+    const found = (await entity.filter(key, { limit: 1 })).items?.[0];
+    if (!found) throw e;
+    return found;
+  }
+}
+
 let stripe: Stripe | null = null;
 export function stripeClient(): Stripe | null {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -64,23 +83,25 @@ function newCode() {
   return out;
 }
 
-// The user's billing account (Stripe customer + referral code), created on demand.
+// The user's billing account (Stripe customer + referral code), created on
+// demand. Its stripeCustomerId is the customer for the current key's mode.
 export async function billingAccount(base44, user, s: Stripe | null = null) {
   const accounts = base44.asServiceRole.entities.BillingAccount;
   let account = (await accounts.filter({ appUserId: user.id }, { limit: 1 })).items?.[0] ?? null;
   if (!account) {
     let code = newCode();
     while ((await accounts.filter({ referralCode: code }, { limit: 1 })).items?.length) code = newCode();
-    account = await accounts.create({ appUserId: user.id, referralCode: code });
+    account = await createOnce(accounts, { appUserId: user.id }, { appUserId: user.id, referralCode: code });
   }
-  if (s && !account.stripeCustomerId) {
+  const field = customerField();
+  if (s && !account[field]) {
     const customer = await s.customers.create(
       { email: user.email, name: user.full_name || undefined, metadata: { appUserId: user.id } },
       { idempotencyKey: `customer-${user.id}` },
     );
-    account = await accounts.update(account.id, { stripeCustomerId: customer.id });
+    account = await accounts.update(account.id, { [field]: customer.id });
   }
-  return account;
+  return { ...account, stripeCustomerId: account[field] };
 }
 
 export async function referrerForCode(base44, code: unknown, user) {
@@ -102,11 +123,16 @@ export async function fulfillCheckout(base44, s: Stripe, session: Stripe.Checkou
   const purchases = base44.asServiceRole.entities.Base44Purchase;
   const subscriptionId = typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
   const existing = (await purchases.filter({ checkoutSessionId: session.id }, { limit: 1 })).items?.[0];
+  // The subscription may already have been canceled (events can arrive late or
+  // out of order), so record its current state rather than assuming it's live.
+  const subscription = subscriptionId && !existing ? await s.subscriptions.retrieve(subscriptionId) : null;
+  const live = !subscription || ['active', 'trialing', 'past_due'].includes(subscription.status);
   const purchase =
     existing ??
-    (await purchases.create({
+    (await createOnce(purchases, { checkoutSessionId: session.id }, {
       checkoutSessionId: session.id,
-      status: 'paid',
+      status: live ? 'paid' : 'canceled',
+      livemode: session.livemode,
       appUserId,
       buyerEmail: session.customer_details?.email || '',
       productId: 'premium',
@@ -120,18 +146,24 @@ export async function fulfillCheckout(base44, s: Stripe, session: Stripe.Checkou
       paidAt: new Date().toISOString(),
     }));
 
+  // Only a friend who actually paid earns the referrer a month (a first
+  // invoice paid entirely by credit doesn't count).
   const referrerId = session.metadata?.referrerId;
-  if (referrerId && referrerId !== appUserId) await rewardReferrer(base44, s, referrerId, appUserId);
+  if (referrerId && referrerId !== appUserId && (session.amount_total ?? 0) > 0) await rewardReferrer(base44, s, referrerId, appUserId);
   return purchase;
 }
 
 async function rewardReferrer(base44, s: Stripe, referrerId: string, refereeId: string) {
   const referrals = base44.asServiceRole.entities.Referral;
-  if ((await referrals.filter({ refereeId }, { limit: 1 })).items?.length) return; // one reward per friend
   const referrer: any = await users.byId(referrerId);
   const referee: any = await users.byId(refereeId);
   const record = { referrerId, refereeId, refereeFirstName: String(referee?.full_name || '').split(' ')[0] || 'A friend' };
-  if (!referrer) return referrals.create({ ...record, status: 'failed' });
+  // One row per friend (a unique index enforces it); a failed reward is retried
+  // the next time this checkout is confirmed or its webhook is redelivered.
+  let row = (await referrals.filter({ refereeId }, { limit: 1 })).items?.[0];
+  if (row?.status === 'rewarded') return;
+  row ??= await createOnce(referrals, { refereeId }, { ...record, status: 'failed' });
+  if (row.status === 'rewarded' || !referrer) return;
   try {
     const account = await billingAccount(base44, referrer, s);
     await s.customers.createBalanceTransaction(
@@ -139,10 +171,9 @@ async function rewardReferrer(base44, s: Stripe, referrerId: string, refereeId: 
       { amount: -PREMIUM_USD * 100, currency: 'usd', description: 'EcoEstate referral: 1 free month' },
       { idempotencyKey: `referral-${refereeId}` },
     );
-    await referrals.create({ ...record, status: 'rewarded', creditUsd: PREMIUM_USD, rewardedAt: new Date().toISOString() });
+    await referrals.update(row.id, { status: 'rewarded', creditUsd: PREMIUM_USD, rewardedAt: new Date().toISOString() });
   } catch (e) {
     console.error('referral reward failed', e?.message);
-    await referrals.create({ ...record, status: 'failed' });
   }
 }
 

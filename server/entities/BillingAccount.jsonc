@@ -6,6 +6,8 @@
   "properties": {
     "appUserId": { "type": "string" },
     "stripeCustomerId": { "type": "string" },
+    // Customer in Stripe test mode (local development shares this database).
+    "stripeTestCustomerId": { "type": "string" },
     "referralCode": { "type": "string" }
   },
   "required": ["appUserId"],

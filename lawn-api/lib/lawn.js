@@ -38,6 +38,7 @@ export const SETTINGS = {
   roughPatchShare: 0.6, // share of nearby pixels that must be rough
   maxPixels: 4_000_000, // grid size limit; larger properties are measured at a coarser resolution
   maxResM: 2.4, // coarsest resolution allowed (~23 km² at maxPixels); beyond this the property is refused
+  minBoxFill: 0.02, // a property needing a coarser grid must cover at least this share of its bounding box (no far-apart slivers)
   bridgeM: 1.5, // join lawn pieces split by gaps narrower than ~2× this (paths, edging), never across trees or roofs
   linkGapM: 3, // link large lawn pieces across gaps up to ~2× this (sidewalks, paths) into one region
   linkMinSqft: 2000, // only pieces at least this big are linked (keeps home lawns apart across driveways)
@@ -97,6 +98,11 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   const nativeRes = items[0].gsd || 0.6;
   let grid = makeGrid(items[0].epsg, nativeRes, box);
   if (grid.w * grid.h > SETTINGS.maxPixels) {
+    // Pieces far apart (or a long diagonal sliver) would make a full-size grid
+    // of almost nothing but empty space.
+    if (turfArea(parcelGeometry) < SETTINGS.minBoxFill * grid.w * grid.h * nativeRes * nativeRes) {
+      throw new ApiError(400, 'parcel_too_spread', 'The parts of this property line are too far apart to measure together. Outline each part separately.');
+    }
     const res = Math.ceil(nativeRes * Math.sqrt((grid.w * grid.h) / SETTINGS.maxPixels) * 10) / 10;
     if (res > SETTINGS.maxResM) {
       throw new ApiError(422, 'parcel_too_large', 'This property is too large to measure automatically. Outline the lawn by hand instead.');
@@ -311,6 +317,8 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     templatesUsed,
     // Mapped shapes weren't ready in time; callers shouldn't cache this result.
     templatesPending: templates === null,
+    // Some canopy tiles couldn't be loaded, so trees there weren't removed; don't cache either.
+    canopyIncomplete: canopy.failedTiles > 0,
     buildings: buildingLayer,
     trees: detectTrees(grid, canopy, onParcelNotRoof),
     paths: layers.paths,

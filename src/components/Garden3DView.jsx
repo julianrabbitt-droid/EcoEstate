@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Leaf, Loader2, Move, ScanEye, Sun, Wand2 } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Leaf, Loader2, Move, ScanEye, Sun, Wand2 } from 'lucide-react';
 import WalkThroughHandle from '@/components/WalkThroughHandle';
 import WalkSpeedControl from '@/components/WalkSpeedControl';
 import WalkMiniMap from '@/components/WalkMiniMap';
@@ -10,14 +10,21 @@ import { plantById } from '@/data/nativePlants';
 import { plantsForProject } from '@/data/regions';
 import { base44 } from '@/api/base44Client';
 import { ARRANGEMENTS } from '@/data/arrangements';
+import { disposeObject } from '@/lib/disposeThree';
 import { arrangePlants, prepareBuildings, prepareLot, preparePolys, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
 
+// Module-level geometries, materials and textures are reused across scene
+// rebuilds and remounts; they're tracked here so disposal skips them.
+const SHARED = new WeakSet();
+const shared = (r) => { SHARED.add(r); return r; };
+const isShared = (r) => SHARED.has(r);
+
 const GEO = {
-  ico1: new THREE.IcosahedronGeometry(1, 1),
-  cyl: new THREE.CylinderGeometry(1, 1, 1, 8),
-  cone: new THREE.ConeGeometry(1, 1, 6),
-  ring: new THREE.RingGeometry(0.85, 1, 28),
-  sphere: new THREE.SphereGeometry(1, 10, 8),
+  ico1: shared(new THREE.IcosahedronGeometry(1, 1)),
+  cyl: shared(new THREE.CylinderGeometry(1, 1, 1, 8)),
+  cone: shared(new THREE.ConeGeometry(1, 1, 6)),
+  ring: shared(new THREE.RingGeometry(0.85, 1, 28)),
+  sphere: shared(new THREE.SphereGeometry(1, 10, 8)),
 };
 
 // Raised mulch slab geometry: a 0.35 ft mound with a soft rounded top edge.
@@ -28,7 +35,7 @@ function canvasTexture(size, paint) {
   const c = document.createElement('canvas');
   c.width = c.height = size;
   paint(c.getContext('2d'), size);
-  const tex = new THREE.CanvasTexture(c);
+  const tex = shared(new THREE.CanvasTexture(c)); // only used for the cached textures below
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = 4;
   return tex;
@@ -151,7 +158,7 @@ function skyTexture() {
   g.addColorStop(1, '#eef2f4');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 4, 512);
-  _sky = new THREE.CanvasTexture(c);
+  _sky = shared(new THREE.CanvasTexture(c));
   _sky.colorSpace = THREE.SRGBColorSpace;
   return _sky;
 }
@@ -284,9 +291,9 @@ function plantMaterials(plant, mature) {
   const key = plant.id + ':' + (mature ? 'm' : 'y');
   if (_matCache.has(key)) return _matCache.get(key);
   const mats = {
-    leaf: new THREE.MeshStandardMaterial({ color: new THREE.Color(plant.color), roughness: 0.85, flatShading: true }),
-    accent: new THREE.MeshStandardMaterial({ color: new THREE.Color(plant.accent || plant.color), roughness: 0.7, flatShading: true }),
-    trunk: new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.95 }),
+    leaf: shared(new THREE.MeshStandardMaterial({ color: new THREE.Color(plant.color), roughness: 0.85, flatShading: true })),
+    accent: shared(new THREE.MeshStandardMaterial({ color: new THREE.Color(plant.accent || plant.color), roughness: 0.7, flatShading: true })),
+    trunk: shared(new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.95 })),
   };
   _matCache.set(key, mats);
   return mats;
@@ -418,6 +425,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   useEffect(() => { walkSpeedRef.current = walkSpeed; }, [walkSpeed]);
   const walkRef = useRef({ keys: new Set(), yaw: 0, pitch: 0, active: false, last: 0 });
   const personPosRef = useRef(null);
+  // Plants moved by hand, keyed `${speciesId}:${nth of that species}` → lot
+  // feet {x, y}, so a rebuild (e.g. maturity toggle) keeps them. Component
+  // state only; it isn't saved with the project.
+  const movedRef = useRef({ polys: null, pattern: null, map: new Map() });
   const surroundingsRef = useRef(null); // the latest satellite-surroundings request; older ones are dropped
   const [custom, setCustom] = useState(null);
   const [prompt, setPrompt] = useState('');
@@ -644,7 +655,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       ro.disconnect();
       controls.removeEventListener('change', markDirty);
       controls.dispose();
+      surroundingsRef.current = null; // drop a satellite load still in flight
+      disposeObject(scene, isShared); // the sky background is cached (shared), so it stays
       renderer.dispose();
+      renderer.forceContextLoss();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };
   }, [maxDim]);
@@ -655,7 +669,11 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     if (!three) return;
     const { scene, plantGroup, ring } = three;
 
-    scene.children.filter((c) => c.userData && (c.userData.bed || c.userData.ground || c.userData.building || c.userData.path || c.userData.existingTree)).forEach((c) => scene.remove(c));
+    scene.children.filter((c) => c.userData && (c.userData.bed || c.userData.ground || c.userData.building || c.userData.path || c.userData.existingTree)).forEach((c) => {
+      scene.remove(c);
+      disposeObject(c, isShared);
+    });
+    disposeObject(plantGroup, isShared); // plants use shared geometry/materials; this is a no-op unless that changes
     plantGroup.clear();
     plantMeshesRef.current = [];
     bedMeshesRef.current = [];
@@ -904,10 +922,20 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       scene.add(mesh);
     });
 
+    // A different lawn outline or arrangement pattern starts plants fresh.
+    if (movedRef.current.polys !== polys || movedRef.current.pattern !== pattern) {
+      movedRef.current = { polys, pattern, map: new Map() };
+    }
+    const moved = movedRef.current.map;
+    const nth = new Map();
     layout.forEach((p, i) => {
       const mesh = buildPlant(p.plant, mature);
-      mesh.position.set(p.x - cx, MULCH_Y, -(p.y - cy));
-      mesh.userData = { index: i, speciesId: p.speciesId, plantId: p.plant.id };
+      const k = nth.get(p.speciesId) || 0;
+      nth.set(p.speciesId, k + 1);
+      const moveKey = `${p.speciesId}:${k}`;
+      const at = moved.get(moveKey) || p;
+      mesh.position.set(at.x - cx, MULCH_Y, -(at.y - cy));
+      mesh.userData = { index: i, speciesId: p.speciesId, plantId: p.plant.id, moveKey, cx, cy };
       plantGroup.add(mesh);
       mesh.traverse((o) => {
         if (o.isMesh) {
@@ -918,7 +946,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     });
 
     three.markDirty?.();
-  }, [layout, polys, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin]);
+  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin]);
 
   useEffect(() => {
     moveModeRef.current = moveMode;
@@ -1002,6 +1030,9 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     };
     const onUp = (e) => {
       if (draggingRef.current) {
+        const plant = draggingRef.current;
+        const { moveKey, cx: pcx, cy: pcy } = plant.userData;
+        if (moveKey) movedRef.current.map.set(moveKey, { x: plant.position.x + pcx, y: -plant.position.z + pcy });
         draggingRef.current = null;
         el.style.cursor = moveModeRef.current ? 'pointer' : 'grab';
         return;
@@ -1038,6 +1069,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       if (!w.active) return;
       w.active = false;
       w.keys.clear();
+      personPosRef.current = { x: camera.position.x, z: camera.position.z }; // tap-to-walk resumes here
       el.style.cursor = 'pointer';
       focusOnRef.current?.(-1);
       return;
@@ -1106,6 +1138,28 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       setWalkMode(true);
     }
   };
+
+  // On-screen arrows (touch has no keyboard) drive the same keys as WASD.
+  const pressKey = (k, down) => {
+    const w = walkRef.current;
+    if (down) w.keys.add(k);
+    else w.keys.delete(k);
+  };
+  const padButton = (k, Icon, label, cls) => (
+    <button
+      key={k}
+      type="button"
+      aria-label={label}
+      onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture?.(e.pointerId); pressKey(k, true); }}
+      onPointerUp={() => pressKey(k, false)}
+      onPointerCancel={() => pressKey(k, false)}
+      onLostPointerCapture={() => pressKey(k, false)}
+      onContextMenu={(e) => e.preventDefault()}
+      className={`flex h-10 w-10 touch-none select-none items-center justify-center rounded-full bg-background/75 text-foreground shadow backdrop-blur active:bg-primary active:text-primary-foreground ${cls}`}
+    >
+      <Icon className="h-4 w-4" />
+    </button>
+  );
 
   const legend = Object.values(
     entries.reduce((acc, e) => {
@@ -1194,7 +1248,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
               Exit walk
             </Button>
           ) : (
-            <WalkThroughHandle />
+            <WalkThroughHandle onActivate={() => setWalkMode(true)} />
           )}
         </div>
       </div>
@@ -1210,7 +1264,13 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           <>
             <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-background/60 px-3 py-1 text-[10px] leading-tight shadow backdrop-blur">
               <span className="text-foreground/90">Walk mode</span>
-              <span className="text-muted-foreground"> · WASD to move · drag to look · Exit walk to return</span>
+              <span className="text-muted-foreground"> · WASD or arrows to move · drag to look · Exit walk to return</span>
+            </div>
+            <div className="absolute bottom-3 left-3 grid grid-cols-3 gap-1">
+              {padButton('arrowup', ArrowUp, 'Walk forward', 'col-start-2')}
+              {padButton('arrowleft', ArrowLeft, 'Step left', 'col-start-1 row-start-2')}
+              {padButton('arrowdown', ArrowDown, 'Walk back', 'col-start-2 row-start-2')}
+              {padButton('arrowright', ArrowRight, 'Step right', 'col-start-3 row-start-2')}
             </div>
             <WalkSpeedControl value={walkSpeed} onChange={setWalkSpeed} />
             {origin && <WalkMiniMap project={project} getPersonGeo={getPersonGeo} />}
@@ -1221,10 +1281,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       <p className="mt-2 flex items-center gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
         <Sun className="h-3.5 w-3.5 text-accent" />
         {walkMode
-          ? 'You are standing in the garden. WASD to move, drag to look around, Exit walk to return to the plan.'
+          ? 'You are standing in the garden. WASD or the on-screen arrows to move, drag to look around, Exit walk to return to the plan.'
           : moveMode
             ? 'Click a plant and drag it to a new spot on the mulch. Hit Done moving to focus again.'
-            : 'Drag to rotate · click a lawn to focus · scroll to zoom · drag the person onto the property to walk it.'}
+            : 'Drag to rotate · click a lawn to focus · scroll to zoom · tap the person, or drag it onto the property, to walk it.'}
       </p>
 
       <div className="mt-4 border-t border-border/70 pt-3">

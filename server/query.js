@@ -1,6 +1,7 @@
 // Small MongoDB-style matcher used for entity filters and access rules.
 // Supports field equality, $or / $and / $nor, and $eq $ne $in $nin $gt $gte
-// $lt $lte $exists $regex. A "data.x" key refers to field x, as in Base44.
+// $lt $lte $exists. ($regex is not supported: callers could send patterns
+// that hang the server.) A "data.x" key refers to field x, as in Base44.
 
 function fieldValue(record, key) {
   const k = key.startsWith('data.') ? key.slice(5) : key;
@@ -22,15 +23,13 @@ function matchCondition(value, cond) {
     switch (op) {
       case '$eq': return equals(value, arg);
       case '$ne': return !equals(value, arg);
-      case '$in': return (arg || []).some((x) => equals(value, x));
-      case '$nin': return !(arg || []).some((x) => equals(value, x));
+      case '$in': return (Array.isArray(arg) ? arg : []).some((x) => equals(value, x));
+      case '$nin': return !(Array.isArray(arg) ? arg : []).some((x) => equals(value, x));
       case '$gt': return value > arg;
       case '$gte': return value >= arg;
       case '$lt': return value < arg;
       case '$lte': return value <= arg;
       case '$exists': return (value !== undefined) === !!arg;
-      case '$regex': return new RegExp(arg, cond.$options || '').test(String(value ?? ''));
-      case '$options': return true;
       default: return false;
     }
   });
@@ -39,9 +38,10 @@ function matchCondition(value, cond) {
 export function matches(record, query) {
   if (!query || typeof query !== 'object') return true;
   return Object.entries(query).every(([key, cond]) => {
-    if (key === '$or') return (cond || []).some((q) => matches(record, q));
-    if (key === '$and') return (cond || []).every((q) => matches(record, q));
-    if (key === '$nor') return !(cond || []).some((q) => matches(record, q));
+    const list = Array.isArray(cond) ? cond : [];
+    if (key === '$or') return list.some((q) => matches(record, q));
+    if (key === '$and') return list.every((q) => matches(record, q));
+    if (key === '$nor') return !list.some((q) => matches(record, q));
     return matchCondition(fieldValue(record, key), cond);
   });
 }

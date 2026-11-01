@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, MapPin, Sprout, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -35,8 +36,16 @@ export default function Projects() {
 function PropertyList() {
   const { projects, loading, reload } = useProjects();
 
-  const remove = async (id) => {
-    await deleteProject(id);
+  const [deleteError, setDeleteError] = useState('');
+
+  const remove = async (project) => {
+    if (!window.confirm(`Delete ${project.address || 'this property'}? Its design and numbers will be removed.`)) return;
+    setDeleteError('');
+    try {
+      await deleteProject(project.id);
+    } catch (e) {
+      setDeleteError(e?.message || 'Couldn’t delete that property. Please try again.');
+    }
     reload();
   };
 
@@ -51,6 +60,12 @@ function PropertyList() {
           <Link to="/">Scan another property</Link>
         </Button>
       </div>
+
+      {deleteError && (
+        <p role="alert" className="mt-6 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-[12.5px] text-destructive">
+          {deleteError}
+        </p>
+      )}
 
       {loading ? (
         <div className="mt-10 flex items-center justify-center py-12">
@@ -96,8 +111,8 @@ function PropertyList() {
                 <div className="absolute right-4 top-4 flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => remove(project.id)}
-                    className="rounded-full p-1.5 text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100"
+                    onClick={() => remove(project)}
+                    className="rounded-full p-1.5 text-muted-foreground opacity-100 transition hover:text-destructive md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
                     aria-label={`Delete ${project.address}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />

@@ -5,17 +5,16 @@
 // original product id). The client paywalls are never trusted — functions and
 // the entity layer re-verify the caller's Base44Purchase records (admin-only writes).
 
+import { purchaseCounts } from '../entities.js';
+
 const PREMIUM_PRODUCT = 'premium';
 const STUDENT_PRODUCT = '3d_view';
 
 async function paidRecord(base44, userId, productId) {
   if (!userId) return null;
   try {
-    const { items } = await base44.asServiceRole.entities.Base44Purchase.filter(
-      { productId, status: 'paid', appUserId: userId },
-      { limit: 1 },
-    );
-    return Array.isArray(items) && items.length ? items[0] : null;
+    const { items } = await base44.asServiceRole.entities.Base44Purchase.filter({ productId, status: 'paid', appUserId: userId });
+    return (Array.isArray(items) ? items : []).find(purchaseCounts) ?? null;
   } catch (e) {
     console.error('entitlement check failed', productId, e?.message);
     return null;

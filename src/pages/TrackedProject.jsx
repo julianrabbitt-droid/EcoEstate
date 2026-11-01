@@ -11,7 +11,7 @@ import PlantHelp from '@/components/tracking/PlantHelp';
 import ProgressForm from '@/components/tracking/ProgressForm';
 import TrackingSettings from '@/components/tracking/TrackingSettings';
 import TrackingUpsell from '@/components/tracking/TrackingUpsell';
-import { convertedSqft } from '@/lib/trackingMath';
+import { convertedSqft, sortEntries } from '@/lib/trackingMath';
 
 // One tracked project: connected property, progress form, impact dashboard,
 // settings and the update timeline.
@@ -37,7 +37,7 @@ export default function TrackedProject() {
         ]);
         if (!alive) return;
         setTracked(t);
-        setEntries(Array.from(list.items || list));
+        setEntries(sortEntries(Array.from(list.items || list)));
       } catch {
         if (alive) setTracked(null);
       } finally {
@@ -64,7 +64,8 @@ export default function TrackedProject() {
   };
 
   const onSaved = async (entry, newestPhotoUri) => {
-    const list = [...entries, entry];
+    // A retry after a failed sync passes the same entry again; don't add it twice.
+    const list = sortEntries([...entries.filter((e) => e.id !== entry.id), entry]);
     setEntries(list);
     await syncConverted(list, !tracked.coverPhotoUri && newestPhotoUri ? { coverPhotoUri: newestPhotoUri } : {});
   };
@@ -155,8 +156,8 @@ export default function TrackedProject() {
               {scanned.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.address}
-                  {scanned.filter((o) => o.address === p.address).length > 1 && p.created_date
-                    ? ` · scanned ${new Date(p.created_date).toLocaleDateString()}`
+                  {scanned.filter((o) => o.address === p.address).length > 1 && (p.createdAt || p.created_date)
+                    ? ` · scanned ${new Date(p.createdAt || p.created_date).toLocaleDateString()}`
                     : ''}
                 </option>
               ))}

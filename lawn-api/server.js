@@ -24,6 +24,7 @@ import { estimateParcel } from './lib/estimate.js';
 import { placeById, placeByName } from './lib/places.js';
 import { detectLawn } from './lib/lawn.js';
 import { mergeLawns } from './lib/merge.js';
+import { LRU } from './lib/lru.js';
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -41,7 +42,30 @@ app.use('/v1', (req, res, next) => {
 });
 
 // Lawn detections by parcel ID, so repeat lookups don't re-read imagery. Swap for Redis/DB in production.
-const lawnCache = new Map();
+const lawnCache = new LRU(200);
+// Scans in progress by parcel ID: identical requests share one scan.
+const inFlight = new Map();
+
+// A full-size scan holds several hundred MB of rasters, so only a few run at
+// once (LAWN_MAX_CONCURRENT, default 1); a few more wait their turn and the
+// rest are turned away until one finishes.
+const MAX_CONCURRENT = Math.max(1, Math.floor(Number(process.env.LAWN_MAX_CONCURRENT)) || 1);
+const MAX_WAITING = 8;
+let running = 0;
+const waiting = []; // resolve callbacks, oldest first
+
+async function limited(task) {
+  if (running < MAX_CONCURRENT) running++;
+  else if (waiting.length >= MAX_WAITING) throw new ApiError(503, 'busy', 'The lawn scanner is busy with other properties. Try again in a minute.');
+  else await new Promise((resolve) => waiting.push(resolve)); // the finishing scan hands over its slot
+  try {
+    return await task();
+  } finally {
+    const next = waiting.shift();
+    if (next) next();
+    else running--;
+  }
+}
 
 app.get('/health', (req, res) => {
   res.json({
@@ -110,6 +134,9 @@ app.post('/v1/lawn', async (req, res) => {
   if (!geometry || !['Polygon', 'MultiPolygon'].includes(geometry.type)) {
     return fail(res, 400, 'missing_geometry', 'Send the property line as a GeoJSON Polygon in "parcel".');
   }
+  if (!validPolygons(geometry)) {
+    return fail(res, 400, 'invalid_geometry', 'The property line must be a GeoJSON Polygon of closed [longitude, latitude] rings.');
+  }
   let areaSqft;
   try {
     areaSqft = Math.round(turfArea(geometry) * SQM_TO_SQFT);
@@ -124,13 +151,32 @@ app.post('/v1/lawn', async (req, res) => {
   }
 });
 
+// Polygon / MultiPolygon coordinates: at least one polygon, each made of
+// closed rings of 4+ [lon, lat] positions within the world's bounds.
+function validPolygons(geometry) {
+  const position = (p) => Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]) && Math.abs(p[0]) <= 180 && Math.abs(p[1]) <= 90;
+  const ring = (r) => Array.isArray(r) && r.length >= 4 && r.every(position) && r[0][0] === r.at(-1)[0] && r[0][1] === r.at(-1)[1];
+  const polygon = (rings) => Array.isArray(rings) && rings.length > 0 && rings.every(ring);
+  const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+  return Array.isArray(polygons) && polygons.length > 0 && polygons.every(polygon);
+}
+
 async function lawnResponse({ address, location, parcel, parcelSource, query }) {
   let detection = lawnCache.get(parcel.id);
   const cached = Boolean(detection);
   if (!detection) {
-    detection = await detectLawn(parcel.geometry);
-    // Without the mapped lawn shapes (still downloading), let the next scan redo it.
-    if (!detection.templatesPending) lawnCache.set(parcel.id, detection);
+    if (!inFlight.has(parcel.id)) {
+      const scan = limited(() => detectLawn(parcel.geometry))
+        .then((result) => {
+          // Without the mapped lawn shapes (still downloading) or with canopy
+          // tiles that failed to load, let the next scan redo it.
+          if (!result.templatesPending && !result.canopyIncomplete) lawnCache.set(parcel.id, result);
+          return result;
+        })
+        .finally(() => inFlight.delete(parcel.id));
+      inFlight.set(parcel.id, scan);
+    }
+    detection = await inFlight.get(parcel.id);
   }
   return {
     address,
@@ -193,6 +239,7 @@ function impact(sqft, overrides = {}) {
 const UPSTREAM_MESSAGES = {
   geocoder: 'The address lookup service didn’t respond correctly. Try again shortly.',
   imagery: 'The aerial imagery service didn’t respond correctly. Try again shortly.',
+  buildings: 'The building map service didn’t respond correctly. Try again shortly.',
 };
 
 function fail(res, status, code, message, extra = {}) {

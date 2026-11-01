@@ -3,9 +3,11 @@
 // county that publishes a public parcel layer. The list lives in
 // counties.json, generated and verified by scripts/discover-counties.mjs.
 // Assessor maps are for tax purposes, not a legal survey.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import turfArea from '@turf/area';
+import { LRU } from './lru.js';
 
 const SQM_TO_SQFT = 10.7639;
 
@@ -24,13 +26,23 @@ export const COUNTIES = JSON.parse(fs.readFileSync(path.join(import.meta.dirname
   .sort((a, b) => (a.extent[2] - a.extent[0]) * (a.extent[3] - a.extent[1]) - (b.extent[2] - b.extent[0]) * (b.extent[3] - b.extent[1]));
 
 // Parcels by ID, and which parcel each looked-up point fell in.
-const parcelCache = new Map();
-const pointCache = new Map();
+const parcelCache = new LRU(500);
+const pointCache = new LRU(2000);
 const pointKey = (lat, lon) => `${lat.toFixed(5)},${lon.toFixed(5)}`;
 
 function field(attrs, name) {
   const k = Object.keys(attrs).find((key) => key.toLowerCase() === name);
   return k ? attrs[k] : undefined;
+}
+
+// The county's parcel number, else the layer's object ID. A parcel with
+// neither gets an ID from its outline, so unrelated parcels never share one
+// (and with it a cached lawn scan).
+function parcelId(county, attrs, geometry) {
+  const id = [attrs[county.idField], field(attrs, String(county.idField).toLowerCase()), field(attrs, 'apn'), field(attrs, 'ain'), field(attrs, 'objectid'), field(attrs, 'fid')]
+    .find((v) => v !== undefined && v !== null && String(v).trim() !== '');
+  if (id !== undefined) return `${county.key}:${id}`;
+  return `${county.key}:geom-${crypto.createHash('sha1').update(JSON.stringify(geometry.coordinates)).digest('hex').slice(0, 16)}`;
 }
 
 // Socrata open-data APIs (San Francisco) take a SoQL spatial filter and
@@ -43,7 +55,7 @@ async function querySocrata(county, lat, lon) {
   if (data.features?.length !== 1 || !data.features[0].geometry) return null;
   const { properties: attrs = {}, geometry } = data.features[0];
   return {
-    id: `${county.key}:${attrs[county.idField]}`,
+    id: parcelId(county, attrs, geometry),
     address: county.address?.(attrs) || null,
     areaSqft: Math.round(turfArea(geometry) * SQM_TO_SQFT),
     geometry,
@@ -60,7 +72,8 @@ async function queryCounty(county, lat, lon) {
     inSR: '4326',
     outSR: '4326',
     spatialRel: 'esriSpatialRelIntersects',
-    outFields: county.address || !county.idField ? '*' : county.idField,
+    // All fields (one record's attributes), so the object ID is there when the parcel number isn't.
+    outFields: '*',
     returnGeometry: 'true',
     resultRecordCount: '2',
   });
@@ -86,9 +99,8 @@ async function queryCounty(county, lat, lon) {
     else polygons[polygons.length - 1].push(ring);
   }
   const geom = polygons.length === 1 ? { type: 'Polygon', coordinates: polygons[0] } : { type: 'MultiPolygon', coordinates: polygons };
-  const apn = attrs[county.idField] ?? field(attrs, 'apn') ?? field(attrs, 'ain') ?? field(attrs, 'objectid');
   return {
-    id: `${county.key}:${apn}`,
+    id: parcelId(county, attrs, geom),
     address: county.address?.(attrs) || null,
     areaSqft: Math.round(turfArea(geom) * SQM_TO_SQFT),
     geometry: geom,
@@ -98,8 +110,8 @@ async function queryCounty(county, lat, lon) {
 
 /** The county parcel containing a point, or null outside coverage. */
 export async function findCountyParcel(lat, lon) {
-  const cachedId = pointCache.get(pointKey(lat, lon));
-  if (cachedId) return parcelCache.get(cachedId);
+  const cached = parcelCache.get(pointCache.get(pointKey(lat, lon)));
+  if (cached) return cached;
 
   const counties = COUNTIES.filter(({ extent: [w, s, e, n] }) => lon >= w && lon <= e && lat >= s && lat <= n);
   for (const county of counties) {

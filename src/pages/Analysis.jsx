@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Check, Loader2, Sprout } from 'lucide-react';
 import StepNav from '@/components/StepNav';
@@ -7,6 +7,7 @@ import EditScanPanel from '@/components/EditScanPanel';
 import { Button } from '@/components/ui/button';
 import { updateProject } from '@/lib/projectStore';
 import { useProject } from '@/hooks/useProjects';
+import { useAutosave } from '@/hooks/useAutosave';
 import { num } from '@/lib/landscapeMath';
 import FullAutoScanUpsell from '@/components/FullAutoScanUpsell';
 
@@ -46,6 +47,9 @@ export default function Analysis() {
   const [soil, setSoil] = useState('Loam');
   const [zip, setZip] = useState('');
   const [synced, setSynced] = useState(false);
+  // Edits save as they happen, so leaving via StepNav or the header keeps them.
+  const fields = useMemo(() => ({ breakdown, turf, sun, soil, zip }), [breakdown, turf, sun, soil, zip]);
+  const autosave = useAutosave(fields, (patch) => updateProject(id, patch));
 
   useEffect(() => {
     if (!project || synced) return;
@@ -81,10 +85,17 @@ export default function Analysis() {
   const total = Number(breakdown.turf || 0) + Number(breakdown.beds || 0) + Number(breakdown.bare || 0);
 
   const setArea = (key, value) => {
+    autosave.markDirty();
     setBreakdown((prev) => ({ ...prev, [key]: Math.max(0, Math.round(Number(value) || 0)) }));
   };
 
+  const edit = (setter) => (value) => {
+    autosave.markDirty();
+    setter(value);
+  };
+
   const save = async () => {
+    autosave.cancel();
     const next = await updateProject(id, { breakdown, turf, sun, soil, zip });
     navigate(`/project/${id}/design`, { state: { project: next } });
   };
@@ -122,6 +133,7 @@ export default function Analysis() {
         <EditScanPanel
           project={project}
           onApplied={() => {
+            autosave.cancel();
             setSynced(false);
             reload();
           }}
@@ -214,7 +226,7 @@ export default function Analysis() {
           <div className="mt-1.5 flex gap-2">
             <select
               value={TURF_OPTIONS.includes(turf.name) ? turf.name : ''}
-              onChange={(e) => setTurf((prev) => ({ ...prev, name: e.target.value, galPerSqft: TURF_WATER[e.target.value], confidence: 1, source: 'manual' }))}
+              onChange={(e) => edit(setTurf)((prev) => ({ ...prev, name: e.target.value, galPerSqft: TURF_WATER[e.target.value], confidence: 1, source: 'manual' }))}
               className="field flex-1"
             >
               <option value="">Select turf species…</option>
@@ -228,7 +240,7 @@ export default function Analysis() {
               type="number"
               min={0}
               value={turf.galPerSqft ?? 46}
-              onChange={(e) => setTurf((prev) => ({ ...prev, galPerSqft: Math.max(0, Number(e.target.value) || 0) }))}
+              onChange={(e) => edit(setTurf)((prev) => ({ ...prev, galPerSqft: Math.max(0, Number(e.target.value) || 0) }))}
               className="field h-11 w-28 text-right text-[13px]"
               aria-label="Water use in gallons per square foot per year"
             />
@@ -251,7 +263,7 @@ export default function Analysis() {
                   <button
                     key={option}
                     type="button"
-                    onClick={() => setSun(option)}
+                    onClick={() => edit(setSun)(option)}
                     className={`flex-1 rounded-lg border px-2 py-2 text-[11.5px] transition ${
                       sun === option ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card hover:border-primary/30'
                     }`}
@@ -264,7 +276,7 @@ export default function Analysis() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Soil</label>
-                <select value={soil} onChange={(e) => setSoil(e.target.value)} className="field mt-1.5">
+                <select value={soil} onChange={(e) => edit(setSoil)(e.target.value)} className="field mt-1.5">
                   {SOIL_OPTIONS.map((option) => (
                     <option key={option}>{option}</option>
                   ))}
@@ -272,7 +284,7 @@ export default function Analysis() {
               </div>
               <div>
                 <label className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">ZIP / postal code</label>
-                <input value={zip} onChange={(e) => setZip(e.target.value)} placeholder="95126" className="field mt-1.5" />
+                <input value={zip} onChange={(e) => edit(setZip)(e.target.value)} placeholder="95126" className="field mt-1.5" />
               </div>
             </div>
           </div>

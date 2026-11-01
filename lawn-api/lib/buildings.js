@@ -4,12 +4,22 @@
 // statistics, so only the few MB of rows near the address are downloaded.
 import { asyncBufferFromUrl, parquetMetadataAsync, parquetReadObjects } from 'hyparquet';
 import { compressors } from 'hyparquet-compressors';
+import { LRU } from './lru.js';
 
 const STAC_ROOT = 'https://stac.overturemaps.org/catalog.json';
 const INDEX_TTL = 24 * 3600 * 1000;
+const RETRY_MS = 10 * 60 * 1000; // after a failed refresh, keep the old index this long before trying again
+const READ_TIMEOUT_MS = 30000;
 
 let index = null; // { release, files: [{ bbox, url }], loadedAt }
-const footers = new Map(); // url -> { file, metadata, starts }
+let indexLoad = null; // Promise<index> while (re)loading, shared by concurrent callers
+const footers = new LRU(64); // url -> { file, metadata, starts }
+
+// fetch for hyparquet's range requests, with a timeout on each one.
+function timedFetch(url, init = {}) {
+  const timeout = AbortSignal.timeout(READ_TIMEOUT_MS);
+  return fetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
+}
 
 async function json(url) {
   const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
@@ -19,6 +29,18 @@ async function json(url) {
 
 async function loadIndex() {
   if (index && Date.now() - index.loadedAt < INDEX_TTL) return index;
+  indexLoad ??= fetchIndex()
+    .catch((err) => {
+      if (!index) throw err;
+      console.warn(`building index refresh failed, still using ${index.release}: ${err.message}`);
+      index = { ...index, loadedAt: Date.now() - INDEX_TTL + RETRY_MS };
+      return index;
+    })
+    .finally(() => (indexLoad = null));
+  return indexLoad;
+}
+
+async function fetchIndex() {
   const root = await json(STAC_ROOT);
   const latest = root.links.find((l) => l.rel === 'child' && l.latest) ?? root.links.filter((l) => l.rel === 'child').at(-1);
   const releaseUrl = new URL(latest.href, STAC_ROOT);
@@ -37,7 +59,7 @@ async function loadIndex() {
 
 async function footer(url) {
   if (!footers.has(url)) {
-    const file = await asyncBufferFromUrl({ url });
+    const file = await asyncBufferFromUrl({ url, fetch: timedFetch });
     const metadata = await parquetMetadataAsync(file);
     const starts = [];
     let n = 0;

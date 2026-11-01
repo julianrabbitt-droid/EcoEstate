@@ -28,3 +28,11 @@ export function safeReturnTo() {
     return "/";
   }
 }
+
+// Sign-in link that brings the user back to `location` (a react-router
+// location or window.location) afterwards; read back by safeReturnTo().
+export function loginPath(location = window.location) {
+  const here = `${location.pathname || '/'}${location.search || ''}`;
+  if (here === '/' || /^\/(login|register)(\/|$)/.test(here)) return '/login';
+  return `/login?redirect_url=${encodeURIComponent(here)}`;
+}

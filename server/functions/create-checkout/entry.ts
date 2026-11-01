@@ -24,9 +24,17 @@ export default async function (req) {
     const body = await req.json().catch(() => ({}));
     const referrerId = await referrerForCode(base44, body.referralCode, user);
     const account = await billingAccount(base44, user, s);
+    // A subscription Stripe already has (e.g. paid in another tab, not yet
+    // recorded here) must not be duplicated.
+    const subs = await s.subscriptions.list({ customer: account.stripeCustomerId, status: 'all', limit: 10 });
+    if (subs.data.some((x) => ['active', 'trialing', 'past_due'].includes(x.status))) {
+      return Response.json({ error: 'You already have EcoEstate Pro. It can take a minute to show up.' }, { status: 409 });
+    }
 
     const session = await s.checkout.sessions.create({
       mode: 'subscription',
+      // Cards only: delayed methods (bank debits) would finish after checkout.
+      payment_method_types: ['card'],
       customer: account.stripeCustomerId,
       client_reference_id: user.id,
       line_items: [{ price: await premiumPriceId(s), quantity: 1 }],

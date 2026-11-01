@@ -168,14 +168,17 @@ export async function updateProject(id, patch) {
   return next;
 }
 
+// Throws if the DB delete fails (a 404 just means it was a local-only scan).
+// A TrackedProject linked to it is left alone: it keeps its own address and
+// progress history, and its page can relink it to another scan.
 export async function deleteProject(id) {
-  cache.delete(id);
   if (await authed()) {
     try {
       await base44.entities.Project.delete(id);
-    } catch {
-      // ignore — may be a local-only project
+    } catch (e) {
+      if (e?.status !== 404) throw e;
     }
   }
+  cache.delete(id);
   lsWrite(lsList().filter((p) => p.id !== id));
 }

@@ -24,3 +24,13 @@ export class ApiError extends Error {
     this.code = code;
   }
 }
+
+// Rejects with UpstreamError(service, 'timeout') if the promise hasn't settled
+// within ms. For libraries that can't take an AbortSignal on every request.
+export function withTimeout(promise, ms, service, detail) {
+  let timer;
+  const timeout = new Promise((resolve, reject) => {
+    timer = setTimeout(() => reject(new UpstreamError(service, 'timeout', detail)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}

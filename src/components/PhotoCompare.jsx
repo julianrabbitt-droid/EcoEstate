@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Upload, Wand2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { plantById } from '@/data/nativePlants';
 
@@ -15,7 +16,13 @@ export default function PhotoCompare({ entries = [] }) {
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState('');
   const [slider, setSlider] = useState(50);
+  const [uploadError, setUploadError] = useState('');
   const fileRef = useRef(null);
+  const localUrls = useRef([]);
+  const { isAuthenticated } = useAuth();
+
+  // Release guests' local photo URLs when leaving the page.
+  useEffect(() => () => localUrls.current.forEach((u) => URL.revokeObjectURL(u)), []);
 
   const palette = entries.map((e) => plantById(e.speciesId)).filter(Boolean);
 
@@ -23,16 +30,26 @@ export default function PhotoCompare({ entries = [] }) {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     setError('');
+    setUploadError('');
     const added = [];
+    let failed = 0;
     for (const file of files) {
+      // Guests can't upload; keep the photo in this tab only.
+      if (!isAuthenticated) {
+        const url = URL.createObjectURL(file);
+        localUrls.current.push(url);
+        added.push({ url, name: file.name });
+        continue;
+      }
       try {
         const { file_uri } = await base44.integrations.Core.UploadPrivateFile({ file });
         const { signed_url } = await base44.integrations.Core.CreateFileSignedUrl({ file_uri, expires_in: 3600 });
         added.push({ url: signed_url, name: file.name });
       } catch {
-        /* skip a failed upload */
+        failed++;
       }
     }
+    if (failed) setUploadError(`${failed === files.length ? 'Upload failed' : `${failed} of ${files.length} photos didn’t upload`}. Please try again.`);
     if (added.length) {
       setPhotos((prev) => [...prev, ...added]);
       setSelected((prev) => prev || added[0].url);
@@ -112,8 +129,11 @@ export default function PhotoCompare({ entries = [] }) {
           <Upload className="mr-2 h-4 w-4" />
           Upload current photos
         </Button>
-        <span className="text-[11px] text-muted-foreground">Stored privately · used once to overlay the proposed planting.</span>
+        <span className="text-[11px] text-muted-foreground">
+          {isAuthenticated ? 'Stored privately · used once to overlay the proposed planting.' : 'Kept on this device only · used to overlay the proposed planting.'}
+        </span>
       </div>
+      {uploadError && <p role="alert" className="mt-2 text-[11.5px] text-destructive">{uploadError}</p>}
 
       {photos.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">

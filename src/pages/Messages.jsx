@@ -24,6 +24,7 @@ export default function Messages() {
   const [selected, setSelected] = useState(null);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -35,10 +36,11 @@ export default function Messages() {
         setMe(m);
         const { items } = await base44.entities.Message.filter(
           { $or: [{ to_user_id: m.id }, { created_by_id: m.id }] },
-          { sort: 'created_date', limit: 200 }
+          { sort: '-created_date', limit: 200 }
         );
         if (cancelled) return;
-        setMessages(items);
+        // Newest 200, shown oldest first.
+        setMessages([...items].reverse());
         const to = params.get('to');
         if (to) setSelected(threadId(m.id, to));
       } catch {
@@ -105,6 +107,7 @@ export default function Messages() {
       : peerOf(active);
     if (!peer?.id) return;
     setSending(true);
+    setSendError('');
     try {
       const name = me.full_name || me.email || 'Member';
       const created = await base44.entities.Message.create({
@@ -117,8 +120,8 @@ export default function Messages() {
       });
       setMessages((prev) => [...prev, created]);
       setDraft('');
-    } catch {
-      /* ignore */
+    } catch (e) {
+      setSendError(e?.message || 'Your message didn’t send. Please try again.');
     } finally {
       setSending(false);
     }
@@ -217,6 +220,7 @@ export default function Messages() {
                   {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </Button>
               </div>
+              {sendError && <p role="alert" className="px-4 pb-3 text-[11.5px] text-destructive">{sendError}</p>}
             </>
           )}
         </section>

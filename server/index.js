@@ -58,7 +58,9 @@ entities.delete('/:entity/:id', handle((svc, _b, req) => svc.delete(req.params.i
 app.use('/api/entities', entities);
 
 // ---- Backend functions (server/functions/*) ----
-app.all('/api/functions/:name', express.raw({ type: () => true, limit: '25mb' }), (req, res) => runFunction(req.params.name, req, res));
+app.all('/api/functions/:name', (req, res, next) =>
+  ['GET', 'POST'].includes(req.method) ? next() : res.status(405).json({ error: 'Method not allowed' }));
+app.all('/api/functions/:name', express.raw({ type: () => true, limit: '5mb' }), (req, res) => runFunction(req.params.name, req, res));
 
 // ---- Lawn-to-native API (lawn-api/), forwarded so its key stays on the server ----
 app.use('/api/lawn', lawnRouter);
@@ -71,6 +73,9 @@ if (IS_PROD && fs.existsSync(dist)) {
   app.use(express.static(dist, { index: false, maxAge: '1h' }));
   app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
 }
+
+// A stray rejected promise must not take the whole site down.
+process.on('unhandledRejection', (err) => console.error('Unhandled rejection', err));
 
 app.listen(PORT, () => {
   console.log(`EcoEstate API listening on http://localhost:${PORT}`);

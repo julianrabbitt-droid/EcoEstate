@@ -4,13 +4,17 @@
 // GeoTIFFs with geotiff.js so only the pixels around the property are fetched.
 import { fromUrl } from 'geotiff';
 import { affineTo, crsForEpsg } from './grid.js';
-import { ApiError, UpstreamError } from './errors.js';
+import { ApiError, UpstreamError, withTimeout } from './errors.js';
+import { LRU } from './lru.js';
 
 const STAC_SEARCH = 'https://planetarycomputer.microsoft.com/api/stac/v1/search';
 const SAS_URL = 'https://planetarycomputer.microsoft.com/api/sas/v1/token/naip';
 
+const OPEN_TIMEOUT_MS = 30000;
+const READ_TIMEOUT_MS = 120000;
+
 let sas = null; // { token, expires }
-const tiffs = new Map(); // href -> { token, tiff }
+const tiffs = new LRU(32); // href -> { token, tiff }
 
 async function sasToken() {
   if (sas && sas.expires - Date.now() > 5 * 60 * 1000) return sas.token;
@@ -32,7 +36,7 @@ async function openTiff(href) {
   if (cached?.token === token) return cached.tiff;
   let tiff;
   try {
-    tiff = await fromUrl(`${href}?${token}`);
+    tiff = await fromUrl(`${href}?${token}`, {}, AbortSignal.timeout(OPEN_TIMEOUT_MS));
   } catch {
     throw new UpstreamError('imagery', 'open');
   }
@@ -43,7 +47,11 @@ async function openTiff(href) {
 const epsgOf = (item) => item.properties['proj:epsg'] ?? Number(String(item.properties['proj:code'] ?? '').replace('EPSG:', ''));
 const yearOf = (item) => Number(item.properties['naip:year'] ?? item.properties.datetime.slice(0, 4));
 
-/** The most recent NAIP survey covering a lon/lat box: [{ href, epsg, date }]. */
+/**
+ * NAIP images covering a lon/lat box, most recent survey first:
+ * [{ href, epsg, gsd, date, year }]. The survey before it is included too, for
+ * any part of the box the newest one doesn't cover.
+ */
 export async function findNaip(box) {
   const [w, s, e, n] = box;
   let r;
@@ -65,10 +73,11 @@ export async function findNaip(box) {
   if (!r.ok) throw new UpstreamError('imagery', r.status);
   const items = (await r.json()).features ?? [];
   if (!items.length) throw new ApiError(404, 'imagery_not_found', 'No aerial imagery is available for this location.');
-  const year = Math.max(...items.map(yearOf));
+  const [year, previous] = [...new Set(items.map(yearOf))].sort((a, b) => b - a);
   return items
-    .filter((it) => yearOf(it) === year)
-    .map((it) => ({ href: it.assets.image.href, epsg: epsgOf(it), gsd: it.properties.gsd, date: it.properties.datetime.slice(0, 10) }));
+    .filter((it) => yearOf(it) === year || yearOf(it) === previous)
+    .sort((a, b) => yearOf(b) - yearOf(a))
+    .map((it) => ({ href: it.assets.image.href, epsg: epsgOf(it), gsd: it.properties.gsd, date: it.properties.datetime.slice(0, 10), year: yearOf(it) }));
 }
 
 // Cloud-Optimized GeoTIFFs carry reduced-resolution copies (overviews). For a
@@ -98,9 +107,18 @@ export async function readNaip(grid, items) {
   const bands = [new Uint8Array(n), new Uint8Array(n), new Uint8Array(n), new Uint8Array(n)];
   const filled = new Uint8Array(n);
   const dates = new Set();
+  let filledCount = 0;
 
   for (const item of items) {
-    const { image, ox, oy, rx, ry } = await pickLevel(await openTiff(item.href), grid.res);
+    // Older surveys only fill pixels the newest one left empty.
+    if (item.year !== items[0].year && filledCount === n) break;
+    let level;
+    try {
+      level = await withTimeout(openTiff(item.href).then((tiff) => pickLevel(tiff, grid.res)), OPEN_TIMEOUT_MS, 'imagery', 'open');
+    } catch (err) {
+      throw err instanceof UpstreamError ? err : new UpstreamError('imagery', 'open');
+    }
+    const { image, ox, oy, rx, ry } = level;
     const W = image.getWidth();
     const H = image.getHeight();
     const toItem = affineTo(grid, crsForEpsg(item.epsg));
@@ -123,7 +141,7 @@ export async function readNaip(grid, items) {
     if (win[0] >= win[2] || win[1] >= win[3]) continue;
     let data;
     try {
-      data = await image.readRasters({ window: win, interleave: false });
+      data = await image.readRasters({ window: win, interleave: false, signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
     } catch {
       throw new UpstreamError('imagery', 'read');
     }
@@ -138,6 +156,7 @@ export async function readNaip(grid, items) {
       if (!data[0][p] && !data[1][p] && !data[2][p] && !data[3][p]) continue; // NAIP no-data
       for (let b = 0; b < 4; b++) bands[b][k] = data[b][p];
       filled[k] = 1;
+      filledCount++;
       used = true;
     }
     if (used) dates.add(item.date);

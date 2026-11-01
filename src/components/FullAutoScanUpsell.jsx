@@ -1,16 +1,18 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { GraduationCap, Leaf, Loader2, LogIn, ScanLine } from 'lucide-react';
 import { useAutoScanAccess } from '@/hooks/useAutoScanAccess';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { startCheckout } from '@/lib/checkout';
+import { loginPath } from '@/lib/authReturnTo';
 
 // Shown on the Analysis step. Full Auto Scans and the 3D Garden View are free
 // for every signed-in user; anonymous users are asked to sign in. Pro
 // ($10/month) adds the community, project tracking and project exports, and is
 // free for students with a school email.
 export default function FullAutoScanUpsell() {
+  const location = useLocation();
   const { isAuthenticated, authChecked } = useAuth();
   const { premium, student, loading } = useAutoScanAccess();
   const [purchasing, setPurchasing] = useState(false);
@@ -105,7 +107,7 @@ export default function FullAutoScanUpsell() {
         </ul>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button asChild className="rounded-full">
-            <Link to="/login">
+            <Link to={loginPath(location)}>
               <LogIn className="mr-2 h-4 w-4" /> Sign in
             </Link>
           </Button>

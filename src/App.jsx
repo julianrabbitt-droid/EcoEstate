@@ -13,6 +13,7 @@ import ScrollToTop from './components/ScrollToTop';
 import AppShell from '@/components/AppShell';
 import ThankYou from './pages/ThankYou';
 import Login from '@/pages/Login';
+import { loginPath } from '@/lib/authReturnTo';
 import Register from '@/pages/Register';
 // Add page imports here
 import Scan from '@/pages/Scan';
@@ -32,6 +33,12 @@ function ToSocial({ tab }) {
   const params = new URLSearchParams(search);
   params.set('tab', tab);
   return <Navigate to={`/social?${params}`} replace />;
+}
+
+// Signed-out visitors to a members-only page go to sign-in, then come back.
+function ToLogin() {
+  const location = useLocation();
+  return <Navigate to={loginPath(location)} replace />;
 }
 
 // Where Google sends people back after sign-in. A first-time Google user is
@@ -85,7 +92,7 @@ const AuthenticatedApp = () => {
         <Route path="/project/:id/impact" element={<Impact />} />
         <Route path="/project/:id/plan" element={<Plan />} />
         <Route path="/project/:id/legacy" element={<Legacy />} />
-        <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
+        <Route element={<ProtectedRoute unauthenticatedElement={<ToLogin />} />}>
           <Route path="/projects" element={<Projects />} />
           <Route path="/my-projects" element={<MyProjects />} />
           <Route path="/my-projects/:id" element={<TrackedProject />} />

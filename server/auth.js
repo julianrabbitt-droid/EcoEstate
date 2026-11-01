@@ -31,15 +31,22 @@ async function appUserForClerk(clerkId) {
     const address = email ? normEmail(email.emailAddress) : null;
     const fullName = [account.firstName, account.lastName].filter(Boolean).join(' ') || null;
     const existing = address ? await users.byEmail(address) : null;
-    row = existing
-      ? await users.update(existing.id, { clerk_id: clerkId, full_name: existing.full_name || fullName })
-      : await users.create({
-          clerkId,
-          email: address,
-          phone: phone?.phoneNumber ?? null,
-          fullName,
-          role: address && ADMIN_EMAILS.includes(address) ? 'admin' : 'user',
-        });
+    try {
+      row = existing
+        ? await users.update(existing.id, { clerk_id: clerkId, full_name: existing.full_name || fullName })
+        : await users.create({
+            clerkId,
+            email: address,
+            phone: phone?.phoneNumber ?? null,
+            fullName,
+            role: address && ADMIN_EMAILS.includes(address) ? 'admin' : 'user',
+          });
+    } catch (e) {
+      // A parallel first request for the same new account created it already.
+      if (e?.code !== '23505') throw e;
+      row = await users.byClerkId(clerkId);
+      if (!row) throw e;
+    }
   } else if (!row.email) {
     // A phone-only account may have added and verified an email since (for
     // example a school email, which unlocks Pro features).
@@ -48,6 +55,7 @@ async function appUserForClerk(clerkId) {
     const address = added ? normEmail(added.emailAddress) : null;
     if (address && !(await users.byEmail(address))) row = await users.update(row.id, { email: address });
   }
+  if (linked.size > 5000) for (const [k, v] of linked) if (Date.now() - v.at >= 60_000) linked.delete(k);
   linked.set(clerkId, { row, at: Date.now() });
   return row;
 }

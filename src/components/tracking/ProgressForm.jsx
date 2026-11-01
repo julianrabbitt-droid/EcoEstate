@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
 const today = () => new Date().toISOString().slice(0, 10);
-const toNum = (v) => (v === '' || v == null ? undefined : Number(v));
+// Blank → null (undefined would be dropped from the JSON body).
+const toNum = (v) => (v === '' || v == null ? null : Number(v));
 
 function NumberField({ id, label, value, onChange, step = 'any', hint }) {
   return (
@@ -36,6 +37,9 @@ export default function ProgressForm({ tracked, lastConverted, onSaved }) {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // The entry, once created: a retry after the follow-up sync failed must not
+  // create it again.
+  const [created, setCreated] = useState(null);
 
   const addPhotos = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -71,8 +75,10 @@ export default function ProgressForm({ tracked, lastConverted, onSaved }) {
     }
     setSaving(true);
     setError('');
+    let entry = created;
     try {
-      const entry = await base44.entities.ProgressEntry.create({
+      if (!entry) {
+        entry = await base44.entities.ProgressEntry.create({
         trackedId: tracked.id,
         date,
         convertedSqft: convertedNum,
@@ -83,8 +89,17 @@ export default function ProgressForm({ tracked, lastConverted, onSaved }) {
         waterDays: toNum(days),
         notes: notes.trim(),
         photoUris: photos.map((p) => p.uri),
-      });
+        });
+        setCreated(entry);
+      }
+    } catch (err) {
+      setError(err?.message || 'Could not save this update. Try again.');
+      setSaving(false);
+      return;
+    }
+    try {
       await onSaved(entry, photos[photos.length - 1]?.uri);
+      setCreated(null);
       setConverted('');
       setPlants('');
       setSpent('');
@@ -94,7 +109,7 @@ export default function ProgressForm({ tracked, lastConverted, onSaved }) {
       setNotes('');
       setPhotos([]);
     } catch (err) {
-      setError(err?.message || 'Could not save this update. Try again.');
+      setError(`Your update was saved, but the project total didn’t refresh (${err?.message || 'network error'}). Try again to finish.`);
     } finally {
       setSaving(false);
     }
@@ -161,6 +176,8 @@ export default function ProgressForm({ tracked, lastConverted, onSaved }) {
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…
           </>
+        ) : created ? (
+          'Finish saving'
         ) : (
           'Save update'
         )}

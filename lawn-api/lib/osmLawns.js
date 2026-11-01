@@ -11,13 +11,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { polygonsOf } from './grid.js';
+import { LRU } from './lru.js';
 
 const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
 const USER_AGENT = 'EcoEstate lawn API (https://ecoestate.org)';
 const WAIT_MS = 6000;
 const CACHE_DIR = path.join(import.meta.dirname, '..', '.cache', 'osm-features-v2');
 const CACHE_DAYS = 30;
-const cache = new Map(); // bbox key -> { lawns, paths } (also kept on disk across restarts)
+const cache = new LRU(100); // bbox key -> { lawns, paths } (the recent ones; all are kept on disk across restarts)
 
 // Typical paved width (m) when a path has no width tag.
 const PATH_WIDTH_M = {

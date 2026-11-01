@@ -7,6 +7,7 @@
 // Nominatim's usage policy: identify the app and stay under ~1 request/second.
 // Lookups are cached, and only made for named places.
 import turfArea from '@turf/area';
+import { LRU } from './lru.js';
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org';
 const USER_AGENT = 'EcoEstate lawn API (https://ecoestate.org)';
@@ -20,20 +21,38 @@ const PROPERTY_CLASSES = new Set(['amenity', 'leisure', 'landuse', 'tourism', 'h
 const MIN_AREA_M2 = 2000;
 const MAX_AREA_M2 = 20_000_000; // 20 km²; larger outlines are almost certainly not one property
 
-const cache = new Map();
+const cache = new LRU(200); // query -> Promise<results> (outlines can be large, so only the recent ones)
 let last = 0;
+let queue = Promise.resolve(); // requests take turns, at least 1.1 s apart
 
-async function nominatim(path, params) {
-  const key = `${path}?${new URLSearchParams(params)}`;
-  if (cache.has(key)) return cache.get(key);
-  const wait = last + 1100 - Date.now();
-  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-  last = Date.now();
+function nextTurn() {
+  const turn = queue.then(async () => {
+    const wait = last + 1100 - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    last = Date.now();
+  });
+  queue = turn;
+  return turn;
+}
+
+async function request(key) {
+  await nextTurn();
   const r = await fetch(`${NOMINATIM}${key}`, { headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
   if (!r.ok) throw new Error(`Nominatim returned ${r.status}`);
-  const data = await r.json();
-  cache.set(key, data);
-  return data;
+  return r.json();
+}
+
+function nominatim(path, params) {
+  const key = `${path}?${new URLSearchParams(params)}`;
+  if (!cache.has(key)) {
+    // Concurrent lookups of the same place share one request; failures aren't kept.
+    const lookup = request(key).catch((err) => {
+      if (cache.get(key) === lookup) cache.delete(key);
+      throw err;
+    });
+    cache.set(key, lookup);
+  }
+  return cache.get(key);
 }
 
 function toPlace(hit) {

@@ -87,6 +87,8 @@ export default async function (req) {
     const siteSun = typeof sun === 'string' ? sun : '';
 
     const scored = catalog
+      .slice(0, 3000)
+      .filter((p) => p && typeof p === 'object')
       .map((plant) => {
         const { score, patternHint } = scorePlant(plant, promptLower, tokens, siteSun);
         return { plant, score, patternHint };

@@ -104,12 +104,13 @@ Every error returns `{ "error": { "code", "message" } }`. The message is safe to
 
 | Status | code | Meaning |
 |---|---|---|
-| 400 | missing_address / missing_geometry / invalid_geometry | Bad request |
+| 400 | missing_address / missing_geometry / invalid_geometry / parcel_too_spread | Bad request (parcel_too_spread: parts of the outline too far apart to scan together) |
 | 401 | unauthorized | Wrong or missing x-api-key |
 | 404 | address_not_found / address_not_precise / parcel_not_found / imagery_not_found | Nothing usable at that address |
 | 422 | parcel_too_large | Property too big to measure automatically |
 | 501 | not_configured | GEOCODIO_API_KEY is missing from .env |
-| 502 | geocoder_error / imagery_error | Upstream service failed |
+| 502 | geocoder_error / imagery_error / buildings_error | Upstream service failed |
+| 503 | busy | Too many scans waiting (see LAWN_MAX_CONCURRENT); try again shortly |
 
 ## Impact model
 

@@ -66,8 +66,9 @@ export default async function (req) {
   try {
     const body = await req.json().catch(() => ({}));
     const turfSqft = Math.max(0, Math.round(Number(body?.turfSqft) || 0));
-    const entries = Array.isArray(body?.entries) ? body.entries : [];
-    const catalog = Array.isArray(body?.catalog) ? body.catalog : [];
+    // Caps well above any real design keep oversized requests cheap.
+    const entries = Array.isArray(body?.entries) ? body.entries.slice(0, 500) : [];
+    const catalog = Array.isArray(body?.catalog) ? body.catalog.slice(0, 3000).filter((p) => p && typeof p === 'object') : [];
 
     // Totals
     let count = 0;

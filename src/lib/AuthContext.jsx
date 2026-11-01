@@ -16,7 +16,18 @@ export const AuthProvider = ({ children }) => {
     try {
       setIsLoadingPublicSettings(true);
       setAuthError(null);
-      const publicSettings = await base44.app.getPublicSettings();
+      // Retry transient failures (network, 5xx) a couple of times with backoff.
+      let publicSettings;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          publicSettings = await base44.app.getPublicSettings();
+          break;
+        } catch (e) {
+          const transient = !e?.status || e.status >= 500 || e.status === 429;
+          if (!transient || attempt >= 2) throw e;
+          await new Promise((r) => setTimeout(r, 600 * 2 ** attempt));
+        }
+      }
       setAppPublicSettings(publicSettings);
     } catch (appError) {
       console.error('App state check failed:', appError);
@@ -29,7 +40,8 @@ export const AuthProvider = ({ children }) => {
             : appError.message,
         });
       } else {
-        setAuthError({ type: 'unknown', message: appError.message || 'Failed to load app' });
+        // Not a sign-out: ProtectedRoute shows a retry screen for this.
+        setAuthError({ type: 'settings_unavailable', message: appError.message || 'Failed to load app' });
       }
     } finally {
       setIsLoadingPublicSettings(false);

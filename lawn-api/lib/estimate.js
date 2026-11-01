@@ -5,7 +5,7 @@
 import turfArea from '@turf/area';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
 import { buildingsInBox } from './buildings.js';
-import { ApiError } from './errors.js';
+import { ApiError, UpstreamError } from './errors.js';
 
 const SQM_TO_SQFT = 10.7639;
 const SEARCH_M = 90; // look for buildings this far around the address
@@ -56,7 +56,11 @@ function orientation(ring) {
 export async function estimateParcel(lat, lon) {
   const dLat = SEARCH_M / 110540;
   const dLon = SEARCH_M / (111320 * Math.cos((lat * Math.PI) / 180));
-  const buildings = await buildingsInBox([lon - dLon, lat - dLat, lon + dLon, lat + dLat]);
+  const buildings = await buildingsInBox([lon - dLon, lat - dLat, lon + dLon, lat + dLat]).catch((err) => {
+    console.warn(`building footprints unavailable: ${err.message}`);
+    // Without footprints there's no house to estimate from; report the outage, not a missing property.
+    throw new UpstreamError('buildings', 'unavailable', err.message);
+  });
 
   const frame = localFrame(lat, lon);
   const point = [0, 0];

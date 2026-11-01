@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ChevronDown, Crown, Gift, GraduationCap, Leaf, LogIn, LogOut, RefreshCw, User } from 'lucide-react';
 import {
   DropdownMenu,
@@ -14,6 +14,8 @@ import { base44 } from '@/api/base44Client';
 import { useAuth } from '@/lib/AuthContext';
 import { usePremiumAccess } from '@/hooks/usePremiumAccess';
 import { openBillingPortal, startCheckout } from '@/lib/checkout';
+import { loginPath } from '@/lib/authReturnTo';
+import { toast } from '@/components/ui/use-toast';
 
 function initials(name = '') {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -23,6 +25,7 @@ function initials(name = '') {
 
 export default function AccountMenu() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, isAuthenticated } = useAuth();
   const { premium, threeD, loading, refresh } = usePremiumAccess();
   const [checkingOut, setCheckingOut] = useState(false);
@@ -37,9 +40,16 @@ export default function AccountMenu() {
       const res = await startCheckout();
       const url = res?.data?.redirectUrl;
       if (url) window.location.href = url;
-    } catch {
+    } catch (e) {
       setCheckingOut(false);
+      toast({ variant: 'destructive', title: 'Couldn’t open checkout', description: e?.message || 'Please try again.' });
     }
+  };
+
+  const handleManage = () => {
+    openBillingPortal().catch((e) => {
+      toast({ variant: 'destructive', title: 'Couldn’t open billing', description: e?.message || 'Please try again.' });
+    });
   };
 
   const handleSignOut = async () => {
@@ -48,7 +58,7 @@ export default function AccountMenu() {
 
   if (!isAuthenticated) {
     return (
-      <Button variant="outline" onClick={() => navigate('/login')} className="h-9 rounded-full px-4 text-[13px]">
+      <Button variant="outline" onClick={() => navigate(loginPath(location))} className="h-9 rounded-full px-4 text-[13px]">
         <LogIn className="mr-1.5 h-4 w-4" /> Sign in
       </Button>
     );
@@ -94,7 +104,7 @@ export default function AccountMenu() {
           </DropdownMenuItem>
         )}
         {premium && (
-          <DropdownMenuItem onClick={() => openBillingPortal().catch(() => {})} className="gap-2">
+          <DropdownMenuItem onClick={handleManage} className="gap-2">
             <Crown className="h-4 w-4 text-accent" /> Manage subscription
           </DropdownMenuItem>
         )}

@@ -3,6 +3,8 @@
   // Pro feature (community or project tracking): only EcoEstate Pro
   // members, student unlocks and admins can use this entity at all.
   "premium": true,
+  // The recipient may only mark a message read, never rewrite or re-address it.
+  "updatableFields": ["read"],
   "type": "object",
   "properties": {
     "thread_id": {

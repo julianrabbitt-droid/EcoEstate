@@ -13,5 +13,12 @@
     "role"
   ],
   "name": "User",
-  "type": "object"
+  "type": "object",
+  // Accounts live in the users table; these records are admin-only.
+  "rls": {
+    "read": { "user_condition": { "role": "admin" } },
+    "create": { "user_condition": { "role": "admin" } },
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
 }

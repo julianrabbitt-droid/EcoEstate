@@ -28,9 +28,28 @@ const ROUTES = { 'GET /lawn': '/v1/lawn', 'POST /lawn': '/v1/lawn', 'POST /area'
 export const lawnRouter = express.Router();
 lawnRouter.use(express.json({ limit: '1mb' }));
 
+// Scans are free but heavy, so each visitor (account, or IP for guests) gets
+// a limited number per 10 minutes.
+const WINDOW_MS = 10 * 60_000;
+const MAX_PER_WINDOW = 30;
+const recent = new Map();
+function overLimit(req) {
+  const who = req.user?.id || req.ip || 'unknown';
+  const cutoff = Date.now() - WINDOW_MS;
+  const times = (recent.get(who) || []).filter((t) => t > cutoff);
+  times.push(Date.now());
+  recent.set(who, times);
+  if (recent.size > 10_000) for (const [k, v] of recent) if (!v.some((t) => t > cutoff)) recent.delete(k);
+  return times.length > MAX_PER_WINDOW;
+}
+
 lawnRouter.use(async (req, res) => {
   const target = ROUTES[`${req.method} ${req.path}`];
   if (!target) return res.status(404).json({ error: { code: 'not_found', message: 'Not found.' } });
+
+  if (req.path !== '/health' && overLimit(req)) {
+    return res.status(429).json({ error: { code: 'rate_limited', message: 'Too many scans in a short time. Please wait a few minutes and try again.' } });
+  }
 
   const env = lawnEnv();
   const query = new URLSearchParams(req.query).toString();
@@ -40,6 +59,7 @@ lawnRouter.use(async (req, res) => {
   if (req.method === 'POST') headers['Content-Type'] = 'application/json';
 
   let upstream;
+  let body;
   try {
     upstream = await fetch(`${baseUrl(env)}${target}${query ? `?${query}` : ''}`, {
       method: req.method,
@@ -47,6 +67,7 @@ lawnRouter.use(async (req, res) => {
       body: req.method === 'POST' ? JSON.stringify(req.body ?? {}) : undefined,
       signal: AbortSignal.timeout(120_000),
     });
+    body = Buffer.from(await upstream.arrayBuffer());
   } catch {
     console.warn(`[lawn] lawn API unreachable at ${baseUrl(env)} — is it running? (npm run dev starts it)`);
     return res.status(503).json({
@@ -60,5 +81,5 @@ lawnRouter.use(async (req, res) => {
   }
   res.status(upstream.status);
   res.type(upstream.headers.get('content-type') || 'application/json');
-  res.send(Buffer.from(await upstream.arrayBuffer()));
+  res.send(body);
 });
