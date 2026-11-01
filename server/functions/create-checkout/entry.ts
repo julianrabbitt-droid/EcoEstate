@@ -37,8 +37,9 @@ export default async function (req) {
 
     const params = {
       mode: 'subscription',
-      // Cards only: delayed methods (bank debits) would finish after checkout.
-      payment_method_types: ['card'],
+      // Payment methods come from the Stripe Dashboard (Stripe no longer takes
+      // a list here). A delayed one, like a bank debit, unlocks Pro when the
+      // subscription turns active (syncSubscription).
       customer: account.stripeCustomerId,
       client_reference_id: user.id,
       line_items: [{ price: await premiumPriceId(s), quantity: 1 }],

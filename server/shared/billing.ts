@@ -205,11 +205,20 @@ async function rewardReferrer(base44, s: Stripe, referrerId: string, refereeId: 
   }
 }
 
-// Keeps the Pro purchase in step with the Stripe subscription.
+// Keeps the Pro purchase in step with the Stripe subscription. A subscription
+// paid by a delayed method (e.g. a bank debit) completes checkout unpaid, so
+// its purchase is recorded here once Stripe marks it active.
 export async function syncSubscription(base44, subscription: Stripe.Subscription) {
   const purchases = base44.asServiceRole.entities.Base44Purchase;
   const rows = (await purchases.filter({ subscriptionId: subscription.id })).items ?? [];
   const active = ['active', 'trialing', 'past_due'].includes(subscription.status);
+  const appUserId = subscription.metadata?.appUserId;
+  if (!rows.length && active && appUserId) {
+    const s = stripeClient();
+    const session = s && (await s.checkout.sessions.list({ subscription: subscription.id, limit: 1 })).data[0];
+    if (session) await fulfillCheckout(base44, s, { ...session, payment_status: 'paid' });
+    return;
+  }
   for (const row of rows) {
     const status = active ? 'paid' : 'canceled';
     if (row.status !== status) {
