@@ -28,9 +28,21 @@ const FEATURES = {
       'Project tracking and project exports are included',
     ],
   },
+  properties: {
+    title: 'Keep every property you scan',
+    blurb:
+      'My properties saves each scan with its design, numbers and 3D garden, so you can come back, compare properties and pick up where you left off. Scanning and the 3D view stay free.',
+    benefits: [
+      'A saved library of every property you scan',
+      'Reopen any design, plan and payoff later',
+      'Track a saved property as a real project with photos and savings',
+      'Community, messages and the map of tracked properties',
+      'Project exports: printable PDF brief and materials spreadsheet',
+    ],
+  },
 };
 
-// Shown on Social and My projects pages to users without Premium or the student
+// Shown on Social, My projects and My properties to users without Premium or the student
 // unlock. Scanning and the 3D Garden View are free for everyone.
 export default function TrackingUpsell({ onUnlocked, feature = 'tracking' }) {
   const { title, blurb, benefits: BENEFITS } = FEATURES[feature] || FEATURES.tracking;

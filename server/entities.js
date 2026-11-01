@@ -97,6 +97,9 @@ export function entityService(name, user, { service = false } = {}) {
   const api = {
     async filter(query = {}, { sort, limit, skip } = {}) {
       await requirePremium();
+      if (schema.premiumList && !service && !(await isPremiumMember(user))) {
+        throw new HttpError(402, 'Saving and browsing your properties is part of EcoEstate Premium.');
+      }
       const visible = (await records.find(name, query, { sort })).filter((r) => can('read', r));
       const start = Number(skip) || 0;
       return visible.slice(start, limit ? start + Number(limit) : undefined).map(view);

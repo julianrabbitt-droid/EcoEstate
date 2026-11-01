@@ -4,8 +4,35 @@ import { Button } from '@/components/ui/button';
 import { financials, money, num } from '@/lib/landscapeMath';
 import { deleteProject } from '@/lib/projectStore';
 import { useProjects } from '@/hooks/useProjects';
+import { usePremiumAccess } from '@/hooks/usePremiumAccess';
+import TrackingUpsell from '@/components/tracking/TrackingUpsell';
 
+// My properties is a Premium feature (or free with a school email); scanning
+// and the 3D view stay free, and a scan's own pages open from its link.
 export default function Projects() {
+  const { member, loading: accessLoading, refresh } = usePremiumAccess();
+  if (accessLoading) {
+    return (
+      <div className="mx-auto flex w-full max-w-5xl justify-center px-5 py-24">
+        <div className="h-7 w-7 rounded-full border-2 border-border border-t-foreground animate-spin" />
+      </div>
+    );
+  }
+  if (!member) {
+    return (
+      <div className="mx-auto w-full max-w-5xl px-5 py-12">
+        <p className="label-xs">Saved scans</p>
+        <h1 className="mt-2 font-display text-3xl tracking-tight sm:text-[2.4rem]">My properties</h1>
+        <div className="mt-8">
+          <TrackingUpsell feature="properties" onUnlocked={refresh} />
+        </div>
+      </div>
+    );
+  }
+  return <PropertyList />;
+}
+
+function PropertyList() {
   const { projects, loading, reload } = useProjects();
 
   const remove = async (id) => {

@@ -1,5 +1,8 @@
 {
   "name": "Project",
+  // Listing saved properties (My properties) is a Premium feature; opening,
+  // creating and editing a scan stay free.
+  "premiumList": true,
   "type": "object",
   "properties": {
     "data": {
