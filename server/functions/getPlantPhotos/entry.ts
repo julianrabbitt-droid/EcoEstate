@@ -59,6 +59,7 @@ export default async function(req) {
     });
     return Response.json({ photos });
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    console.error('getPlantPhotos: error', error);
+    return Response.json({ error: 'Something went wrong. Please try again.' }, { status: 500 });
   }
 }

@@ -14,6 +14,10 @@ import { autoUnlockStudent } from './student.js';
 const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
 const normEmail = (e) => String(e || '').trim().toLowerCase();
 
+// Version (effective date) of the Terms and Privacy Policy that sign-up asks
+// people to accept; keep in step with EFFECTIVE_DATE in src/pages/Legal.jsx.
+export const TERMS_VERSION = '2026-11-01';
+
 // Clerk user id -> app user row, so most requests skip the database lookup.
 const linked = new Map();
 
@@ -82,8 +86,30 @@ const wrap = (fn) => (req, res) =>
 export const authRouter = express.Router();
 authRouter.use(express.json());
 
+// Copies the sign-up acceptance Clerk recorded (the required "I agree to the
+// Terms and Privacy Policy" box) onto the app user, as proof of agreement.
+const noAcceptance = new Set();
+async function recordTermsAcceptance(user) {
+  if (user.termsAcceptedAt || noAcceptance.has(user.id)) return user;
+  const row = await users.byId(user.id);
+  if (!row?.clerk_id) return user;
+  const account = await clerk.users.getUser(row.clerk_id);
+  if (!account.legalAcceptedAt) {
+    noAcceptance.add(user.id);
+    return user;
+  }
+  const data = { ...(row.data || {}), termsAcceptedAt: new Date(account.legalAcceptedAt).toISOString(), termsVersion: TERMS_VERSION };
+  const updated = await users.update(row.id, { data });
+  for (const [k, v] of linked) if (v.row.id === row.id) linked.delete(k);
+  return publicUser(updated);
+}
+
 authRouter.get('/me', wrap(async (req, res) => {
   if (!req.user) throw new HttpError(401, 'Authentication required');
+  req.user = await recordTermsAcceptance(req.user).catch((e) => {
+    console.warn('terms acceptance lookup failed', e?.message);
+    return req.user;
+  });
   // The app calls this after every sign-in, so a verified school email is
   // unlocked before the app checks entitlements.
   await autoUnlockStudent(req.user);
@@ -93,7 +119,7 @@ authRouter.get('/me', wrap(async (req, res) => {
 authRouter.patch('/me', wrap(async (req, res) => {
   if (!req.user) throw new HttpError(401, 'Authentication required');
   const { full_name, ...rest } = req.body || {};
-  for (const k of ['id', 'email', 'role', 'created_date', 'updated_date']) delete rest[k];
+  for (const k of ['id', 'email', 'role', 'created_date', 'updated_date', 'termsAcceptedAt', 'termsVersion']) delete rest[k];
   const row = await users.byId(req.user.id);
   const updated = await users.update(row.id, { full_name: full_name ?? undefined, data: { ...(row.data || {}), ...rest } });
   for (const [k, v] of linked) if (v.row.id === row.id) linked.delete(k);

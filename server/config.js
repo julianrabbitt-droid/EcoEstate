@@ -29,3 +29,8 @@ export const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
   .split(',')
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean);
+
+// Who runs EcoEstate, as named in the Terms, Privacy Policy and subscription
+// emails (keep in step with src/pages/Legal.jsx).
+export const LEGAL_OPERATOR = 'Julian Rabbitt-Tomita, doing business as EcoEstate';
+export const LEGAL_ADDRESS = '920 Moreno Avenue, Palo Alto, CA 94303';

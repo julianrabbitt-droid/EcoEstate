@@ -203,6 +203,13 @@ async function lawnResponse({ address, location, parcel, parcelSource, query }) 
 app.post('/v1/area', (req, res) => {
   const { geometry, assumptions = {} } = req.body ?? {};
   if (!geometry) return fail(res, 400, 'missing_geometry', 'Send a GeoJSON geometry in the request body.');
+  const parts =
+    geometry.type === 'FeatureCollection' ? (Array.isArray(geometry.features) ? geometry.features.map((f) => f?.geometry) : [])
+    : geometry.type === 'Feature' ? [geometry.geometry]
+    : [geometry];
+  if (!parts.every((g) => g && ['Polygon', 'MultiPolygon'].includes(g.type) && validPolygons(g))) {
+    return fail(res, 400, 'invalid_geometry', 'Outlines must be GeoJSON Polygons of closed [longitude, latitude] rings.');
+  }
   let lawn;
   try {
     lawn = mergeLawns(geometry);
@@ -223,7 +230,9 @@ function impact(sqft, overrides = {}) {
     et0Inches: num(overrides.et0Inches, Number(process.env.DEFAULT_ET0_INCHES ?? 45)),
     turfFactor: num(overrides.turfFactor, 0.8),
     nativeFactor: num(overrides.nativeFactor, 0.3),
-    waterPricePer1000Gal: num(overrides.waterPricePer1000Gal, Number(process.env.DEFAULT_WATER_PRICE ?? 0)),
+    // Typical US residential water price when none is set ($6.50 per 1,000 gal,
+    // the same rate the app's payoff estimates use).
+    waterPricePer1000Gal: num(overrides.waterPricePer1000Gal, Number(process.env.DEFAULT_WATER_PRICE) || 6.5),
     rebatePerSqft: num(overrides.rebatePerSqft, Number(process.env.DEFAULT_REBATE_PER_SQFT ?? 0)),
   };
   const gallonsSavedPerYear = Math.round(sqft * a.et0Inches * (a.turfFactor - a.nativeFactor) * GALLONS_PER_SQFT_INCH);

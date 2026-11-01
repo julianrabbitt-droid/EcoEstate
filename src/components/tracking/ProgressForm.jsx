@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ImagePlus, Loader2, X } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { stripImageMetadata } from '@/lib/stripImageMetadata';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -47,8 +48,11 @@ export default function ProgressForm({ tracked, lastConverted, onSaved }) {
     setUploading(true);
     setError('');
     const added = [];
-    for (const file of files) {
+    for (const original of files) {
       try {
+        // Drop metadata (GPS included); a private photo the browser can't
+        // re-encode (e.g. HEIC) is uploaded as is.
+        const file = await stripImageMetadata(original);
         const { file_uri } = await base44.integrations.Core.UploadPrivateFile({ file });
         const { signed_url } = await base44.integrations.Core.CreateFileSignedUrl({ file_uri, expires_in: 3600 });
         added.push({ uri: file_uri, url: signed_url });

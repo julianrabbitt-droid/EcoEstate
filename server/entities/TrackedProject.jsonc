@@ -6,7 +6,14 @@
   "type": "object",
   "properties": {
     "projectId": { "type": "string", "title": "Scanned property (Project) id" },
-    "name": { "type": "string", "title": "Display name, e.g. the place name or street" },
+    // The owner's label, often the street address, so owner-only. Other members
+    // see mapLabel (city or neighbourhood) and the rounded mapPoint instead.
+    "name": {
+      "type": "string",
+      "title": "Display name, e.g. the place name or street",
+      "rls": { "read": { "$or": [{ "created_by_id": "{{user.id}}" }, { "user_condition": { "role": "admin" } }] } }
+    },
+    "mapLabel": { "type": "string", "title": "City or neighbourhood shown to other members" },
     "address": {
       "type": "string",
       "rls": { "read": { "$or": [{ "created_by_id": "{{user.id}}" }, { "user_condition": { "role": "admin" } }] } }

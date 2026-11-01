@@ -201,7 +201,7 @@ export default function TrackedPropertiesMap() {
                 <CircleMarker key={p.id} center={p.point} radius={MARKER_RADIUS_PX} pathOptions={own ? OWN_STYLE : OTHER_STYLE}>
                   <Popup>
                     <div className="space-y-1 text-[12.5px]">
-                      <p className="font-medium">{p.name}{own && ' (yours)'}</p>
+                      <p className="font-medium">{own ? `${p.name || 'Your project'} (yours)` : p.mapLabel || 'Member project'}</p>
                       <p className="text-muted-foreground">{p.ownerName || 'Member'}</p>
                       <p>{percentConverted(p)}% converted{started && ` · started ${started}`}</p>
                       {!own && <MessageButton project={p} />}
@@ -230,7 +230,9 @@ export default function TrackedPropertiesMap() {
               {nearby.map((p) => (
                 <li key={p.id} className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
                   <div className="min-w-0">
-                    <p className="truncate text-[12.5px] font-medium">{p.name}</p>
+                    <p className="truncate text-[12.5px] font-medium">
+                      {p.created_by_id === user?.id ? p.name || 'Your project' : p.mapLabel || 'Member project'}
+                    </p>
                     <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
                       <MapPin className="h-3 w-3 shrink-0" />
                       {distanceLabel(p.miles)} · {percentConverted(p)}% converted

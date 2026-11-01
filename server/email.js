@@ -6,6 +6,7 @@ import { recordUsage } from './usage.js';
 
 const RESEND_URL = 'https://api.resend.com/emails';
 const FROM = process.env.EMAIL_FROM || 'EcoEstate <no-reply@ecoestate.org>';
+const REPLY_TO = process.env.EMAIL_REPLY_TO || 'support@ecoestate.org';
 
 export const emailConfigured = () => Boolean(process.env.RESEND_API_KEY);
 
@@ -27,7 +28,7 @@ export async function sendEmail({ to, subject, text, html }) {
     res = await fetch(RESEND_URL, {
       method: 'POST',
       headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: FROM, to: [to], subject, text, html }),
+      body: JSON.stringify({ from: FROM, to: [to], reply_to: REPLY_TO, subject, text, html }),
       signal: AbortSignal.timeout(15000),
     });
   } catch {

@@ -2,6 +2,19 @@ import { Loader2 } from 'lucide-react';
 import ScanStat from '@/components/scan/ScanStat';
 import { money, num } from '@/lib/landscapeMath';
 
+// A dollar figure the API may not know yet (0 or missing, e.g. no local water
+// price or rebate data): show a dash and point to the Payoff step, never "$0".
+function DollarStat({ label, amount, hasImpact }) {
+  const known = Number(amount) > 0;
+  return (
+    <ScanStat
+      label={label}
+      value={known ? money(amount) : '—'}
+      hint={hasImpact && !known ? 'See the Payoff step' : undefined}
+    />
+  );
+}
+
 // Lawn size and conversion impact from the lawn-to-native API.
 export default function LawnImpact({ lawnSqft, impact, updating = false, error = '' }) {
   return (
@@ -22,8 +35,8 @@ export default function LawnImpact({ lawnSqft, impact, updating = false, error =
       </div>
       <div className="grid grid-cols-3 gap-2">
         <ScanStat label="Water saved / yr" value={impact ? `${num(impact.gallonsSavedPerYear)} gal` : '—'} />
-        <ScanStat label="Saved / yr" value={impact ? money(impact.dollarsSavedPerYear) : '—'} />
-        <ScanStat label="Est. rebate" value={impact ? money(impact.estimatedRebate) : '—'} />
+        <DollarStat label="Saved / yr" amount={impact?.dollarsSavedPerYear} hasImpact={!!impact} />
+        <DollarStat label="Est. rebate" amount={impact?.estimatedRebate} hasImpact={!!impact} />
       </div>
       {error && (
         <p role="alert" className="text-[11.5px] leading-relaxed text-destructive">

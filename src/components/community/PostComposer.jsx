@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ImagePlus, Loader2, Send, X } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { stripImageMetadata, UnsupportedImageError } from '@/lib/stripImageMetadata';
 import { Button } from '@/components/ui/button';
 
 export default function PostComposer({ onPosted }) {
@@ -17,13 +18,17 @@ export default function PostComposer({ onPosted }) {
     setUploading(true);
     setError('');
     const added = [];
-    for (const file of files) {
+    for (const original of files) {
       try {
+        // Post photos are shown to other members: always drop metadata (GPS
+        // included), refusing photos the browser can't re-encode.
+        const file = await stripImageMetadata(original, { allowOriginal: false });
         const { file_uri } = await base44.integrations.Core.UploadPrivateFile({ file });
         const { signed_url } = await base44.integrations.Core.CreateFileSignedUrl({ file_uri, expires_in: 3600 });
         added.push({ uri: file_uri, url: signed_url });
-      } catch {
-        /* skip a failed upload */
+      } catch (err) {
+        if (err instanceof UnsupportedImageError) setError(err.message);
+        /* otherwise skip a failed upload */
       }
     }
     setPhotos((prev) => [...prev, ...added]);

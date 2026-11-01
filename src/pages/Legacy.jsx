@@ -17,7 +17,7 @@ import {
 import StepNav from '@/components/StepNav';
 import StatTile from '@/components/StatTile';
 import { Button } from '@/components/ui/button';
-import { environmental, financials, money, num } from '@/lib/landscapeMath';
+import { designOrDefault, environmental, financials, money, num } from '@/lib/landscapeMath';
 import { buildSchedule } from '@/lib/buildSchedule';
 const HORIZON = 30;
 const INFLATION = 0.03;
@@ -26,7 +26,7 @@ export default function Legacy() {
   const { id } = useParams();
   const { project, loading } = useProject(id);
 
-  const design = project?.design || [];
+  const design = useMemo(() => designOrDefault(project), [project]);
   const fin = useMemo(() => (project ? financials(project, design) : null), [project, design]);
   const env = useMemo(() => (project ? environmental(project, design) : null), [project, design]);
   const sched = useMemo(() => buildSchedule(fin?.turfSqft || 0), [fin?.turfSqft]);

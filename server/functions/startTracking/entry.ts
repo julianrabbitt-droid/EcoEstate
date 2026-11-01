@@ -28,10 +28,15 @@ export default async function (req) {
     const center = Array.isArray(data.center) && data.center.length === 2 ? data.center.map(Number) : null;
     // The place name or street address, before the city ("920, Moreno Avenue" -> "920 Moreno Avenue").
     const parts = String(data.address || '').split(',').map((p) => p.trim()).filter(Boolean);
-    const name = (/^\d+[a-z]?$/i.test(parts[0] || '') && parts[1] ? `${parts[0]} ${parts[1]}` : parts[0]) || 'My property';
+    const numbered = /^\d+[a-z]?$/i.test(parts[0] || '') && parts[1];
+    const name = (numbered ? `${parts[0]} ${parts[1]}` : parts[0]) || 'My property';
+    // What other members see: the city or neighbourhood after the street, never the street itself.
+    const place = parts.slice(numbered ? 2 : 1).find((p) => !/county$/i.test(p) && !/^\d/.test(p));
+    const mapLabel = place || 'Member project';
     const tracked = await base44.asServiceRole.entities.TrackedProject.create({
       projectId,
       name,
+      mapLabel,
       address: data.address || '',
       center,
       mapPoint: center ? center.map((v) => Math.round(v * 100) / 100) : null, // ~1 km, for the community map

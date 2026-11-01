@@ -117,3 +117,30 @@ export function resetPasswordEmail({ url, minutes = 60 }) {
   ].join('\n');
   return { subject: 'Reset your EcoEstate password', text, html };
 }
+
+// EcoEstate Pro subscription notices required by California's Automatic
+// Renewal Law: the acknowledgment sent when someone subscribes, and the
+// reminder sent at least once a year. Both restate the renewal terms and how
+// to cancel. `firstMonthUsd` is what the first month cost (after any referral
+// or promo discount); `termsVersion` is the Terms version they accepted.
+export function proSubscriptionEmail({ kind = 'welcome', firstMonthUsd = null, termsVersion = '', operator = '', address = '' }) {
+  const welcome = kind === 'welcome';
+  const subject = welcome ? 'Your EcoEstate Pro subscription is active' : 'Reminder: your EcoEstate Pro subscription renews monthly';
+  const discounted = welcome && firstMonthUsd != null && Number(firstMonthUsd) < 10;
+  const lines = [
+    welcome ? 'Thanks for subscribing to EcoEstate Pro.' : 'This is your yearly reminder about your EcoEstate Pro subscription.',
+    'What you get: saved properties, project tracking, project exports and the community.',
+    `Price: $10.00 per month plus any tax.${discounted ? ` Your first month was $${Number(firstMonthUsd).toFixed(2)} with your discount.` : ''}`,
+    'Renewal: it renews automatically every month on the same date and charges the card you used, until you cancel. There is no minimum term.',
+    `How to cancel: sign in at ${SITE}, open your account menu and choose “Manage subscription”, then “Cancel subscription”. Or reply to this email and we will cancel for you. Pro stays on until the end of the month you've paid for. No refunds for partial months.`,
+    `Terms: https://${SITE}/terms${termsVersion ? ` (version ${termsVersion})` : ''}`,
+  ];
+  const footer = [operator, address, 'support@ecoestate.org'].filter(Boolean).join(' · ');
+  const text = `${lines.join('\n\n')}\n\n${footer}\n`;
+  const html = layout({
+    preview: welcome ? 'Your subscription details and how to cancel.' : 'Your subscription details and how to cancel.',
+    heading: welcome ? 'Your Pro subscription is active' : 'Your Pro subscription renews monthly',
+    body: lines.map((l) => paragraph(escape(l))).join('') + note(escape(footer)),
+  });
+  return { subject, text, html };
+}

@@ -158,6 +158,15 @@ export function autoDesign(project) {
   return picks.map(({ speciesId, share }) => ({ speciesId, quantity: quantityForShare(share, speciesId, sqft) }));
 }
 
+// The design the later steps (Payoff, Build, Legacy) show: the saved one, or —
+// before the user has saved any — the same auto-generated design the Design
+// step starts from. Computed, not saved, so merely viewing a step never writes.
+export function designOrDefault(project) {
+  if (project?.design?.length) return project.design;
+  if (!project) return [];
+  return fitDesignToArea(autoDesign(project), project.breakdown?.turf || 0);
+}
+
 // Keep compatible saved choices; replace a legacy wrong-region default once.
 export function designForProject(project) {
   if (!project?.design?.length) return project?.design || [];

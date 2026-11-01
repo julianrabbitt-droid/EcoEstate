@@ -116,6 +116,7 @@ export default async function (req) {
 
     return Response.json({ species, pattern, note });
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    console.error('designFromPrompt: error', error);
+    return Response.json({ error: 'Something went wrong. Please try again.' }, { status: 500 });
   }
 }

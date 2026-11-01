@@ -4,7 +4,8 @@ import { GraduationCap, Leaf, Loader2, LogIn, ScanLine } from 'lucide-react';
 import { useAutoScanAccess } from '@/hooks/useAutoScanAccess';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
-import { startCheckout } from '@/lib/checkout';
+import { savedReferral, startCheckout } from '@/lib/checkout';
+import RenewalTerms from '@/components/RenewalTerms';
 import { loginPath } from '@/lib/authReturnTo';
 
 // Shown on the Analysis step. Full Auto Scans and the 3D Garden View are free
@@ -81,6 +82,7 @@ export default function FullAutoScanUpsell() {
             <>Upgrade to Pro for project exports — $10/month</>
           )}
         </Button>
+        <RenewalTerms className="mt-3" referral={!!savedReferral()} />
         {error && <p className="mt-2 text-[12px] text-destructive">{error}</p>}
       </section>
     );
@@ -151,6 +153,7 @@ export default function FullAutoScanUpsell() {
           </Link>
         </Button>
       </div>
+      <RenewalTerms className="mt-3" referral={!!savedReferral()} />
       {error && <p className="mt-2 text-[12px] text-destructive">{error}</p>}
     </section>
   );

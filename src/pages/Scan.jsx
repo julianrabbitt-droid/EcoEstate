@@ -44,12 +44,12 @@ function scannedStructures(d) {
 
 const STEPS = [
   {
-    t: 'Auto-detect the lawn',
-    d: 'We pull satellite imagery, a street-level photo, and public lot-size data to build a first lawn map automatically.',
+    t: 'Measure the lawn',
+    d: 'Enter your address and we measure the lawn from aerial imagery, mapping it alongside the buildings, trees and paths around it.',
   },
   {
-    t: 'Confirm what grows',
-    d: 'Imagery estimates the turf species and its water demand. A camera close-up raises the confidence.',
+    t: 'Adjust the outline',
+    d: 'Check the lawn map and adjust its outline to fix anything the imagery missed — or trace it yourself, or enter your own size.',
   },
   {
     t: 'Design the replacement',

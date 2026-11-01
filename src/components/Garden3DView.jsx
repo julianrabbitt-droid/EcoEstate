@@ -232,9 +232,10 @@ function groundTexture() {
   return _ground;
 }
 
-// 3D building: extrudes a roofed structure from its footprint. Wall color, height
-// and roof type come from the street-view read in autoScanProperty; when those
-// are missing (manual scans), a single-story block is estimated from the footprint.
+// 3D building: extrudes a roofed structure from its footprint. Wall color and
+// roof type come from a project's saved `building` attributes, which only older
+// scans have; otherwise the walls are gray with a neutral roof. Height is passed
+// in (measured per footprint, or estimated from its size — see the caller).
 const WALL_COLORS = {
   white: 0xf2efe9, beige: 0xe8dcc6, tan: 0xcfa978, cream: 0xefe6d4,
   gray: 0x9a9a96, brown: 0x6e5642, brick: 0x9a5a45, red: 0x9c4b3a,
@@ -865,7 +866,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const pts = poly.map((p) => [p[0] - cx, p[1] - cy]);
       const area = Math.abs(pts.reduce((s, p, i) => s + pts[i][0] * pts[(i + 1) % pts.length][1] - pts[(i + 1) % pts.length][0] * p[1], 0)) / 2;
       // Height scales with footprint size so large buildings read as tall, not flat.
-      // The street-view stories read is honored when it is the taller estimate.
+      // An older project's saved building height is honored when it is the taller estimate.
       const stories = Math.max(1, Math.min(4, Math.round(area / 1200)));
       const heightFt = poly.heightFt > 0 ? poly.heightFt : Math.max(Number(bAttr.heightFt) || 0, stories * 10.5);
       const mesh = buildBuilding(pts, heightFt, bAttr.wallColor, bAttr.roofType);

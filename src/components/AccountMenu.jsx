@@ -10,10 +10,19 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import RenewalTerms from '@/components/RenewalTerms';
 import { base44 } from '@/api/base44Client';
 import { useAuth } from '@/lib/AuthContext';
 import { usePremiumAccess } from '@/hooks/usePremiumAccess';
-import { openBillingPortal, startCheckout } from '@/lib/checkout';
+import { openBillingPortal, savedReferral, startCheckout } from '@/lib/checkout';
 import { loginPath } from '@/lib/authReturnTo';
 import { toast } from '@/components/ui/use-toast';
 
@@ -29,6 +38,8 @@ export default function AccountMenu() {
   const { user, isAuthenticated } = useAuth();
   const { premium, threeD, loading, refresh } = usePremiumAccess();
   const [checkingOut, setCheckingOut] = useState(false);
+  // "Upgrade to Pro" first shows the renewal terms, then goes to checkout.
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const planLabel = premium ? 'Pro' : threeD ? 'Student' : 'Free';
   const PlanIcon = premium ? Crown : threeD ? GraduationCap : Leaf;
@@ -65,63 +76,82 @@ export default function AccountMenu() {
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="h-9 gap-1.5 rounded-full px-2 sm:px-3">
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[11px] font-medium text-primary-foreground">
-            {user?.full_name ? initials(user.full_name) : <User className="h-3.5 w-3.5" />}
-          </span>
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuLabel className="flex flex-col gap-0.5">
-          <span className="text-sm font-medium">{user?.full_name || 'Account'}</span>
-          <span className="truncate text-[11px] font-normal text-muted-foreground">{user?.email}</span>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <div className="px-2 py-1.5">
-          <div className="flex items-center gap-2 rounded-md bg-secondary/60 px-2.5 py-2">
-            <PlanIcon className="h-4 w-4 text-accent" />
-            <div className="flex flex-col">
-              <span className="text-[12px] font-medium text-foreground">{planLabel} plan</span>
-              <span className="text-[10px] text-muted-foreground">
-                {loading
-                  ? 'Checking access…'
-                  : premium
-                    ? 'Community, tracking & exports'
-                    : threeD
-                      ? 'Community & project tracking'
-                      : 'Free scans & 3D view'}
-              </span>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" className="h-9 gap-1.5 rounded-full px-2 sm:px-3">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[11px] font-medium text-primary-foreground">
+              {user?.full_name ? initials(user.full_name) : <User className="h-3.5 w-3.5" />}
+            </span>
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuLabel className="flex flex-col gap-0.5">
+            <span className="text-sm font-medium">{user?.full_name || 'Account'}</span>
+            <span className="truncate text-[11px] font-normal text-muted-foreground">{user?.email}</span>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <div className="px-2 py-1.5">
+            <div className="flex items-center gap-2 rounded-md bg-secondary/60 px-2.5 py-2">
+              <PlanIcon className="h-4 w-4 text-accent" />
+              <div className="flex flex-col">
+                <span className="text-[12px] font-medium text-foreground">{planLabel} plan</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {loading
+                    ? 'Checking access…'
+                    : premium
+                      ? 'Community, tracking & exports'
+                      : threeD
+                        ? 'Community & project tracking'
+                        : 'Free scans & 3D view'}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
-        {!premium && (
-          <DropdownMenuItem onClick={handleUpgrade} disabled={checkingOut} className="gap-2">
-            <Crown className="h-4 w-4 text-accent" />
-            {checkingOut ? 'Opening checkout…' : 'Upgrade to Pro'}
+          {!premium && (
+            <DropdownMenuItem onSelect={() => setConfirmOpen(true)} disabled={checkingOut} className="gap-2">
+              <Crown className="h-4 w-4 text-accent" />
+              {checkingOut ? 'Opening checkout…' : 'Upgrade to Pro'}
+            </DropdownMenuItem>
+          )}
+          {premium && (
+            <DropdownMenuItem onClick={handleManage} className="gap-2">
+              <Crown className="h-4 w-4 text-accent" /> Manage subscription
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onClick={() => navigate('/invite')} className="gap-2">
+            <Gift className="h-4 w-4" /> Invite friends — get a free month
           </DropdownMenuItem>
-        )}
-        {premium && (
-          <DropdownMenuItem onClick={handleManage} className="gap-2">
-            <Crown className="h-4 w-4 text-accent" /> Manage subscription
+          <DropdownMenuItem onClick={() => navigate('/projects')} className="gap-2">
+            <User className="h-4 w-4" /> My properties
           </DropdownMenuItem>
-        )}
-        <DropdownMenuItem onClick={() => navigate('/invite')} className="gap-2">
-          <Gift className="h-4 w-4" /> Invite friends — get a free month
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => navigate('/projects')} className="gap-2">
-          <User className="h-4 w-4" /> My properties
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={refresh} disabled={loading} className="gap-2">
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh access
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleSignOut} className="gap-2 text-destructive focus:text-destructive">
-          <LogOut className="h-4 w-4" /> Sign out
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          <DropdownMenuItem onClick={refresh} disabled={loading} className="gap-2">
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh access
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={handleSignOut} className="gap-2 text-destructive focus:text-destructive">
+            <LogOut className="h-4 w-4" /> Sign out
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Dialog open={confirmOpen} onOpenChange={(open) => !checkingOut && setConfirmOpen(open)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Upgrade to EcoEstate Pro</DialogTitle>
+            <DialogDescription>Community, project tracking and exports.</DialogDescription>
+          </DialogHeader>
+          <RenewalTerms referral={!!savedReferral()} />
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" className="rounded-full" onClick={() => setConfirmOpen(false)} disabled={checkingOut}>
+              Cancel
+            </Button>
+            <Button className="rounded-full" onClick={handleUpgrade} disabled={checkingOut}>
+              {checkingOut ? 'Opening checkout…' : 'Continue to checkout'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

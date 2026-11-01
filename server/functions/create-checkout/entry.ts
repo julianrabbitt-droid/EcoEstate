@@ -1,6 +1,10 @@
 import { createClientFromRequest } from '../../sdk.js';
 import { APP_URL } from '../../config.js';
+import { TERMS_VERSION } from '../../auth.js';
 import { billingAccount, premiumPriceId, referralCouponId, referrerForCode, stripeClient } from '../../shared/billing.ts';
+
+// Bump when the renewal wording below changes (kept as proof of what buyers saw).
+const RENEWAL_DISCLOSURE_VERSION = 'rt-2026-11-01';
 
 // Starts a Stripe Checkout for EcoEstate Pro ($10/month). Signed-in users
 // only, so the subscription is tied to their account. Body: { referralCode? } —
@@ -31,7 +35,7 @@ export default async function (req) {
       return Response.json({ error: 'You already have EcoEstate Pro. It can take a minute to show up.' }, { status: 409 });
     }
 
-    const session = await s.checkout.sessions.create({
+    const params = {
       mode: 'subscription',
       // Cards only: delayed methods (bank debits) would finish after checkout.
       payment_method_types: ['card'],
@@ -39,11 +43,45 @@ export default async function (req) {
       client_reference_id: user.id,
       line_items: [{ price: await premiumPriceId(s), quantity: 1 }],
       ...(referrerId ? { discounts: [{ coupon: await referralCouponId(s) }] } : { allow_promotion_codes: true }),
-      metadata: { appUserId: user.id, ...(referrerId ? { referrerId } : {}) },
-      subscription_data: { metadata: { appUserId: user.id } },
+      // The buyer ticks a required box agreeing to the renewal terms, right by
+      // Stripe's Subscribe button (California Automatic Renewal Law: express
+      // consent to clearly shown terms). Stripe records the acceptance on the session.
+      consent_collection: { terms_of_service: 'required' },
+      custom_text: {
+        terms_of_service_acceptance: {
+          message:
+            'I agree that EcoEstate Pro renews automatically and charges my card $10 per month (plus any tax), after any first-month discount shown above, until I cancel; ' +
+            `that I can cancel anytime online from “Manage subscription”; and to the [Terms of Service](${APP_URL}/terms).`,
+        },
+        submit: {
+          message: 'Recurring charge: $10/month until you cancel. Cancel anytime from “Manage subscription” in your EcoEstate account menu.',
+        },
+      },
+      metadata: { appUserId: user.id, termsVersion: TERMS_VERSION, renewalDisclosure: RENEWAL_DISCLOSURE_VERSION, ...(referrerId ? { referrerId } : {}) },
+      subscription_data: { metadata: { appUserId: user.id, termsVersion: TERMS_VERSION } },
       success_url: `${APP_URL}/my-projects?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${APP_URL}/my-projects?checkout=canceled`,
-    });
+    };
+    let session;
+    try {
+      session = await s.checkout.sessions.create(params);
+    } catch (e) {
+      // Stripe refuses the required box until a Terms URL is set in its
+      // Dashboard (Settings → Public details); fall back to the disclosure text.
+      if (!/terms of service/i.test(e?.message || '')) throw e;
+      console.warn('create-checkout: set the Terms of Service URL in Stripe → Settings → Public details to require the consent box');
+      const { consent_collection: _consent, ...rest } = params;
+      session = await s.checkout.sessions.create({
+        ...rest,
+        custom_text: {
+          submit: {
+            message:
+              'EcoEstate Pro renews automatically every month at $10 (plus any tax), after any first-month discount shown above, charged to this card until you cancel. ' +
+              `Cancel anytime from “Manage subscription” in your EcoEstate account menu. By subscribing you agree to the Terms of Service (${APP_URL}/terms).`,
+          },
+        },
+      });
+    }
     return Response.json({ redirectUrl: session.url, referralApplied: !!referrerId });
   } catch (error) {
     console.error('create-checkout: error', error?.message);

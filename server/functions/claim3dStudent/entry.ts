@@ -83,6 +83,6 @@ export default async function (req) {
     return Response.json({ unlocked: true, student: true });
   } catch (error) {
     console.error('claim3dStudent: error', error);
-    return Response.json({ error: error.message || 'Could not unlock' }, { status: 500 });
+    return Response.json({ error: 'Could not unlock right now. Please try again.' }, { status: 500 });
   }
 }

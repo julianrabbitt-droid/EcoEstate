@@ -7,7 +7,7 @@ import StepNav from '@/components/StepNav';
 import { Button } from '@/components/ui/button';
 import { organizationsFor, NURSERIES } from '@/data/organizations';
 import { plantById } from '@/data/nativePlants';
-import { financials, money, num } from '@/lib/landscapeMath';
+import { designOrDefault, financials, money, num } from '@/lib/landscapeMath';
 import { buildSchedule } from '@/lib/buildSchedule';
 import ProjectExports from '@/components/ProjectExports';
 
@@ -57,7 +57,7 @@ export default function Plan() {
     );
   }
 
-  const design = project.design || [];
+  const design = designOrDefault(project);
   const allOrgs = organizationsFor(project, orgTier);
   const shownOrgs = allOrgs.slice(0, orgLimit);
   const orgsHasMore = orgLimit < allOrgs.length || orgTier < 3;

@@ -16,7 +16,7 @@ import {
 import StepNav from '@/components/StepNav';
 import StatTile from '@/components/StatTile';
 import { Button } from '@/components/ui/button';
-import { money, num } from '@/lib/landscapeMath';
+import { designOrDefault, money, num } from '@/lib/landscapeMath';
 import { plantById } from '@/data/nativePlants';
 import { defaultMixForProject, plantsForProject } from '@/data/regions';
 export default function Impact() {
@@ -33,7 +33,7 @@ export default function Impact() {
     if (!project) return;
     let cancelled = false;
     setError('');
-    const design = project.design || [];
+    const design = designOrDefault(project);
     const entries = design
       .map((e) => {
         const p = plantById(e.speciesId);

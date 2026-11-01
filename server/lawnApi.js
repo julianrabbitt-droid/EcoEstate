@@ -29,25 +29,38 @@ export const lawnRouter = express.Router();
 lawnRouter.use(express.json({ limit: '1mb' }));
 
 // Scans are free but heavy, so each visitor (account, or IP for guests) gets
-// a limited number per 10 minutes.
+// a limited number per 10 minutes. Re-measuring an outline (/area) is cheap
+// and isn't counted. Guests behind one school network share an IP, so their
+// allowance is larger.
 const WINDOW_MS = 10 * 60_000;
-const MAX_PER_WINDOW = 30;
 const recent = new Map();
+
+// The visitor's IP as our host saw it. X-Forwarded-For's left side is
+// whatever the browser sent, so only the edge-set header or the last hop count.
+function clientIp(req) {
+  const edge = req.headers['cf-connecting-ip'];
+  if (typeof edge === 'string' && edge) return edge;
+  const hops = String(req.headers['x-forwarded-for'] || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return hops.at(-1) || req.socket.remoteAddress || 'unknown';
+}
+
 function overLimit(req) {
-  const who = req.user?.id || req.ip || 'unknown';
+  const max = req.user ? 30 : 60;
+  const who = req.user?.id || `ip:${clientIp(req)}`;
   const cutoff = Date.now() - WINDOW_MS;
   const times = (recent.get(who) || []).filter((t) => t > cutoff);
   times.push(Date.now());
   recent.set(who, times);
   if (recent.size > 10_000) for (const [k, v] of recent) if (!v.some((t) => t > cutoff)) recent.delete(k);
-  return times.length > MAX_PER_WINDOW;
+  return times.length > max;
 }
 
 lawnRouter.use(async (req, res) => {
   const target = ROUTES[`${req.method} ${req.path}`];
   if (!target) return res.status(404).json({ error: { code: 'not_found', message: 'Not found.' } });
 
-  if (req.path !== '/health' && overLimit(req)) {
+  if (req.path === '/lawn' && overLimit(req)) {
+    res.setHeader('Retry-After', String(WINDOW_MS / 1000));
     return res.status(429).json({ error: { code: 'rate_limited', message: 'Too many scans in a short time. Please wait a few minutes and try again.' } });
   }
 

@@ -1,5 +1,8 @@
 import Stripe from 'stripe';
 import { users } from '../db.js';
+import { LEGAL_ADDRESS, LEGAL_OPERATOR } from '../config.js';
+import { sendEmail } from '../email.js';
+import { proSubscriptionEmail } from '../emailTemplates.js';
 
 // EcoEstate Pro billing on Stripe: a $10/month subscription, plus referrals.
 // A friend who subscribes with a referral code gets $5 off their first month
@@ -133,6 +136,10 @@ export async function fulfillCheckout(base44, s: Stripe, session: Stripe.Checkou
       checkoutSessionId: session.id,
       status: live ? 'paid' : 'canceled',
       livemode: session.livemode,
+      // Proof of the buyer's agreement to the renewal terms at checkout.
+      termsVersion: session.metadata?.termsVersion || null,
+      renewalDisclosure: session.metadata?.renewalDisclosure || null,
+      consentTermsOfService: session.consent?.terms_of_service || null,
       appUserId,
       buyerEmail: session.customer_details?.email || '',
       productId: 'premium',
@@ -146,11 +153,32 @@ export async function fulfillCheckout(base44, s: Stripe, session: Stripe.Checkou
       paidAt: new Date().toISOString(),
     }));
 
+  if (!existing && purchase && !purchase.ackEmailAt) await sendWelcome(base44, purchase, session);
+
   // Only a friend who actually paid earns the referrer a month (a first
   // invoice paid entirely by credit doesn't count).
   const referrerId = session.metadata?.referrerId;
   if (referrerId && referrerId !== appUserId && (session.amount_total ?? 0) > 0) await rewardReferrer(base44, s, referrerId, appUserId);
   return purchase;
+}
+
+// The subscription acknowledgment (renewal terms and how to cancel), sent once.
+async function sendWelcome(base44, purchase, session: Stripe.Checkout.Session) {
+  const to = session.customer_details?.email || purchase.buyerEmail;
+  if (!to) return;
+  try {
+    const mail = proSubscriptionEmail({
+      kind: 'welcome',
+      firstMonthUsd: (session.amount_total ?? PREMIUM_USD * 100) / 100,
+      termsVersion: purchase.termsVersion || '',
+      operator: LEGAL_OPERATOR,
+      address: LEGAL_ADDRESS,
+    });
+    const result = await sendEmail({ to, ...mail });
+    await base44.asServiceRole.entities.Base44Purchase.update(purchase.id, { ackEmailAt: new Date().toISOString(), ackEmailId: result.id || null });
+  } catch (e) {
+    console.error('Pro welcome email failed', e?.message);
+  }
 }
 
 async function rewardReferrer(base44, s: Stripe, referrerId: string, refereeId: string) {

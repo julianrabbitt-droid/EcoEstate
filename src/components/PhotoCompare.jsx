@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Upload, Wand2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { stripImageMetadata } from '@/lib/stripImageMetadata';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { plantById } from '@/data/nativePlants';
@@ -42,7 +43,10 @@ export default function PhotoCompare({ entries = [] }) {
         continue;
       }
       try {
-        const { file_uri } = await base44.integrations.Core.UploadPrivateFile({ file });
+        // Drop metadata (GPS included); a private photo the browser can't
+        // re-encode (e.g. HEIC) is uploaded as is.
+        const clean = await stripImageMetadata(file);
+        const { file_uri } = await base44.integrations.Core.UploadPrivateFile({ file: clean });
         const { signed_url } = await base44.integrations.Core.CreateFileSignedUrl({ file_uri, expires_in: 3600 });
         added.push({ url: signed_url, name: file.name });
       } catch {

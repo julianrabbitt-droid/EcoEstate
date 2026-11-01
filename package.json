@@ -16,7 +16,8 @@
     "lint": "eslint . --quiet",
     "preview": "npm run build && npm start",
     "email:test": "node server/scripts/send-test-emails.mjs",
-    "costs": "node --disable-warning=ExperimentalWarning server/scripts/costs.mjs"
+    "costs": "node --disable-warning=ExperimentalWarning server/scripts/costs.mjs",
+    "delete-account": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning server/scripts/delete-account.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.0",

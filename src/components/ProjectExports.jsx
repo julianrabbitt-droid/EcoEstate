@@ -7,7 +7,8 @@ import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { plantById } from '@/data/nativePlants';
 import { financials, money, num } from '@/lib/landscapeMath';
-import { startCheckout } from '@/lib/checkout';
+import { savedReferral, startCheckout } from '@/lib/checkout';
+import RenewalTerms from '@/components/RenewalTerms';
 
 // Pro project export: a printable PDF brief and a materials spreadsheet,
 // plus a share action. Gated behind EcoEstate Pro ($10/month) — not the free
@@ -164,6 +165,7 @@ export default function ProjectExports({ projectId, project, design }) {
                 </>
               )}
             </Button>
+            <RenewalTerms className="mt-3" referral={!!savedReferral()} />
             {error && <p className="mt-2 text-[12px] text-destructive">{error}</p>}
           </>
         ) : (

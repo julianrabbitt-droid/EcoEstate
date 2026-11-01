@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { GraduationCap, Leaf, Loader2, Sprout } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
-import { startCheckout } from '@/lib/checkout';
+import { savedReferral, startCheckout } from '@/lib/checkout';
+import RenewalTerms from '@/components/RenewalTerms';
 
 const FEATURES = {
   tracking: {
@@ -118,6 +119,7 @@ export default function TrackingUpsell({ onUnlocked, feature = 'tracking' }) {
           )}
         </Button>
       </div>
+      <RenewalTerms className="mt-3" referral={!!savedReferral()} />
       {error && <p className="mt-2 text-[12px] text-destructive">{error}</p>}
     </section>
   );

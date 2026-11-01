@@ -8,10 +8,22 @@ import { filesRouter } from './files.js';
 import { runFunction } from './functions.js';
 import { usageBySession, usageContext } from './usage.js';
 import { lawnRouter } from './lawnApi.js';
+import { startRenewalReminders } from './renewalReminders.js';
 
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', true);
+
+// Standard browser protections: HTTPS only, no framing by other sites,
+// no MIME sniffing, and only the origin sent as referrer.
+app.use((req, res, next) => {
+  if (IS_PROD) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 
 // Resolve the signed-in user (if any) for every API request.
 app.use('/api', async (req, _res, next) => {
@@ -67,6 +79,15 @@ app.use('/api/lawn', lawnRouter);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 
+// Bad request bodies (broken JSON, too large) get a short JSON error, not a
+// stack trace.
+app.use('/api', (err, _req, res, next) => {
+  if (res.headersSent) return next(err);
+  const status = err.status || err.statusCode || 500;
+  if (status >= 500) console.error(err);
+  res.status(status).json({ error: status >= 500 ? 'Internal error' : err.type === 'entity.too.large' ? 'Request too large' : 'Invalid request body' });
+});
+
 // ---- Built frontend (production) ----
 const dist = path.join(ROOT, 'dist');
 if (IS_PROD && fs.existsSync(dist)) {
@@ -81,4 +102,5 @@ app.listen(PORT, () => {
   console.log(`EcoEstate API listening on http://localhost:${PORT}`);
   if (!process.env.GOOGLE_MAPS_API_KEY) console.warn('  ! GOOGLE_MAPS_API_KEY is not set — features that need it will return an error.');
   if (!process.env.CLERK_SECRET_KEY) console.warn('  ! CLERK_SECRET_KEY is not set — nobody can sign in.');
+  startRenewalReminders();
 });
