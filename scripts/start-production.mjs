@@ -1,4 +1,4 @@
-// Production entry (Render): runs the lawn measurement service on a private
+// Production entry (Railway): runs the lawn measurement service on a private
 // port next to the main API, which serves the built site on $PORT and forwards
 // /api/lawn to it. If either process stops, exit so the host restarts both.
 import { spawn } from 'node:child_process';
