@@ -15,6 +15,7 @@ import ThankYou from './pages/ThankYou';
 import Login from '@/pages/Login';
 import { loginPath } from '@/lib/authReturnTo';
 import Register from '@/pages/Register';
+import { Privacy, Terms } from '@/pages/Legal';
 // Add page imports here
 import Scan from '@/pages/Scan';
 import Analysis from '@/pages/Analysis';
@@ -92,6 +93,8 @@ const AuthenticatedApp = () => {
         <Route path="/project/:id/impact" element={<Impact />} />
         <Route path="/project/:id/plan" element={<Plan />} />
         <Route path="/project/:id/legacy" element={<Legacy />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/terms" element={<Terms />} />
         <Route element={<ProtectedRoute unauthenticatedElement={<ToLogin />} />}>
           <Route path="/projects" element={<Projects />} />
           <Route path="/my-projects" element={<MyProjects />} />

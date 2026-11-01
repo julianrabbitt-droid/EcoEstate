@@ -86,7 +86,11 @@ export default function AppShell() {
       <footer className="border-t border-border/70 py-8">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-2 px-5 text-xs text-muted-foreground sm:flex-row">
           <span>EcoEstate · native landscape conversion</span>
-          <span>Estimates are modeled, not engineering or legal advice.</span>
+          <span className="flex flex-wrap items-center justify-center gap-x-3">
+            <span>Estimates are modeled, not engineering or legal advice.</span>
+            <Link to="/privacy" className="underline-offset-2 hover:underline">Privacy</Link>
+            <Link to="/terms" className="underline-offset-2 hover:underline">Terms</Link>
+          </span>
         </div>
       </footer>
     </div>
