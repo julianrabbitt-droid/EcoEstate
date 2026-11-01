@@ -1,0 +1,39 @@
+# Render blueprint: one web service runs the site, the API and the lawn
+# measurement service (scripts/start-production.mjs). Standard plan (2 GB):
+# big scans peak near 1 GB. Secrets marked sync: false are entered in the
+# Render dashboard, never committed.
+services:
+  - type: web
+    name: ecoestate
+    runtime: node
+    plan: standard
+    region: oregon
+    branch: main
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:production
+    healthCheckPath: /api/app/public-settings
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: APP_URL
+        value: https://ecoestate.org
+      - key: JWT_SECRET
+        generateValue: true # signs private photo links
+      - key: SUPABASE_URL
+        value: https://lzstqfqslvaxyaxqelkv.supabase.co
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: VITE_CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: GEOCODIO_API_KEY
+        sync: false # lawn service: address lookups (from lawn-api/.env)
+      - key: DEFAULT_WATER_PRICE
+        sync: false # lawn service (from lawn-api/.env)
+      - key: DEFAULT_REBATE_PER_SQFT
+        sync: false # lawn service (from lawn-api/.env)
