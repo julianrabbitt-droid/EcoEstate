@@ -142,6 +142,20 @@ export default function Design() {
     );
   };
 
+  // Plant density: the share of the lawn the grown plants cover. Moving the
+  // slider scales every species' count together, so the mix stays the same.
+  const coverOf = (list) => list.reduce((a, e) => a + e.quantity * clearanceOf(plantById(e.speciesId)) ** 2, 0) / Math.max(1, turfSqft);
+  const cover = Math.round(Math.min(1.2, coverOf(entries)) * 100);
+  const setCover = (percent) => {
+    autosave.markDirty();
+    setEntries((prev) => {
+      const now = coverOf(prev);
+      if (!now) return prev;
+      const k = percent / 100 / now;
+      return prev.map((e) => ({ ...e, quantity: Math.max(1, Math.round(e.quantity * k)) }));
+    });
+  };
+
   const save = async () => {
     autosave.cancel();
     const next = await updateProject(id, { design: entries, nativeListAdjusted: false });
@@ -208,6 +222,29 @@ export default function Design() {
             <h2 className="text-[15px] font-medium tracking-tight">Your planting list</h2>
             <span className="text-[11px] text-muted-foreground">{totals.count} plants</span>
           </div>
+
+          {entries.length > 0 && turfSqft > 0 && (
+            <label className="mt-3 block">
+              <span className="flex items-baseline justify-between text-[12px]">
+                <span className="text-foreground">Plant density</span>
+                <span className="text-muted-foreground">{cover}% of the lawn covered when grown</span>
+              </span>
+              <input
+                type="range"
+                min={25}
+                max={100}
+                step={5}
+                value={Math.max(25, Math.min(100, cover))}
+                onChange={(e) => setCover(Number(e.target.value))}
+                className="mt-1.5 w-full accent-[hsl(var(--primary))]"
+                aria-label="Plant density"
+              />
+              <span className="flex justify-between text-[10.5px] text-muted-foreground">
+                <span>Sparse, lower cost</span>
+                <span>Full</span>
+              </span>
+            </label>
+          )}
 
           {entries.length > 0 && (
             <button

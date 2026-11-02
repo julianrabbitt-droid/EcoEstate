@@ -1313,7 +1313,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         for (const c of scene.children) {
           const u = c.userData;
           if (u && (u.satellite || (u.offLot && !u.inFront))) c.visible = !t3;
-          if (u && u.outline) c.visible = !t3;
+          if (u && (u.outline || u.modelOnly)) c.visible = !t3;
           if (u && u.skirt) c.visible = !!t3;
           if (u && u.lotGround) c.visible = !t3;
         }
@@ -2042,6 +2042,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     const roadMat = new THREE.MeshStandardMaterial({ map: asphaltTexture(), roughness: 0.95, metalness: 0 });
     // Photographed concrete pavers (CC0, Poly Haven) for walks and patios.
     const paverMat = new THREE.MeshStandardMaterial({ map: photo('concrete_pavement', 'diffuse'), normalMap: photo('concrete_pavement', 'nor_gl'), roughness: 0.9, metalness: 0 });
+    const concreteMat = new THREE.MeshStandardMaterial({ color: 0xd9d5cc, map: photo('concrete_pavement', 'diffuse'), roughness: 0.95, metalness: 0 });
     const curbMat = new THREE.LineBasicMaterial({ color: 0xe8e4da });
     const edgeMat = new THREE.LineBasicMaterial({ color: 0x8a7f6b });
     const labelled = new Set();
@@ -2049,13 +2050,17 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     paths.forEach((poly) => {
       if (!poly || poly.length < 3) return;
       const road = ROAD_KINDS.has(poly.kind);
+      // Driveways, patios and walks the scan found as bare paving: flat on the
+      // ground, in the model only (Real 3D shows the real ones).
+      const paved = poly.kind === 'paved';
       const offLot = !onLot(poly.reduce((s, p) => s + p[0], 0) / poly.length, poly.reduce((s, p) => s + p[1], 0) / poly.length);
-      const depth = road ? 0.9 : 0.5; // roads stand well clear of the faded satellite ground
+      const depth = road ? 0.9 : paved ? 0.06 : 0.5; // roads stand well clear of the faded satellite ground
       const shape = new THREE.Shape();
       poly.forEach((p, i) => { const x = p[0] - cx; const y = p[1] - cy; if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y); });
-      const slab = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false }), road ? roadMat : paverMat);
+      const slab = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false }), road ? roadMat : paved ? concreteMat : paverMat);
       slab.userData.path = true;
       slab.userData.offLot = offLot;
+      slab.userData.modelOnly = paved;
       slab.rotation.x = -Math.PI / 2;
       slab.position.y = MULCH_Y; // sits on the mulch, so a path crossing a converted lawn stays visible
       slab.receiveShadow = true;
@@ -2067,6 +2072,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       );
       edge.userData.path = true;
       edge.userData.offLot = offLot;
+      edge.userData.modelOnly = paved;
       scene.add(edge);
 
       // One label per road piece long enough to read; skip repeats close by.
@@ -2083,6 +2089,21 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         }
       }
     });
+
+    // The sidewalk and strip between the lot and its street, in the model (so the
+    // property doesn't float apart from the road); Real 3D shows the real ones.
+    if (front && outerPoly && outerPoly.length >= 3) {
+      const toScene = (poly) => poly.map((p) => [p[0] - cx, -(p[1] - cy)]);
+      const streets = paths.filter((q) => q && q.length >= 3 && ROAD_KINDS.has(q.kind) && q.kind !== 'service').map(toScene);
+      const walkTex = groundTexture().clone();
+      walkTex.needsUpdate = true;
+      const walk = drapedGround(front, [toScene(outerPoly)], at, walkTex, [], false, streets);
+      walk.material.color.set(0xe4e0d6);
+      walk.position.y = MULCH_Y;
+      walk.userData.ground = true;
+      walk.userData.modelOnly = true;
+      scene.add(walk);
+    }
 
     // Existing mature trees kept from the scan, sized to their scanned canopy.
     // Each stands on the lowest ground under its crown (never on a roof, wall or

@@ -22,6 +22,12 @@ import { buildingsOnParcel, describeBuildings, describeNearbyRoads, describePath
 const SQM_TO_SQFT = 10.7639;
 
 export const SETTINGS = {
+  // Paving on the property (driveways, patios, walks): bare, flat ground that
+  // isn't lawn, a roof, a tree or a pool, in patches at least this big.
+  paveNdviMax: 0.2, // concrete reads a little green in some surveys; lawn and shrubs are excluded already
+  paveMinBrightness: 60, // darker is deep shadow, not pavement
+  paveOpenM: 0.9, // specks and thin seams narrower than about twice this are dropped
+  paveMinSqft: 80,
   ndviMin: 0.2, // NDVI at or above this counts as green (healthy turf is usually 0.3+)
   // Aerial photos are flown mid-morning to early afternoon, never with the sun
   // straight overhead, so houses and trees cast shadows across lawns. Shaded
@@ -702,6 +708,31 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   });
   const lawn = layers.lawn;
 
+  // Paving: bare, flat, not green, not under a tree, not pool water.
+  const paveMask = new Uint8Array(n);
+  for (let k = 0; k < n; k++) {
+    if (!usable[k] || green[k] || trees[k] || tall[k]) continue;
+    const [r, g, b] = [naip.red[k], naip.green[k], naip.blue[k]];
+    if (ndvi[k] >= SETTINGS.paveNdviMax || (r + g + b) / 3 < SETTINGS.paveMinBrightness) continue;
+    if (b > r * 1.15 && b > g * 1.05) continue; // pool water
+    if (measured?.known[k] && !measured.flat[k]) continue;
+    paveMask[k] = 1;
+  }
+  const paveOpen = Math.max(1, Math.round(SETTINGS.paveOpenM / grid.res));
+  const pavePieces = labelRegions(dilate(erode(paveMask, w, h, paveOpen), w, h, paveOpen), w, h);
+  const paveKeep = Float64Array.from(pavePieces.labels, (l) => (l && pavePieces.sizes[l] * pxSqft >= SETTINGS.paveMinSqft ? 1 : 0));
+  const [paveMulti] = contours().size([w, h]).thresholds([0.5])(paveKeep);
+  const paved = {
+    type: 'FeatureCollection',
+    features: paveMulti.coordinates
+      .map((rings) => ({ type: 'Polygon', coordinates: [rings[0].map(toLonLat)] }))
+      .map((geometry) => {
+        const simple = simplify({ type: 'Feature', properties: {}, geometry }, { tolerance: 0.000004, highQuality: true }).geometry;
+        return { type: 'Feature', geometry: simple, properties: { kind: 'paved', areaSqft: Math.round(turfArea(simple) * SQM_TO_SQFT) } };
+      })
+      .filter((f) => f.properties.areaSqft >= SETTINGS.paveMinSqft),
+  };
+
   const onParcelNotRoof = Uint8Array.from(parcel, (v, k) => (v && !roofLabels[k] ? 1 : 0));
   const nearbyRoads = describeNearbyRoads(mappedPaths, parcelGeometry);
   const streetTrees = grid.res <= SETTINGS.streetMaxResM ? await findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBuildings) : [];
@@ -722,6 +753,7 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     buildings: buildingLayer,
     trees: [...detectTrees(grid, canopy, onParcelNotRoof), ...streetTrees],
     paths: layers.paths,
+    paved,
     nearbyRoads,
   };
   if (debug) result.debug = { grid, naip, canopy, ndvi, parcel, green, trees, rough, roofs: roofLabels, measured, newerTurf, underCanopy, tall, grassInt, prevNaip, usable };

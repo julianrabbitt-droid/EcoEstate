@@ -45,7 +45,7 @@ function scannedStructures(d) {
     buildingHeightsFt.push(f.properties?.heightFt ?? null);
   }
   const trees = (d?.trees || []).map((t) => ({ latLng: [t.lat, t.lon], radiusFt: t.radiusFt, heightFt: t.heightFt }));
-  const paths = [...(d?.paths?.features || []), ...(d?.nearbyRoads?.features || [])]
+  const paths = [...(d?.paths?.features || []), ...(d?.nearbyRoads?.features || []), ...(d?.paved?.features || [])]
     .map((f) => ({ polygonLatLng: geoJsonOuterRings(f.geometry)[0], kind: f.properties?.kind, name: f.properties?.name || null }))
     .filter((p) => p.polygonLatLng);
   return { buildings, buildingHeightsFt, trees, paths };
