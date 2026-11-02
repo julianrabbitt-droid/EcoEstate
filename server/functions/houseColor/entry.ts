@@ -14,7 +14,7 @@ const STREETVIEW = 'https://maps.googleapis.com/maps/api/streetview';
 const DAILY_LIMIT = 30;
 const seen = new Map(); // visitor -> { day, n }
 
-// Same names and colours as the 3D view's wall palette (Garden3DView WALL_COLORS).
+// Same names and colours as the 3D view's wall palette (houseModel.js WALL_COLORS).
 const PALETTE = {
   white: [0xf2, 0xef, 0xe9], cream: [0xef, 0xe6, 0xd4], beige: [0xe8, 0xdc, 0xc6], tan: [0xcf, 0xa9, 0x78],
   yellow: [0xd8, 0xc4, 0x7a], gray: [0x9a, 0x9a, 0x96], blue: [0x6b, 0x7d, 0x8f], green: [0x6f, 0x81, 0x75],

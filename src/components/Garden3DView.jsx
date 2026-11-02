@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { TilesRenderer } from '3d-tiles-renderer';
-import { GLTFExtensionsPlugin, GoogleCloudAuthPlugin, ReorientationPlugin, TileCompressionPlugin, TileFlatteningPlugin } from '3d-tiles-renderer/plugins';
+import { GLTFExtensionsPlugin, GoogleCloudAuthPlugin, ReorientationPlugin, TileCompressionPlugin } from '3d-tiles-renderer/plugins';
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Leaf, Loader2, Move, ScanEye, Sun, Wand2 } from 'lucide-react';
 import WalkThroughHandle from '@/components/WalkThroughHandle';
 import WalkSpeedControl from '@/components/WalkSpeedControl';
@@ -13,6 +13,7 @@ import { plantById } from '@/data/nativePlants';
 import { plantsForProject, regionForProject } from '@/data/regions';
 import { base44 } from '@/api/base44Client';
 import { arrangementsFor } from '@/data/arrangements';
+import { buildHouse, HOUSE_SHARED } from '@/lib/houseModel';
 import { disposeObject } from '@/lib/disposeThree';
 import { arrangePlants, prepareBuildings, prepareLot, preparePolys, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
 
@@ -21,6 +22,7 @@ import { arrangePlants, prepareBuildings, prepareLot, preparePolys, prepareTrees
 const SHARED = new WeakSet();
 const shared = (r) => { SHARED.add(r); return r; };
 const isShared = (r) => SHARED.has(r);
+HOUSE_SHARED.forEach(shared);
 
 const GEO = {
   ico0: shared(new THREE.IcosahedronGeometry(1, 0)),
@@ -43,8 +45,50 @@ const EYE_HEIGHT = 5.5; // walkthrough camera height (ft) above the ground
 const GOOGLE_TILES_KEY = import.meta.env.VITE_GOOGLE_MAPS_BROWSER_KEY || '';
 const PHOTO_PREF = 'ecoestate.photoReal';
 const M_TO_FT = 3.28084;
-const PHOTO_SINK_FT = 0.8; // real ground sits this far below the beds, so the photo mesh never pokes through them
-const FLATTEN_UP_TO_M = 2; // under the beds, the photo mesh is flattened up to this height (grass, low shrubs), never trees
+const PHOTO_SINK_FT = 0.2; // Google's ground just outside the lot sits this far below the model's
+const SURROUND_FT = 130; // how far past the property Google's mesh is shown
+const SURROUND_FADE_FT = 45; // and over how many feet it fades out
+const MASK_INSET_FT = 1.5; // the cut-out stops this far inside the lot line
+
+// Google's mesh is cut away over the property (everything on and above its
+// ground, so our model stands there instead) and faded out past the immediate
+// surroundings. Done in the tiles' shaders: a top-down mask of the lot outline,
+// plus a distance fade, discard fragments. Shared by every tile material.
+const clipUniforms = {
+  uEcoMask: { value: new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1) },
+  uEcoBox: { value: new THREE.Vector4(0, 0, 1, 1) },
+  uEcoCenter: { value: new THREE.Vector2() },
+  uEcoRadius: { value: 1e9 },
+  uEcoFade: { value: SURROUND_FADE_FT },
+};
+clipUniforms.uEcoMask.value.needsUpdate = true;
+function clipTileMaterial(m) {
+  if (!m || m.userData.ecoClip) return;
+  m.userData.ecoClip = true;
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, clipUniforms);
+    sh.vertexShader = 'varying vec3 vEcoWorld;\n' + sh.vertexShader.replace(
+      '#include <project_vertex>',
+      '#include <project_vertex>\n  vEcoWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+    );
+    sh.fragmentShader = [
+      'varying vec3 vEcoWorld;',
+      'uniform sampler2D uEcoMask;',
+      'uniform vec4 uEcoBox;',
+      'uniform vec2 uEcoCenter;',
+      'uniform float uEcoRadius;',
+      'uniform float uEcoFade;',
+      sh.fragmentShader.replace('void main() {', `void main() {
+  vec2 ecoUv = (vEcoWorld.xz - uEcoBox.xy) / uEcoBox.zw;
+  if (ecoUv.x > 0.0 && ecoUv.x < 1.0 && ecoUv.y > 0.0 && ecoUv.y < 1.0 && texture2D(uEcoMask, ecoUv).r > 0.5) discard;
+  float ecoD = length(vEcoWorld.xz - uEcoCenter);
+  float ecoT = (ecoD - (uEcoRadius - uEcoFade)) / uEcoFade;
+  if (ecoT >= 1.0 || (ecoT > 0.0 && fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) < ecoT)) discard;`),
+    ].join('\n');
+  };
+  m.customProgramCacheKey = () => 'eco-clip';
+  m.needsUpdate = true;
+}
 const readPhotoPref = () => {
   try {
     return localStorage.getItem(PHOTO_PREF) === '1';
@@ -82,6 +126,15 @@ function mulchTexture() {
 }
 // Roads and paths: speckled asphalt and light pavers, laid in world feet so
 // the texture scale matches however big the slab is.
+const insidePoly = ([x, y], pts) => {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi] = pts[i];
+    const [xj, yj] = pts[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+};
 const ROAD_KINDS = new Set(['service', 'living_street', 'residential', 'unclassified', 'tertiary', 'secondary', 'primary']);
 let _asphalt;
 function asphaltTexture() {
@@ -252,45 +305,6 @@ function groundTexture() {
     }
   });
   return _ground;
-}
-
-// 3D building: extrudes a roofed structure from its footprint. Wall color comes
-// from the project's `building.wallColor`: read from a Street View photo of the
-// house when the server has a Google key (Design step, houseColor function), or
-// saved by older scans; otherwise the walls are gray with a neutral roof. Height is passed
-// in (measured per footprint, or estimated from its size — see the caller).
-const WALL_COLORS = {
-  white: 0xf2efe9, beige: 0xe8dcc6, tan: 0xcfa978, cream: 0xefe6d4,
-  gray: 0x9a9a96, brown: 0x6e5642, brick: 0x9a5a45, red: 0x9c4b3a,
-  blue: 0x6b7d8f, green: 0x6f8175, yellow: 0xd8c47a,
-};
-const ROOF_COLORS = {
-  flat: 0x333333, gable: 0x4a3528, hip: 0x4a3528, shed: 0x4a3528, mansard: 0x2e2e2e, unknown: 0x3c3c3c,
-};
-function buildBuilding(points, heightFt, wallColor, roofType) {
-  const g = new THREE.Group();
-  // Build around the footprint's own centre so the roof's eave overhang (a 4%
-  // scale-up) grows evenly on all sides instead of sliding off the walls.
-  const mx = points.reduce((s, p) => s + p[0], 0) / points.length;
-  const my = points.reduce((s, p) => s + p[1], 0) / points.length;
-  g.position.set(mx, 0, -my);
-  const shape = new THREE.Shape();
-  points.forEach((p, i) => { if (i === 0) shape.moveTo(p[0] - mx, p[1] - my); else shape.lineTo(p[0] - mx, p[1] - my); });
-  const wallHex = WALL_COLORS[wallColor] ?? WALL_COLORS.gray;
-  const wallMat = new THREE.MeshStandardMaterial({ color: wallHex, roughness: 0.92, flatShading: true });
-  const walls = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: heightFt, bevelEnabled: false }), wallMat);
-  walls.rotation.x = -Math.PI / 2;
-  walls.castShadow = true; walls.receiveShadow = true;
-  g.add(walls);
-  // Roof: a thin slab slightly oversized vs the footprint to read as eaves.
-  const roofMat = new THREE.MeshStandardMaterial({ color: ROOF_COLORS[roofType] ?? ROOF_COLORS.unknown, roughness: 0.85 });
-  const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.6, bevelEnabled: false }), roofMat);
-  roof.rotation.x = -Math.PI / 2;
-  roof.position.y = heightFt;
-  roof.scale.set(1.04, 1.04, 1);
-  roof.castShadow = true; roof.receiveShadow = true;
-  g.add(roof);
-  return g;
 }
 
 // Existing mature trees kept from the scan: rendered as a trunk + broad ico
@@ -733,10 +747,11 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         t3.tiles.update();
       }
       if (dirty) {
-        // In the Google 3D view the real house, trees, paths and ground replace the modelled ones.
+        // In Real 3D, Google shows the surroundings (streets, neighbours, street
+        // trees) and our model shows the property, which is cut out of Google's mesh.
         for (const c of scene.children) {
           const u = c.userData;
-          if (u && (u.ground || u.building || u.path || u.existingTree)) c.visible = !t3;
+          if (u && (u.satellite || u.offLot)) c.visible = !t3;
         }
         // Scale render resolution with camera distance: full quality up close, coarser when zoomed far out.
         const dist = camera.position.distanceTo(controls.target);
@@ -781,12 +796,59 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   // Ground points (scene feet) for lining the Google mesh up with the model:
   // lawn outline corners first (always open ground), then the property line.
   const groundSamplesRef = useRef([]);
-  const lawnPolysRef = useRef([]);
   useEffect(() => {
-    lawnPolysRef.current = polys.filter((p) => p && p.length >= 3).map((p) => p.map(([x, y]) => [x - cx, -(y - cy)]));
     const pts = [...polys.flat(), ...(lot || [])].map(([x, y]) => [x - cx, -(y - cy)]);
     groundSamplesRef.current = pts.length > 40 ? pts.filter((_, i) => i % Math.ceil(pts.length / 40) === 0) : pts;
   }, [polys, lot, cx, cy]);
+
+  // The property outline that is cut out of Google's mesh: the lot, or a
+  // padded box around the lawns and buildings when no lot was scanned.
+  useEffect(() => {
+    const pts = lot && lot.length >= 3
+      ? lot
+      : (() => {
+          const all = [...polys.flat(), ...buildings.flat()];
+          if (!all.length) return null;
+          const xs = all.map((p) => p[0]);
+          const ys = all.map((p) => p[1]);
+          const [x0, x1, y0, y1] = [Math.min(...xs) - 6, Math.max(...xs) + 6, Math.min(...ys) - 6, Math.max(...ys) + 6];
+          return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+        })();
+    if (!pts) return undefined;
+    const scenePts = pts.map(([x, y]) => [x - cx, -(y - cy)]);
+    const xs = scenePts.map((p) => p[0]);
+    const zs = scenePts.map((p) => p[1]);
+    const [minX, maxX, minZ, maxZ] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+    const W = 512;
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = W;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    scenePts.forEach(([x, z], i) => {
+      const px = ((x - minX) / (maxX - minX || 1)) * W;
+      const py = (1 - (z - minZ) / (maxZ - minZ || 1)) * W; // canvas rows run top-down; the texture is flipped
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    });
+    ctx.closePath();
+    ctx.fill();
+    // Pull the cut in a little from the lot line: county lines are often a
+    // foot or two off, and the cut shouldn't slice a neighbour's wall open.
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = (2 * MASK_INSET_FT * W) / Math.max(maxX - minX, maxZ - minZ, 1);
+    ctx.stroke();
+    const tex = new THREE.CanvasTexture(c);
+    const previous = clipUniforms.uEcoMask.value;
+    clipUniforms.uEcoMask.value = tex;
+    clipUniforms.uEcoBox.value.set(minX, minZ, maxX - minX || 1, maxZ - minZ || 1);
+    clipUniforms.uEcoCenter.value.set(0, 0);
+    clipUniforms.uEcoRadius.value = Math.max(...scenePts.map(([x, z]) => Math.hypot(x, z))) + SURROUND_FT;
+    if (previous !== tex && previous.image?.width > 1) previous.dispose();
+    threeRef.current?.markDirty?.();
+    return undefined;
+  }, [lot, polys, buildings, cx, cy]);
 
   // Google Photorealistic 3D Tiles around the garden, while the toggle is on.
   // The tileset is placed so the scene origin is the property's centre, east
@@ -816,8 +878,6 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       tiles.registerPlugin(new GLTFExtensionsPlugin({ dracoLoader: draco }));
       tiles.registerPlugin(new TileCompressionPlugin());
       tiles.registerPlugin(new ReorientationPlugin({ lat: lat0 * DEG, lon: lon0 * DEG, height: heightM }));
-      const flattening = new TileFlatteningPlugin();
-      tiles.registerPlugin(flattening);
       tiles.setCamera(camera);
       tiles.setResolutionFromRenderer(camera, renderer);
 
@@ -852,35 +912,18 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         // Coarse globe tiles load first and can be far off; wait for detailed ones that agree.
         const [lo, hi] = knownHeight ? [-400, 400] : [-1000, 15000];
         if (ground < lo || ground > hi || median - ground > 60) return;
-        const y = -ground - PHOTO_SINK_FT;
-        if (Math.abs(y - holder.position.y) < 0.2 && flatShape) return;
-        holder.position.y = y;
-        flattenUnderBeds();
+        holder.position.y = -ground - PHOTO_SINK_FT;
         markDirty();
-      };
-      // Google's grass is a bumpy mesh that would swallow the beds; press it
-      // flat just under them (trees overhead are left alone).
-      let flatShape = null;
-      const flattenUnderBeds = () => {
-        if (flatShape) flattening.deleteShape(flatShape);
-        flatShape = null;
-        const shapes = lawnPolysRef.current.map((pts) => new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, z))));
-        if (!shapes.length) return;
-        const geometry = new THREE.ShapeGeometry(shapes).rotateX(Math.PI / 2).translate(0, -0.3, 0);
-        holder.updateMatrixWorld(true);
-        const toTileset = tiles.group.matrixWorld.clone().invert();
-        flatShape = new THREE.Mesh(geometry);
-        flatShape.applyMatrix4(toTileset);
-        flatShape.updateMatrixWorld(true);
-        const up = new THREE.Vector3(0, 1, 0).transformDirection(toTileset);
-        flattening.addShape(flatShape, up, { threshold: FLATTEN_UP_TO_M, thresholdMode: 'none' });
-        state.wantUpdate = true;
       };
       const credit = () => {
         const text = tiles.getAttributions().filter((a) => a.type === 'string').map((a) => a.value).join(' ').trim();
         setPhotoCredit(text);
       };
       const onNeedsUpdate = () => { state.wantUpdate = true; markDirty(); };
+      const onModel = ({ scene: model }) => {
+        model.traverse((o) => { if (o.material) clipTileMaterial(o.material); });
+        onNeedsUpdate();
+      };
       const onLoadEnd = () => { levelGround(); credit(); setPhotoStatus('ready'); markDirty(); };
       const onRoot = () => {
         // One root tileset request is one billed session; count it on the owner dashboard.
@@ -897,7 +940,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         console.warn('3D tiles failed to load', e?.error?.message || e);
       };
       tiles.addEventListener('needs-update', onNeedsUpdate);
-      tiles.addEventListener('load-model', onNeedsUpdate);
+      tiles.addEventListener('load-model', onModel);
       tiles.addEventListener('tile-visibility-change', markDirty);
       tiles.addEventListener('tiles-load-end', onLoadEnd);
       tiles.addEventListener('load-root-tileset', onRoot);
@@ -1091,6 +1134,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
             new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }),
           );
           mesh.userData.ground = true;
+          mesh.userData.satellite = true;
           mesh.renderOrder = -1; // drawn before everything else, so modelled items always cover it
           mesh.rotation.x = -Math.PI / 2;
           mesh.position.set((ex0 + ex1) / 2 - cx, -1.5, -((ey0 + ey1) / 2 - cy));
@@ -1142,19 +1186,20 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       scene.add(outline);
     });
 
-    // Extrude the scanned building footprints into 3D. Height is the measured
-    // one from the lawn scan when available (Overture height or floors, or the
-    // canopy height model); otherwise estimated from footprint size.
+    // Buildings from the scanned footprints, squared up into conventional
+    // blocks with roofs, windows and a front door facing the nearest road
+    // (see houseModel.js). Height is the measured one from the lawn scan when
+    // available (Overture height or floors, or the canopy height model).
     const bAttr = project?.building || {};
+    const roadPts = paths.filter((p) => ROAD_KINDS.has(p.kind)).flat().map((p) => [p[0] - cx, p[1] - cy]);
     buildings.forEach((poly) => {
       if (!poly || poly.length < 3) return;
       const pts = poly.map((p) => [p[0] - cx, p[1] - cy]);
-      const area = Math.abs(pts.reduce((s, p, i) => s + pts[i][0] * pts[(i + 1) % pts.length][1] - pts[(i + 1) % pts.length][0] * p[1], 0)) / 2;
-      // Height scales with footprint size so large buildings read as tall, not flat.
-      // An older project's saved building height is honored when it is the taller estimate.
-      const stories = Math.max(1, Math.min(4, Math.round(area / 1200)));
-      const heightFt = poly.heightFt > 0 ? poly.heightFt : Math.max(Number(bAttr.heightFt) || 0, stories * 10.5);
-      const mesh = buildBuilding(pts, heightFt, bAttr.wallColor, bAttr.roofType);
+      const mx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+      const my = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+      const front = roadPts.reduce((best, p) => (!best || Math.hypot(p[0] - mx, p[1] - my) < Math.hypot(best[0] - mx, best[1] - my) ? p : best), null);
+      const heightFt = poly.heightFt > 0 ? poly.heightFt : Number(bAttr.heightFt) > 0 ? Number(bAttr.heightFt) : null;
+      const mesh = buildHouse(pts, heightFt, { wallColor: bAttr.wallColor, roofType: bAttr.roofType, front });
       mesh.userData.building = true;
       scene.add(mesh);
     });
@@ -1167,14 +1212,18 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     const curbMat = new THREE.LineBasicMaterial({ color: 0xe8e4da });
     const edgeMat = new THREE.LineBasicMaterial({ color: 0x8a7f6b });
     const labelled = new Set();
+    // Off the lot, Google's real streets and trees take over in Real 3D.
+    const onLot = (x, y) => !outerPoly || outerPoly.length < 3 || insidePoly([x, y], outerPoly);
     paths.forEach((poly) => {
       if (!poly || poly.length < 3) return;
       const road = ROAD_KINDS.has(poly.kind);
+      const offLot = !onLot(poly.reduce((s, p) => s + p[0], 0) / poly.length, poly.reduce((s, p) => s + p[1], 0) / poly.length);
       const depth = road ? 0.9 : 0.5; // roads stand well clear of the faded satellite ground
       const shape = new THREE.Shape();
       poly.forEach((p, i) => { const x = p[0] - cx; const y = p[1] - cy; if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y); });
       const slab = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false }), road ? roadMat : paverMat);
       slab.userData.path = true;
+      slab.userData.offLot = offLot;
       slab.rotation.x = -Math.PI / 2;
       slab.position.y = MULCH_Y; // sits on the mulch, so a path crossing a converted lawn stays visible
       slab.receiveShadow = true;
@@ -1184,6 +1233,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         road ? curbMat : edgeMat,
       );
       edge.userData.path = true;
+      edge.userData.offLot = offLot;
       scene.add(edge);
 
       // One label per road piece long enough to read; skip repeats close by.
@@ -1195,6 +1245,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           const label = roadLabel(poly.name, axis);
           label.position.set(axis.mx - cx, MULCH_Y + depth + 0.05, -(axis.my - cy));
           label.userData.path = true;
+          label.userData.offLot = offLot;
           scene.add(label);
         }
       }
@@ -1205,6 +1256,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const mesh = buildExistingTree(t.radiusFt, t.heightFt);
       mesh.position.set(t.x - cx, MULCH_Y, -(t.y - cy));
       mesh.userData.existingTree = true;
+      mesh.userData.offLot = !onLot(t.x, t.y);
       scene.add(mesh);
     });
 
@@ -1566,7 +1618,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         )}
         {photoReal && photoStatus === 'ready' && (
           <p className="pointer-events-none absolute left-3 top-3 z-10 max-w-[80%] rounded-lg bg-background/75 px-3 py-1.5 text-[11px] text-muted-foreground shadow backdrop-blur">
-            Real 3D from Google. Beds under real trees stay hidden by their canopy; drag to look around.
+            Surroundings from Google 3D. Your property is our model of it, so the plan is never hidden.
           </p>
         )}
         {photoReal && photoStatus === 'failed' && (
