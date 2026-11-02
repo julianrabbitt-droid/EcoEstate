@@ -12,10 +12,12 @@ export default function AddressAutocomplete({ value, onChange, onSelect, onSugge
   const [fetching, setFetching] = useState(false);
   const [active, setActive] = useState(-1);
   const boxRef = useRef(null);
-  const lastQuery = useRef('');
+  // An address already in the box when it appears (a scan restored on return)
+  // was picked before: no suggestions for it until it's edited.
+  const lastQuery = useRef((value || '').trim());
   // The query the person already submitted or dismissed: suggestions that
   // arrive for it afterwards stay closed instead of covering the page.
-  const dismissed = useRef('');
+  const dismissed = useRef((value || '').trim());
 
   useEffect(() => {
     const q = (value || '').trim();

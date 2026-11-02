@@ -111,7 +111,7 @@ export default function Scan() {
   // The scan of the shown pin starts while the person is still confirming it,
   // so it is usually done by the time they click; a moved pin scans afresh.
   const earlyScan = useRef(null); // { key, promise }
-  const picked = useRef(null); // the suggestion last picked from the address list
+  const picked = useRef(saved.place || null); // the suggestion last picked from the address list
   const [hits, setHits] = useState([]); // the list's current suggestions
   const scanKey = (address, hit) => `${address}|${hit?.lat}|${hit?.lng}|${hit?.osm || ''}`;
   const [editSeed, setEditSeed] = useState(saved.editSeed || null);
