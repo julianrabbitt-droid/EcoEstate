@@ -126,7 +126,7 @@ export default function PostComposer({ onPosted }) {
         onChange={(e) => setBody(e.target.value)}
         placeholder="What did you do? How is it growing? Any surprises?"
         rows={3}
-        className="field mt-3 resize-none"
+        className="field mt-3 h-auto resize-none py-2.5 leading-relaxed"
       />
       <div className="relative mt-3">
         <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />

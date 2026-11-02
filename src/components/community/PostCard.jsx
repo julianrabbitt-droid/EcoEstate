@@ -117,9 +117,16 @@ export default function PostCard({ post, me, onDelete }) {
       {post.body && <p className="px-5 pt-2 text-[13px] leading-relaxed text-foreground/90">{post.body}</p>}
 
       {images.length > 0 && (
-        <div className="mt-3 grid grid-cols-2 gap-1 px-5 sm:grid-cols-3">
+        // Whole photos, never cropped: one photo at its own shape, several in a
+        // grid, each letterboxed inside its cell.
+        <div className={`mt-3 grid gap-2 px-5 ${images.length > 1 ? 'grid-cols-2' : ''}`}>
           {images.map((src, i) => (
-            <img key={i} src={src} alt={`Progress photo ${i + 1}`} className="h-36 w-full rounded-lg object-cover" />
+            <img
+              key={i}
+              src={src}
+              alt={`Progress photo ${i + 1}`}
+              className={`w-full rounded-lg bg-secondary object-contain ${images.length > 1 ? 'aspect-[4/3]' : 'max-h-[520px]'}`}
+            />
           ))}
         </div>
       )}
