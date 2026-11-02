@@ -19,6 +19,7 @@ import Register from '@/pages/Register';
 import { Cookies, Privacy, Refunds, Terms } from '@/pages/Legal';
 import WhyNative from '@/pages/WhyNative';
 import Examples from '@/pages/Examples';
+import Admin from '@/pages/Admin';
 // Add page imports here
 import Scan from '@/pages/Scan';
 import Analysis from '@/pages/Analysis';
@@ -113,6 +114,7 @@ const AuthenticatedApp = () => {
           <Route path="/my-projects/:id" element={<TrackedProject />} />
           <Route path="/social" element={<Social />} />
           <Route path="/invite" element={<Invite />} />
+          <Route path="/admin" element={<Admin />} />
           <Route path="/community" element={<ToSocial tab="community" />} />
           <Route path="/messages" element={<ToSocial tab="messages" />} />
         </Route>

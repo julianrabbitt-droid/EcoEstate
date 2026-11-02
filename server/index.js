@@ -9,6 +9,7 @@ import { runFunction } from './functions.js';
 import { usageBySession, usageContext } from './usage.js';
 import { lawnRouter } from './lawnApi.js';
 import { startRenewalReminders } from './renewalReminders.js';
+import { overview, startOpsMonitor } from './ops.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -37,6 +38,17 @@ app.use('/api', async (req, _res, next) => {
 app.use('/api', usageContext);
 
 app.use('/api/auth', authRouter);
+
+// Owner dashboard: money, users, service health and alerts (admins only).
+app.get('/api/admin/overview', async (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
+  try {
+    res.json(await overview());
+  } catch (e) {
+    console.error('[ops] overview failed', e);
+    res.status(500).json({ error: 'Could not build the overview' });
+  }
+});
 
 // What each session cost in paid API calls (admins only).
 app.get('/api/admin/usage', async (req, res) => {
@@ -105,4 +117,5 @@ app.listen(PORT, () => {
   if (!process.env.GOOGLE_MAPS_API_KEY) console.warn('  ! GOOGLE_MAPS_API_KEY is not set — features that need it will return an error.');
   if (!process.env.CLERK_SECRET_KEY) console.warn('  ! CLERK_SECRET_KEY is not set — nobody can sign in.');
   startRenewalReminders();
+  startOpsMonitor();
 });

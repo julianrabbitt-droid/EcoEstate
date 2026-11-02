@@ -145,6 +145,11 @@ export default function AccountMenu() {
           <DropdownMenuItem onClick={() => navigate('/my-projects')} className="gap-2">
             <Sprout className="h-4 w-4" /> My projects
           </DropdownMenuItem>
+          {user?.role === 'admin' && (
+            <DropdownMenuItem onClick={() => navigate('/admin')} className="gap-2">
+              <Crown className="h-4 w-4" /> Owner dashboard
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={refresh} disabled={loading} className="gap-2">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh access
           </DropdownMenuItem>

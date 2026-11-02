@@ -20,7 +20,10 @@ const shared = (r) => { SHARED.add(r); return r; };
 const isShared = (r) => SHARED.has(r);
 
 const GEO = {
+  ico0: shared(new THREE.IcosahedronGeometry(1, 0)),
   ico1: shared(new THREE.IcosahedronGeometry(1, 1)),
+  ico2: shared(new THREE.IcosahedronGeometry(1, 2)),
+  leafBlade: shared(new THREE.ConeGeometry(1, 1, 4)),
   cyl: shared(new THREE.CylinderGeometry(1, 1, 1, 8)),
   cone: shared(new THREE.ConeGeometry(1, 1, 6)),
   ring: shared(new THREE.RingGeometry(0.85, 1, 28)),
@@ -287,119 +290,194 @@ function buildExistingTree(radiusFt, heightFt) {
 // One shared material set per species + maturity. A bed of the same species used
 // to build a fresh MeshStandardMaterial per plant (hundreds of GPU programs); now
 // they all share three, which is the single biggest 3D perf win here.
+// Leaves are green, not the flower colour the catalog lists. Each species
+// gets a slightly different natural green; grasses lean toward their own tint
+// (needlegrass purple, deergrass silver) and trees keep their listed canopy.
+const FOLIAGE = ['#4f6b3a', '#5b7442', '#466236', '#6b7f4c', '#587a52', '#7a8a5c'];
+function foliageColor(plant) {
+  if (plant.form === 'tree') return new THREE.Color(plant.color);
+  let hash = 0;
+  for (const ch of String(plant.id)) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  const green = new THREE.Color(FOLIAGE[hash % FOLIAGE.length]);
+  return plant.form === 'grass' ? green.lerp(new THREE.Color(plant.color), 0.35) : green;
+}
+
 const _matCache = new Map();
 function plantMaterials(plant, mature) {
   const key = plant.id + ':' + (mature ? 'm' : 'y');
   if (_matCache.has(key)) return _matCache.get(key);
   const mats = {
-    leaf: shared(new THREE.MeshStandardMaterial({ color: new THREE.Color(plant.color), roughness: 0.85, flatShading: true })),
-    accent: shared(new THREE.MeshStandardMaterial({ color: new THREE.Color(plant.accent || plant.color), roughness: 0.7, flatShading: true })),
+    leaf: shared(new THREE.MeshStandardMaterial({ color: foliageColor(plant), roughness: 0.85, flatShading: true })),
+    // A plant's catalog colour is its flower/fruit colour: used for blooms.
+    accent: shared(new THREE.MeshStandardMaterial({ color: new THREE.Color(plant.form === 'tree' || plant.form === 'grass' ? plant.accent || plant.color : plant.color), roughness: 0.7, flatShading: true })),
     trunk: shared(new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.95 })),
   };
   _matCache.set(key, mats);
   return mats;
 }
 
-function buildPlant(plant, mature) {
+// Plant detail scales with the scene: small yards get fuller, smoother
+// plants; big properties get lighter ones (fewer pieces, no plant shadows)
+// so thousands of plants stay smooth to orbit and walk through.
+function plantDetailFor(count) {
+  if (count <= 350) return 'high';
+  if (count <= 1500) return 'normal';
+  return 'low';
+}
+
+function buildPlant(plant, mature, detail = 'normal') {
   const g = new THREE.Group();
+  const hi = detail === 'high';
+  const lo = detail === 'low';
   const s = mature ? 1 : 0.35;
   const w = Math.max(0.8, plant.w) * s;
   const h = Math.max(0.8, plant.h) * s;
   const { leaf: leafMat, accent: accentMat, trunk: trunkMat } = plantMaterials(plant, mature);
   const hasAccent = plant.accent && plant.accent !== plant.color;
+  const ico = hi ? GEO.ico2 : lo ? GEO.ico0 : GEO.ico1;
+  const shadows = !lo;
+  const n = (base) => Math.max(1, Math.round(base * (hi ? 1.7 : lo ? 0.45 : 1)));
 
+  const add = (m) => {
+    m.castShadow = shadows; m.receiveShadow = shadows;
+    g.add(m);
+    return m;
+  };
   const blob = (geo, mat, x, y, z, sx, sy, sz, rot) => {
     const m = new THREE.Mesh(geo, mat);
     m.scale.set(sx, sy, sz);
     m.position.set(x, y, z);
     m.rotation.y = rot || 0;
-    m.castShadow = true; m.receiveShadow = true;
-    g.add(m);
+    return add(m);
+  };
+  const dots = (count, size, place) => {
+    if (!hasAccent || lo) return;
+    for (let i = 0; i < count; i++) {
+      const b = new THREE.Mesh(GEO.sphere, accentMat);
+      b.scale.setScalar(size);
+      b.position.set(...place());
+      add(b);
+    }
   };
 
   if (plant.form === 'tree') {
     const trunk = new THREE.Mesh(GEO.cyl, trunkMat);
     trunk.scale.set(0.13, h * 0.5, 0.13);
     trunk.position.y = h * 0.25;
-    trunk.castShadow = true; trunk.receiveShadow = true;
-    g.add(trunk);
-    const cw = w * 0.55;
-    blob(GEO.ico1, leafMat, 0, h * 0.5 + h * 0.22, 0, cw, cw * 0.85, cw, 0.4);
-    blob(GEO.ico1, leafMat, cw * 0.4, h * 0.5 + h * 0.32, cw * 0.3, cw * 0.7, cw * 0.6, cw * 0.7, 1.1);
-    blob(GEO.ico1, leafMat, -cw * 0.35, h * 0.5 + h * 0.3, -cw * 0.25, cw * 0.65, cw * 0.55, cw * 0.65, 2.0);
-    if (hasAccent) {
-      for (let i = 0; i < 8; i++) {
-        const b = new THREE.Mesh(GEO.sphere, accentMat);
-        const a = Math.random() * Math.PI * 2, r = Math.random() * cw * 0.5;
-        b.scale.setScalar(0.06);
-        b.position.set(Math.cos(a) * r, h * 0.5 + h * 0.35 + Math.random() * 0.3, Math.sin(a) * r);
-        b.castShadow = true; g.add(b);
+    add(trunk);
+    if (hi) {
+      // A couple of limbs reaching into the crown.
+      for (const a of [0.6, 2.6, 4.4]) {
+        const limb = new THREE.Mesh(GEO.cyl, trunkMat);
+        limb.scale.set(0.05, h * 0.22, 0.05);
+        limb.position.set(Math.cos(a) * w * 0.08, h * 0.55, Math.sin(a) * w * 0.08);
+        limb.rotation.set(Math.sin(a) * 0.5, 0, Math.cos(a) * 0.5);
+        add(limb);
       }
     }
+    const cw = w * 0.55;
+    const crowns = lo ? 1 : hi ? 6 : 3;
+    for (let i = 0; i < crowns; i++) {
+      const a = (i / crowns) * Math.PI * 2 + 0.4;
+      const r = i === 0 ? 0 : cw * 0.38;
+      const k = i === 0 ? 1 : 0.62 + Math.random() * 0.15;
+      blob(ico, leafMat, Math.cos(a) * r, h * 0.5 + h * (0.22 + (i ? 0.1 : 0)), Math.sin(a) * r, cw * k, cw * k * 0.85, cw * k, a);
+    }
+    dots(n(8), 0.06, () => {
+      const a = Math.random() * Math.PI * 2, r = Math.random() * cw * 0.5;
+      return [Math.cos(a) * r, h * 0.5 + h * 0.35 + Math.random() * 0.3, Math.sin(a) * r];
+    });
   } else if (plant.form === 'shrub') {
     const r = w * 0.34;
-    const lobes = 6;
+    const lobes = n(6);
     for (let i = 0; i < lobes; i++) {
       const a = (i / lobes) * Math.PI * 2;
-      const rad = r * (0.7 + Math.random() * 0.5);
-      blob(GEO.ico1, leafMat, Math.cos(a) * r * 0.5, r * 0.8 + (Math.random() - 0.3) * r * 0.3, Math.sin(a) * r * 0.5, rad, rad * 0.8, rad, a);
+      const rad = r * (0.7 + Math.random() * 0.5) * (hi ? 0.85 : 1);
+      blob(ico, leafMat, Math.cos(a) * r * 0.5, r * 0.8 + (Math.random() - 0.3) * r * 0.3, Math.sin(a) * r * 0.5, rad, rad * 0.8, rad, a);
     }
-    if (hasAccent) {
-      for (let i = 0; i < 6; i++) {
-        const b = new THREE.Mesh(GEO.sphere, accentMat);
-        b.scale.setScalar(0.08);
-        b.position.set((Math.random() - 0.5) * r, r * 0.7 + Math.random() * r * 0.5, (Math.random() - 0.5) * r);
-        b.castShadow = true; g.add(b);
+    if (hi) blob(ico, leafMat, 0, r * 1.25, 0, r * 0.7, r * 0.6, r * 0.7, 0.3); // a fuller top
+    dots(n(6), 0.08, () => [(Math.random() - 0.5) * r, r * 0.7 + Math.random() * r * 0.5, (Math.random() - 0.5) * r]);
+  } else if (plant.form === 'flower') {
+    // A low rosette of leaves at the base reads as a real plant up close.
+    if (hi) {
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2;
+        const lf = new THREE.Mesh(GEO.leafBlade, leafMat);
+        lf.scale.set(w * 0.09, w * 0.42, w * 0.03);
+        lf.position.set(Math.cos(a) * w * 0.14, w * 0.06, Math.sin(a) * w * 0.14);
+        lf.rotation.set(Math.sin(a) * 1.2, 0, -Math.cos(a) * 1.2);
+        add(lf);
       }
     }
-  } else if (plant.form === 'flower') {
-    const stem = new THREE.Mesh(GEO.cyl, trunkMat);
-    stem.scale.set(0.045, h, 0.045); stem.position.y = h * 0.5; stem.castShadow = true; g.add(stem);
-    for (let i = 0; i < 2; i++) {
-      const lf = new THREE.Mesh(GEO.cone, leafMat);
-      lf.scale.set(0.12, 0.2, 0.04);
-      lf.position.set(i ? 0.12 : -0.12, h * 0.4, 0);
-      lf.rotation.z = i ? -0.8 : 0.8; lf.castShadow = true; g.add(lf);
-    }
-    const bloom = new THREE.Mesh(GEO.ico1, accentMat);
-    bloom.scale.setScalar(w * 0.32); bloom.position.y = h + w * 0.12; bloom.castShadow = true; g.add(bloom);
-    for (let i = 0; i < 6; i++) {
-      const petal = new THREE.Mesh(GEO.cone, accentMat);
-      const a = (i / 6) * Math.PI * 2;
-      petal.scale.set(w * 0.1, w * 0.2, w * 0.1);
-      petal.position.set(Math.cos(a) * w * 0.2, h + w * 0.05, Math.sin(a) * w * 0.2);
-      petal.rotation.z = Math.PI / 2.3; petal.rotation.y = -a; petal.castShadow = true; g.add(petal);
+    // Several stems of slightly different heights, each with leaves and a bloom.
+    const stems = lo ? 1 : hi ? 3 : 1;
+    for (let k = 0; k < stems; k++) {
+      const a = (k / stems) * Math.PI * 2 + Math.random();
+      const off = stems > 1 ? w * 0.18 : 0;
+      const x = Math.cos(a) * off, z = Math.sin(a) * off;
+      const sh = h * (stems > 1 ? 0.8 + Math.random() * 0.3 : 1);
+      const stem = new THREE.Mesh(GEO.cyl, leafMat); // green stems, not bark
+      stem.scale.set(0.04, sh, 0.04); stem.position.set(x, sh * 0.5, z); stem.rotation.z = (Math.random() - 0.5) * 0.15;
+      add(stem);
+      if (!lo) {
+        for (let i = 0; i < (hi ? 3 : 2); i++) {
+          const lf = new THREE.Mesh(GEO.leafBlade, leafMat);
+          lf.scale.set(0.12, 0.24, 0.04);
+          lf.position.set(x + (i % 2 ? 0.11 : -0.11), sh * (0.25 + i * 0.15), z);
+          lf.rotation.set(0, a, i % 2 ? -0.85 : 0.85);
+          add(lf);
+        }
+      }
+      const bw = w * (stems > 1 ? 0.24 : 0.32);
+      const bloom = new THREE.Mesh(ico, accentMat);
+      // An open, slightly cupped bloom rather than a ball.
+      bloom.scale.set(bw * 0.55, bw * 0.3, bw * 0.55); bloom.position.set(x, sh + bw * 0.12, z);
+      add(bloom);
+      if (!lo) {
+        const petals = hi ? 8 : 6;
+        for (let i = 0; i < petals; i++) {
+          const petal = new THREE.Mesh(GEO.cone, accentMat);
+          const pa = (i / petals) * Math.PI * 2;
+          petal.scale.set(bw * 0.34, bw * 0.75, bw * 0.08);
+          petal.position.set(x + Math.cos(pa) * bw * 0.5, sh + bw * 0.16, z + Math.sin(pa) * bw * 0.5);
+          petal.rotation.z = Math.PI / 2.05; petal.rotation.y = -pa;
+          add(petal);
+        }
+      }
     }
   } else if (plant.form === 'groundcover') {
-    const mounds = 9;
+    const mounds = n(9);
     for (let i = 0; i < mounds; i++) {
       const a = (i / mounds) * Math.PI * 2 + Math.random();
       const r = Math.random() * w * 0.45;
-      const rad = w * 0.22 * (0.7 + Math.random() * 0.5);
-      blob(GEO.ico1, leafMat, Math.cos(a) * r, rad * 0.5, Math.sin(a) * r, rad, rad * 0.4, rad, a);
+      const rad = w * 0.22 * (0.7 + Math.random() * 0.5) * (hi ? 0.8 : 1);
+      blob(ico, leafMat, Math.cos(a) * r, rad * 0.5, Math.sin(a) * r, rad, rad * 0.4, rad, a);
     }
-    if (hasAccent) {
-      for (let i = 0; i < 5; i++) {
-        const b = new THREE.Mesh(GEO.sphere, accentMat);
-        b.scale.setScalar(0.05);
-        b.position.set((Math.random() - 0.5) * w, 0.15 + Math.random() * 0.15, (Math.random() - 0.5) * w);
-        g.add(b);
-      }
-    }
+    dots(n(5), 0.05, () => [(Math.random() - 0.5) * w, 0.15 + Math.random() * 0.15, (Math.random() - 0.5) * w]);
   } else { // grass
-    const blades = 12;
+    const blades = n(12);
     for (let i = 0; i < blades; i++) {
-      const blade = new THREE.Mesh(GEO.cone, leafMat);
+      const blade = new THREE.Mesh(hi ? GEO.leafBlade : GEO.cone, leafMat);
       const a = (i / blades) * Math.PI * 2 + Math.random() * 0.3;
       const r = Math.random() * w * 0.3;
-      blade.scale.set(w * 0.05, h * (0.7 + Math.random() * 0.5), w * 0.05);
-      blade.position.set(Math.cos(a) * r, h * 0.4, Math.sin(a) * r);
-      blade.rotation.z = (Math.random() - 0.5) * 0.3;
-      blade.castShadow = true; g.add(blade);
+      const bh = h * (0.7 + Math.random() * 0.5);
+      blade.scale.set(w * (hi ? 0.035 : 0.05), bh, w * (hi ? 0.02 : 0.05));
+      blade.position.set(Math.cos(a) * r, bh * 0.45, Math.sin(a) * r);
+      // Blades lean outward from the clump, more on the outside.
+      const lean = (hi ? 0.25 : 0.15) + (r / (w * 0.3)) * 0.25;
+      blade.rotation.set(Math.sin(a) * lean, a, -Math.cos(a) * lean);
+      add(blade);
     }
-    if (hasAccent) {
-      const plume = new THREE.Mesh(GEO.cone, accentMat);
-      plume.scale.set(w * 0.06, h * 0.4, w * 0.06); plume.position.y = h * 0.9; plume.castShadow = true; g.add(plume);
+    if (hasAccent && !lo) {
+      const plumes = hi ? 3 : 1;
+      for (let i = 0; i < plumes; i++) {
+        const plume = new THREE.Mesh(GEO.cone, accentMat);
+        const a = (i / plumes) * Math.PI * 2;
+        const off = plumes > 1 ? w * 0.08 : 0;
+        plume.scale.set(w * 0.05, h * 0.4, w * 0.05);
+        plume.position.set(Math.cos(a) * off, h * 0.9, Math.sin(a) * off);
+        add(plume);
+      }
     }
   }
   return g;
@@ -928,8 +1006,9 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     }
     const moved = movedRef.current.map;
     const nth = new Map();
+    const detail = plantDetailFor(layout.length);
     layout.forEach((p, i) => {
-      const mesh = buildPlant(p.plant, mature);
+      const mesh = buildPlant(p.plant, mature, detail);
       const k = nth.get(p.speciesId) || 0;
       nth.set(p.speciesId, k + 1);
       const moveKey = `${p.speciesId}:${k}`;
