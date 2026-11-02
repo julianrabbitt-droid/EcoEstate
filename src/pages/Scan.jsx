@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, ChevronDown, Leaf, Loader2 } from 'lucide-react';
-import { MapContainer, TileLayer } from 'react-leaflet';
+import { MapContainer, TileLayer, useMap } from 'react-leaflet';
 import { getLawn, getLawnForParcel, locateAddress, measureArea, mergeLawnOutlines } from '@/api/lawnApi';
 import LocationConfirm from '@/components/scan/LocationConfirm';
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,15 @@ const DEFAULT_CENTER = [37.4422168, -122.1189345]; // Greer Park, Palo Alto
 // The opening screen's backdrop: tree-lined lawns in Crescent Park, Palo Alto, from above.
 const HERO_VIEW = [37.4538, -122.1468];
 const HERO_IMAGERY = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+// Glides the backdrop to the property being scanned (or back to the neighbourhood).
+function Backdrop({ center }) {
+  const map = useMap();
+  const [lat, lng] = center;
+  useEffect(() => {
+    map.flyTo([lat, lng], 18, { duration: 1.2 });
+  }, [map, lat, lng]);
+  return null;
+}
 // The scan in progress, kept for this browser tab, so leaving the Scan page and
 // coming back returns to it. Cleared once the scan is saved as a project.
 const SAVED_SCAN = 'ecoestate.scan';
@@ -484,28 +493,29 @@ export default function Scan() {
 
   return (
     <div>
-      {phase === 'idle' ? (
-        // The opening screen: a neighbourhood from above, edge to edge, with the
-        // address box over it. Scroll for how it works and what it saves.
-        <section className="relative isolate flex min-h-[calc(100svh-6.5rem)] items-center overflow-hidden md:min-h-[calc(100svh-4rem)]">
-          <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden>
-            <MapContainer
-              center={HERO_VIEW}
-              zoom={18}
-              zoomControl={false}
-              attributionControl={false}
-              dragging={false}
-              scrollWheelZoom={false}
-              doubleClickZoom={false}
-              touchZoom={false}
-              boxZoom={false}
-              keyboard={false}
-              className="h-full w-full"
-            >
-              <TileLayer url={HERO_IMAGERY} maxNativeZoom={19} />
-            </MapContainer>
-            <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/30 to-black/65" />
-          </div>
+      {/* Every step happens over the same aerial view: a neighbourhood at
+          first, then the property being scanned. Scroll for how it works. */}
+      <section className="relative isolate flex min-h-[calc(100svh-6.5rem)] items-center overflow-hidden md:min-h-[calc(100svh-4rem)]">
+        <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden>
+          <MapContainer
+            center={HERO_VIEW}
+            zoom={18}
+            zoomControl={false}
+            attributionControl={false}
+            dragging={false}
+            scrollWheelZoom={false}
+            doubleClickZoom={false}
+            touchZoom={false}
+            boxZoom={false}
+            keyboard={false}
+            className="h-full w-full"
+          >
+            <TileLayer url={HERO_IMAGERY} maxNativeZoom={19} />
+            <Backdrop center={phase === 'idle' ? HERO_VIEW : center} />
+          </MapContainer>
+          <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/30 to-black/65" />
+        </div>
+        {phase === 'idle' ? (
           <div className="mx-auto w-full max-w-3xl px-5 py-16 text-center text-white">
             <h1 className="font-display text-[2.7rem] font-normal leading-[1.02] tracking-[-0.015em] drop-shadow sm:text-[4.2rem]">
               Your lawn could be doing more.
@@ -530,45 +540,11 @@ export default function Scan() {
               year in water and upkeep.
             </p>
           </div>
-          <a href="#how-it-works" className="absolute bottom-5 left-1/2 flex -translate-x-1/2 flex-col items-center text-[11px] text-white/80 hover:text-white">
-            More below
-            <ChevronDown className="h-5 w-5 animate-bounce" aria-hidden />
-          </a>
-          <span className="absolute bottom-2 right-3 text-[9.5px] text-white/60">Imagery © Esri, Maxar, Earthstar Geographics</span>
-        </section>
-      ) : (
-      <section className="mx-auto grid w-full max-w-6xl gap-12 px-5 pb-16 pt-12 lg:grid-cols-[1fr_1.1fr] lg:items-start lg:pt-20">
-        <div className="lg:sticky lg:top-24">
-          <h1 className="font-display text-[2.6rem] font-normal leading-[1.02] tracking-[-0.015em] text-foreground sm:text-[3.4rem]">
-            Your lawn could be doing more.
-          </h1>
-          <p className="mt-6 max-w-md text-[16.5px] leading-relaxed text-foreground/80">
-            Enter your address. We outline your lawn from satellite imagery and show what replacing it with native
-            plants could save in water and money, and what it could look like.
-          </p>
-
-          <div className="mt-9">{addressForm(false)}</div>
-          {note && <p className="mt-3 max-w-md text-[13px] leading-relaxed text-muted-foreground">{note}</p>}
-          <p className="mt-4 max-w-md text-[13px] leading-relaxed text-muted-foreground">
-            Free. Sign in with a free account and US addresses scan automatically; without one, or outside the US, you can outline your lawn by hand.{' '}
-            <Link to="/examples" className="font-medium text-foreground underline underline-offset-4">See real examples</Link>
-          </p>
-
-          <div className="mt-10 max-w-md border-t border-border/70 pt-6">
-            <p className="text-[14px] text-foreground">
-              Typical lawns of 800 to 2,000 sq ft could save about{' '}
-              <span className="font-display text-[1.35rem]">{money(sampleRange.save[0])}–{money(sampleRange.save[1])}</span> a year in
-              water and upkeep.
-            </p>
-            <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-              Over 30 years, as water and upkeep costs rise, that adds up to about{' '}
-              <span className="text-foreground">{money(sampleRange.lifetime[0])}–{money(sampleRange.lifetime[1])}</span> kept in your
-              pocket: several times the {money(sampleRange.cost[0])}–{money(sampleRange.cost[1])} it costs to install before
-              rebates. Your scan shows the numbers for your own lawn, your local rebates and the assumptions behind them.
-            </p>
-          </div>
-        </div>
-
+        ) : (
+          <div className="mx-auto w-full max-w-2xl px-4 py-8 sm:py-12">
+            <div className="text-foreground">{addressForm(true)}</div>
+            {note && <p className="mt-2 text-[13px] text-white/90">{note}</p>}
+            <div className="mt-4">
         <div className="overflow-hidden rounded-[26px] border border-border bg-card shadow-[0_30px_70px_-40px_rgba(16,35,28,0.55)]">
           {showAuto ? (
             phase === 'locating' ? (
@@ -686,8 +662,24 @@ export default function Scan() {
             </>
           )}
         </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => { clearSavedScan(); setPhase('idle'); setPending(null); setLawnData(null); setQuery(''); }}
+              className="mx-auto mt-4 block text-[12px] text-white/80 underline underline-offset-4 hover:text-white"
+            >
+              Start over
+            </button>
+          </div>
+        )}
+        {phase === 'idle' && (
+          <a href="#how-it-works" className="absolute bottom-5 left-1/2 flex -translate-x-1/2 flex-col items-center text-[11px] text-white/80 hover:text-white">
+            More below
+            <ChevronDown className="h-5 w-5 animate-bounce" aria-hidden />
+          </a>
+        )}
+        <span className="absolute bottom-2 right-3 text-[9.5px] text-white/60">Imagery © Esri, Maxar, Earthstar Geographics</span>
       </section>
-      )}
 
       <section id="how-it-works" className="border-t border-border/70 py-16 sm:py-20">
         <div className="mx-auto w-full max-w-6xl px-5">
