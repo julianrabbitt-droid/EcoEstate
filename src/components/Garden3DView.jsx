@@ -8,7 +8,7 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { TilesRenderer } from '3d-tiles-renderer';
 import { GLTFExtensionsPlugin, GoogleCloudAuthPlugin, ReorientationPlugin, TileCompressionPlugin } from '3d-tiles-renderer/plugins';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Leaf, Loader2, Lock, Move, ScanEye, Sun, Wand2 } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bird, Box, Leaf, Loader2, Lock, Move, ScanEye, Sun, Wand2 } from 'lucide-react';
 import WalkThroughHandle from '@/components/WalkThroughHandle';
 import WalkSpeedControl from '@/components/WalkSpeedControl';
 import WalkMiniMap from '@/components/WalkMiniMap';
@@ -24,6 +24,8 @@ import { plantModel, setSharedMarker } from '@/lib/plantModels';
 import { onPhotoLoaded, photo, setPhotoSharedMarker } from '@/lib/photoTextures';
 import { disposeObject } from '@/lib/disposeThree';
 import { terrainElevations } from '@/lib/terrainTiles';
+import { createWildlife } from '@/lib/wildlife';
+import { environmental } from '@/lib/landscapeMath';
 import { arrangePlants, prepareBuildings, prepareLot, preparePolys, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
 
 // Module-level geometries, materials and textures are reused across scene
@@ -932,6 +934,8 @@ function buildPlant(plant, mature, detail = 'normal', { spacing = 0 } = {}) {
 // largest lawn. onReady: called once the model stands on its terrain.
 export default function Garden3DView({ entries = [], project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady }) {
   const checking = mode === 'check';
+  const wildlifeRef = useRef(null); // { group, counts, update } while the garden has visitors
+  const [visitors, setVisitors] = useState(null);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const [terrainDone, setTerrainDone] = useState(false);
@@ -1193,7 +1197,13 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
 
     let frame;
     const ease = (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    // Wildlife moves every frame, unless the person prefers reduced motion.
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const animate = () => {
+      if (wildlifeRef.current && !still) {
+        wildlifeRef.current.update(performance.now() / 1000);
+        dirty = true;
+      }
       const w = walkRef.current;
       if (w && w.active) {
         const now = performance.now();
@@ -2067,6 +2077,18 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       }
     }
 
+    // Native wildlife the planting feeds, more of it as the biodiversity score
+    // rises (see wildlife.js); only for the grown garden.
+    wildlifeRef.current = null;
+    if (!checking && mature && layout.length) {
+      const spots = layout.map((p) => ({ x: p.x - cx, z: -(p.y - cy), top: Math.max(0.8, p.plant.h || 1), wildlife: p.plant.wildlife || [] }));
+      const wl = createWildlife(spots, environmental(project, entries).after, at);
+      wl.group.userData.bed = true; // cleared with the planting on the next rebuild
+      scene.add(wl.group);
+      wildlifeRef.current = wl;
+      setVisitors(wl.counts);
+    } else setVisitors(null);
+
     three.markDirty?.();
     // Ready once the model stands on its terrain and has been drawn.
     if (terrainDone && onReadyRef.current) {
@@ -2074,7 +2096,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       onReadyRef.current = null;
       requestAnimationFrame(() => requestAnimationFrame(() => done()));
     }
-  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, groundFix, checking, front, ownTree, lawnLabel, terrainDone, maxDim]);
+  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, groundFix, checking, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries]);
 
   useEffect(() => {
     moveModeRef.current = moveMode;
@@ -2449,6 +2471,15 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         )}
       </div>
 
+      {visitors && Object.values(visitors).some(Boolean) && (
+        <p className="mt-2 flex items-center gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          <Bird className="h-3.5 w-3.5 text-accent" aria-hidden />
+          {`Visiting your garden: ${[['butterfly', 'butterflies', 'butterfly'], ['bee', 'native bees', 'native bee'], ['hummingbird', 'hummingbirds', 'hummingbird'], ['songbird', 'songbirds', 'songbird']]
+            .filter(([k]) => visitors[k])
+            .map(([k, many, one]) => `${visitors[k]} ${visitors[k] === 1 ? one : many}`)
+            .join(' · ')}. More come as the biodiversity score rises.`}
+        </p>
+      )}
       <p className="mt-2 flex items-center gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
         <Sun className="h-3.5 w-3.5 text-accent" />
         {checking
