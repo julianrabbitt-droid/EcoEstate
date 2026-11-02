@@ -526,13 +526,14 @@ function drape(mesh, at) {
 // Where Google's real ground is, as an offset (ft) from the terrain heights, so
 // in Real 3D the model's beds, plants, house and trees stand on it instead of
 // floating above it or sinking into it. Cast down onto Google's mesh on a grid
-// over the property and its surroundings (scene box [x0, x1, z0, z1]). Canopy,
-// roofs and cars stand well above the open ground and are dropped; each point
-// takes the median of what's left around it (pools and hedges are a minority),
-// and points with no open ground nearby (under a big canopy or a roof) take
-// their neighbours' value. Used only to place the model in this view.
+// over the property and its surroundings (scene box [x0, x1, z0, z1]). The
+// ground is the lowest surface that a good share of the points around agree on
+// (canopy, roofs and cars stand above it; a pool is a small minority); a point
+// standing well above the ground found further around it (all canopy or roof
+// nearby) takes its neighbours' value instead. Used only to place the model in this view.
 const GROUND_NEAR_FT = 14; // neighbourhood radius
-const GROUND_TALL_FT = 4; // this far above the typical open ground is canopy, a roof or a car
+const GROUND_WIDE_FT = 40; // the wider check against canopy and roofs
+const GROUND_TALL_FT = 4; // this far above the ground around it is canopy, a roof or a car
 async function googleGround(group, rawAt, [x0, x1, z0, z1], alive) {
   const step = Math.max(6, Math.max(x1 - x0, z1 - z0) / 32);
   const nx = Math.ceil((x1 - x0) / step) + 1;
@@ -553,23 +554,38 @@ async function googleGround(group, rawAt, [x0, x1, z0, z1], alive) {
     const hit = ray.intersectObject(group, true)[0];
     if (hit) raw[k] = hit.point.y - rawAt(x, z);
   }
-  const all = [...raw].filter(Number.isFinite).sort((a, b) => a - b);
-  if (all.length < 12) return null;
-  const open = all[Math.floor(all.length * 0.25)];
+  if ([...raw].filter(Number.isFinite).length < 12) return null;
+  const around = (grid, i, j, radius) => {
+    const out = [];
+    for (let dj = -radius; dj <= radius; dj++) {
+      for (let di = -radius; di <= radius; di++) {
+        const [ii, jj] = [i + di, j + dj];
+        if (ii < 0 || jj < 0 || ii >= nx || jj >= nz || di * di + dj * dj > radius * radius) continue;
+        const v = grid[jj * nx + ii];
+        if (Number.isFinite(v)) out.push(v);
+      }
+    }
+    return out.sort((a, b) => a - b);
+  };
   const r = Math.max(1, Math.round(GROUND_NEAR_FT / step));
+  const local = new Float32Array(raw.length).fill(NaN);
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const near = around(raw, i, j, r);
+      if (near.length < 3) continue;
+      const base = near[Math.floor(near.length * 0.15)];
+      const low = near.filter((v) => v <= base + 2.5);
+      local[j * nx + i] = low[Math.floor(low.length / 2)];
+    }
+  }
+  const wide = Math.max(r + 1, Math.round(GROUND_WIDE_FT / step));
   let fix = new Float32Array(raw.length).fill(NaN);
   for (let j = 0; j < nz; j++) {
     for (let i = 0; i < nx; i++) {
-      const near = [];
-      for (let dj = -r; dj <= r; dj++) {
-        for (let di = -r; di <= r; di++) {
-          const [ii, jj] = [i + di, j + dj];
-          if (ii < 0 || jj < 0 || ii >= nx || jj >= nz || di * di + dj * dj > r * r) continue;
-          const v = raw[jj * nx + ii];
-          if (Number.isFinite(v) && v < open + GROUND_TALL_FT) near.push(v);
-        }
-      }
-      if (near.length >= 3) fix[j * nx + i] = near.sort((a, b) => a - b)[Math.floor(near.length / 2)];
+      const v = local[j * nx + i];
+      if (!Number.isFinite(v)) continue;
+      const ring = around(local, i, j, wide);
+      if (v <= ring[Math.floor(ring.length * 0.2)] + GROUND_TALL_FT) fix[j * nx + i] = v;
     }
   }
   // Fill the gaps from their neighbours, ring by ring, then smooth once.
@@ -596,7 +612,7 @@ async function googleGround(group, rawAt, [x0, x1, z0, z1], alive) {
         if (i + di >= 0 && j + dj >= 0 && i + di < nx && j + dj < nz && Number.isFinite(v)) { sum += v; n++; }
       }
     }
-    smooth[k] = Math.max(-6, Math.min(6, n ? sum / n : open));
+    smooth[k] = Math.max(-15, Math.min(15, n ? sum / n : 0));
   }
   return (x, z) => {
     const fx = Math.min(nx - 1, Math.max(0, (x - x0) / step));
