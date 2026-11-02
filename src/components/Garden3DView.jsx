@@ -80,7 +80,12 @@ const clipUniforms = {
   // 1 when the mask's green channel holds the lot: Google's mesh outside it is
   // muted a little, so the property stands out in its real colours.
   uEcoSpot: { value: 0 },
+  // Google's ground minus the model's, on a grid over the box (x, z, width,
+  // depth): subtracted from every tile vertex so Google's ground meets ours.
+  uEcoFix: { value: new THREE.DataTexture(new Float32Array([0]), 1, 1, THREE.RedFormat, THREE.FloatType) },
+  uEcoFixBox: { value: new THREE.Vector4(0, 0, 1, 1) },
 };
+clipUniforms.uEcoFix.value.needsUpdate = true;
 clipUniforms.uEcoMask.value.needsUpdate = true;
 clipUniforms.uEcoTrees.value.needsUpdate = true;
 clipUniforms.uEcoGround.value.needsUpdate = true;
@@ -125,9 +130,25 @@ function clipTileMaterial(m) {
   m.toneMapped = false; // Google's tiles are photos; keep their colours as captured
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, clipUniforms);
-    sh.vertexShader = 'varying vec3 vEcoWorld;\n' + sh.vertexShader.replace(
+    sh.vertexShader = 'varying vec3 vEcoWorld;\nuniform sampler2D uEcoFix;\nuniform vec4 uEcoFixBox;\n' + sh.vertexShader.replace(
       '#include <project_vertex>',
-      '#include <project_vertex>\n  vEcoWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+      `#include <project_vertex>
+  vEcoWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
+  {
+    // Bilinear lookup (float textures aren't filtered everywhere), held at the
+    // edge value beyond the measured box so the surroundings shift smoothly.
+    vec2 ecoSize = vec2(textureSize(uEcoFix, 0));
+    vec2 ecoF = clamp((vEcoWorld.xz - uEcoFixBox.xy) / uEcoFixBox.zw, 0.0, 1.0) * (ecoSize - 1.0);
+    vec2 ecoI = floor(ecoF);
+    vec2 ecoT = ecoF - ecoI;
+    vec2 ecoMax = ecoSize - 1.0;
+    float e00 = texelFetch(uEcoFix, ivec2(ecoI), 0).r;
+    float e10 = texelFetch(uEcoFix, ivec2(min(ecoI + vec2(1.0, 0.0), ecoMax)), 0).r;
+    float e01 = texelFetch(uEcoFix, ivec2(min(ecoI + vec2(0.0, 1.0), ecoMax)), 0).r;
+    float e11 = texelFetch(uEcoFix, ivec2(min(ecoI + vec2(1.0, 1.0), ecoMax)), 0).r;
+    vEcoWorld.y -= mix(mix(e00, e10, ecoT.x), mix(e01, e11, ecoT.x), ecoT.y);
+    gl_Position = projectionMatrix * viewMatrix * vec4(vEcoWorld, 1.0);
+  }`,
     );
     sh.fragmentShader = [
       'varying vec3 vEcoWorld;',
@@ -967,9 +988,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const tilesRef = useRef(null); // { tiles, wantUpdate } while the Google 3D view is on
   const [terrain, setTerrain] = useState(null); // { at(x, z), min } ground heights in feet, or null while flat
   useEffect(() => onPhotoLoaded(() => threeRef.current?.markDirty?.()), []); // a texture just appears on its material
-  // The ground everything stands on, in scene feet: the terrain, plus in Real 3D
-  // the offset to Google's real ground (googleGround). The raw terrain alone is
-  // what Google's mesh is levelled against.
+  // The ground everything stands on, in scene feet: the terrain, in both views,
+  // so nothing on the property moves when Real 3D is switched on. Google's mesh
+  // is fitted to it instead: levelled, then bent by the measured offset between
+  // its ground and the terrain (googleGround, applied in the tiles' shader).
   const groundAtRef = useRef(() => 0);
   const terrainAtRef = useRef(() => 0);
   const terrainRef = useRef(null);
@@ -998,11 +1020,26 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     terrainRef.current = terrain;
     tilesRef.current?.refit?.();
   }, [terrain]);
-  const groundFix = showReal && realGround && realGround.terrain === terrain ? realGround.fix : null;
-  const groundAt = useMemo(() => {
-    const base = terrain ? terrain.at : () => 0;
-    return groundFix ? (x, z) => base(x, z) + groundFix(x, z) : base;
-  }, [terrain, groundFix]);
+  const groundAt = useMemo(() => (terrain ? terrain.at : () => 0), [terrain]);
+  // Google's ground lowered or raised onto the terrain, as a height texture.
+  useEffect(() => {
+    const fix = realGround && realGround.terrain === terrain ? realGround.fix : null;
+    const [x0, x1, z0, z1] = groundBoxRef.current;
+    const G = 64;
+    const data = new Float32Array(G * G);
+    if (fix) {
+      for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) data[j * G + i] = fix(x0 + ((x1 - x0) * i) / (G - 1), z0 + ((z1 - z0) * j) / (G - 1));
+    }
+    const tex = new THREE.DataTexture(data, G, G, THREE.RedFormat, THREE.FloatType);
+    tex.minFilter = THREE.NearestFilter;
+    tex.magFilter = THREE.NearestFilter;
+    tex.needsUpdate = true;
+    const old = clipUniforms.uEcoFix.value;
+    clipUniforms.uEcoFix.value = tex;
+    clipUniforms.uEcoFixBox.value.set(x0, z0, x1 - x0, z1 - z0);
+    if (old.image?.width > 1) old.dispose();
+    threeRef.current?.markDirty?.();
+  }, [realGround, terrain]);
   useEffect(() => { groundAtRef.current = groundAt; }, [groundAt]);
   const [photoCredit, setPhotoCredit] = useState('');
   const [custom, setCustom] = useState(null);
@@ -1736,7 +1773,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // them. The outer boundary is the lot when available, else a padded
     // bounding box around the lawns.
     const at = groundAt; // ground height (ft) at scene (x, z)
-    const sloped = Boolean(terrain || groundFix);
+    const sloped = Boolean(terrain);
     const outerPoly = (lot && lot.length >= 3)
       ? lot
       : (() => {
@@ -2096,7 +2133,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       onReadyRef.current = null;
       requestAnimationFrame(() => requestAnimationFrame(() => done()));
     }
-  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, groundFix, checking, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries]);
+  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries]);
 
   useEffect(() => {
     moveModeRef.current = moveMode;
