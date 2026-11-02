@@ -283,7 +283,8 @@ export default function Scan() {
     setPhase('manual');
   };
 
-  const confirmLawn = async () => {
+  // "No, fix it" saves the scan too and opens it in the next screen's editor.
+  const confirmLawn = async ({ edit = false } = {}) => {
     const d = lawnData;
     if (!d || d.lawnSqft < 1) return;
     const confidences = (d.lawn?.features || []).map((f) => f.properties?.confidence).filter((c) => typeof c === 'number');
@@ -307,7 +308,7 @@ export default function Scan() {
         source: 'auto',
       },
     });
-    navigate(`/project/${rec.id}`, { state: { project: rec } });
+    navigate(`/project/${rec.id}${edit ? '?edit=1' : ''}`, { state: { project: rec } });
   };
 
   // Whenever the drawn lawn outlines change, recalculate size and impact with
@@ -486,7 +487,8 @@ export default function Scan() {
               <LawnApiResult
                 data={lawnData}
                 preview={previewProject}
-                onConfirm={confirmLawn}
+                onConfirm={() => confirmLawn()}
+                onFix={() => confirmLawn({ edit: true })}
                 onEdit={editLawn}
                 onRescan={() => scanAddress(lawnData?.address || query, place)}
                 onRemeasure={remeasureLawn}

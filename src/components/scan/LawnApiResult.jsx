@@ -98,12 +98,13 @@ function EditableLine({ corners, onChange }) {
 }
 
 // Result of GET /v1/lawn. First the property in 3D as scanned (the house,
-// trees and the lawn found), with one question: is this right? Only if it
-// isn't does the 2D satellite plan open, to edit the lawn, adjust an estimated
-// property line (the lawn is then measured inside it, POST /v1/lawn via
+// trees and the lawn found), with one question: is this right? If it isn't,
+// the scan is saved and opened in the next screen's editor (onFix); for an
+// estimated property line the 2D satellite plan opens here instead, to adjust
+// that line (the lawn is then measured inside it, POST /v1/lawn via
 // onRemeasure) or re-scan. `preview` is the scan in the project's shape, for
 // the 3D view; without it (no lawn found) the 2D plan shows straight away.
-export default function LawnApiResult({ data, preview, onConfirm, onEdit, onRescan, onRemeasure }) {
+export default function LawnApiResult({ data, preview, onConfirm, onFix, onEdit, onRescan, onRemeasure }) {
   const center = useMemo(() => [data.location?.lat, data.location?.lon], [data.location]);
   const estimated = data.parcelSource === 'estimated';
   const initialCorners = useMemo(() => geoJsonOuterRings(data.parcel?.geometry)[0] || [], [data.parcel]);
@@ -201,7 +202,14 @@ export default function LawnApiResult({ data, preview, onConfirm, onEdit, onResc
           </Button>
           <Button
             variant="outline"
-            onClick={() => { setView('2d'); if (estimated) setAdjusting(true); }}
+            onClick={() => {
+              // A guessed property line is fixed here first (the lawn is measured
+              // inside it); otherwise the scan opens in the next screen's editor.
+              if (estimated || !onFix) {
+                setView('2d');
+                if (estimated) setAdjusting(true);
+              } else onFix();
+            }}
             className="flex-1 rounded-full whitespace-normal text-center leading-tight"
           >
             <Pencil className="mr-1.5 h-4 w-4 shrink-0" />No, fix it

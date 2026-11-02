@@ -1059,7 +1059,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   );
   const frontRef = useRef(null);
   const front = useMemo(
-    () => frontStrip(lot && lot.length >= 3 ? scenePoly(lot) : null, paths.filter((q) => q && q.length >= 3 && ROAD_KINDS.has(q.kind)).map(scenePoly)),
+    () => frontStrip(lot && lot.length >= 3 ? scenePoly(lot) : null, paths.filter((q) => q && q.length >= 3 && ROAD_KINDS.has(q.kind) && q.kind !== 'service').map(scenePoly)),
     [lot, paths, scenePoly],
   );
   frontRef.current = front;
@@ -1798,7 +1798,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         // and driveways on it as slabs. Nothing stands between the street and
         // the property except what the scan modelled.
         if (front) {
-          const roadsScene = paths.filter((q) => q && q.length >= 3 && ROAD_KINDS.has(q.kind)).map(toScene);
+          // Streets stay Google's; driveways ('service') in the strip are ours.
+          const roadsScene = paths.filter((q) => q && q.length >= 3 && ROAD_KINDS.has(q.kind) && q.kind !== 'service').map(toScene);
           const stripTex = groundTexture().clone();
           stripTex.needsUpdate = true;
           const strip = drapedGround(front, [toScene(outerPoly)], at, stripTex, [], false, roadsScene);
@@ -2013,7 +2014,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const road = ROAD_KINDS.has(poly.kind);
       const offLot = !onLot(poly.reduce((s, p) => s + p[0], 0) / poly.length, poly.reduce((s, p) => s + p[1], 0) / poly.length);
       // Sidewalks and driveway aprons in the strip to the street stay ours in Real 3D.
-      const inFront = Boolean(front) && !road && insidePoly([poly.reduce((s, p) => s + p[0], 0) / poly.length - cx, -(poly.reduce((s, p) => s + p[1], 0) / poly.length - cy)], front);
+      const inFront = Boolean(front) && (!road || poly.kind === 'service') && insidePoly([poly.reduce((s, p) => s + p[0], 0) / poly.length - cx, -(poly.reduce((s, p) => s + p[1], 0) / poly.length - cy)], front);
       const depth = road ? 0.9 : 0.5; // roads stand well clear of the faded satellite ground
       const shape = new THREE.Shape();
       poly.forEach((p, i) => { const x = p[0] - cx; const y = p[1] - cy; if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y); });
