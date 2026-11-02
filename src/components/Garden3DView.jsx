@@ -7,9 +7,9 @@ import WalkSpeedControl from '@/components/WalkSpeedControl';
 import WalkMiniMap from '@/components/WalkMiniMap';
 import { Button } from '@/components/ui/button';
 import { plantById } from '@/data/nativePlants';
-import { plantsForProject } from '@/data/regions';
+import { plantsForProject, regionForProject } from '@/data/regions';
 import { base44 } from '@/api/base44Client';
-import { ARRANGEMENTS } from '@/data/arrangements';
+import { arrangementsFor } from '@/data/arrangements';
 import { disposeObject } from '@/lib/disposeThree';
 import { arrangePlants, prepareBuildings, prepareLot, preparePolys, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
 
@@ -436,13 +436,12 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const [designing, setDesigning] = useState(false);
   const [designError, setDesignError] = useState('');
 
-  const arrangement = useMemo(() => ARRANGEMENTS.find((a) => a.id === activeArrangement) || null, [activeArrangement]);
-
-  const regionPlantIds = useMemo(() => new Set(plantsForProject(project).map((p) => p.id)), [project]);
-  const regionArrangements = useMemo(
-    () => ARRANGEMENTS.filter((a) => a.species.every((s) => regionPlantIds.has(s.speciesId))),
-    [regionPlantIds],
-  );
+  const regionPlants = useMemo(() => plantsForProject(project), [project]);
+  const regionPlantIds = useMemo(() => new Set(regionPlants.map((p) => p.id)), [regionPlants]);
+  // Curated mixes where their species are native; otherwise mixes built from the region's own natives.
+  const regionArrangements = useMemo(() => arrangementsFor(regionPlants, regionForProject(project)?.name), [regionPlants, project]);
+  const arrangement = useMemo(() => regionArrangements.find((a) => a.id === activeArrangement) || null, [regionArrangements, activeArrangement]);
+  const fittingArrangements = regionArrangements.filter((a) => !a.minArea || (project?.breakdown?.turf || 0) >= a.minArea);
   const activeArr = activeArrangement === 'type-design' ? custom : arrangement;
   const pattern = activeArr?.pattern || 'rows';
   const turfSqft = project?.breakdown?.turf || 0;
@@ -1300,7 +1299,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         Some arrangements may not suit every lawn size or location.
         </p>
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {regionArrangements.filter((a) => !a.minArea || turfSqft >= a.minArea).map((a) => (
+          {fittingArrangements.length === 0 && (
+            <p className="text-[11.5px] text-muted-foreground">No ready-made mixes for this area yet. Describe the garden you want below, or pick plants from the list.</p>
+          )}
+          {fittingArrangements.map((a) => (
             <button
               key={a.id}
               type="button"

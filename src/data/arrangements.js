@@ -108,3 +108,70 @@ export const ARRANGEMENTS = [
     ],
   },
 ];
+// Starter arrangements built from a region's own native plants, for places the
+// curated California mixes above don't fit (anywhere their species aren't
+// native). Each picks plants by form and the wildlife they feed; a mix needs
+// at least three species to be offered.
+const POLLINATOR = /bee|butterfl|hummingbird|pollinat|moth/i;
+const BIRDS = /bird/i;
+const feeds = (p, re) => (p.wildlife || []).some((w) => re.test(w));
+const pick = (plants, test, n) => plants.filter(test).slice(0, n);
+const even = (plants) => plants.map((p) => ({ speciesId: p.id, share: 1 / plants.length }));
+
+export function regionalArrangements(plants, regionName = 'your region') {
+  const where = `Built from plants native to ${regionName}`;
+  const low = (p) => ['groundcover', 'grass'].includes(p.form) || (p.h || 99) <= 1.5;
+  const mixes = [
+    {
+      id: 'regional-pollinator',
+      name: 'Pollinator drifts',
+      pattern: 'drifts',
+      region: where,
+      note: 'Flowers and shrubs that feed bees, butterflies and hummingbirds, planted in sweeping drifts.',
+      species: pick(plants, (p) => ['flower', 'shrub'].includes(p.form) && feeds(p, POLLINATOR), 4),
+    },
+    {
+      id: 'regional-hedge',
+      name: 'Native hedge',
+      pattern: 'rows',
+      region: where,
+      note: 'Native shrubs in a row along the edge for screening, shelter and berries for birds.',
+      species: [...pick(plants, (p) => p.form === 'shrub' && feeds(p, BIRDS), 2), ...pick(plants, (p) => p.form === 'shrub' && !feeds(p, BIRDS), 2)],
+    },
+    {
+      id: 'regional-meadow',
+      name: 'Wild meadow',
+      pattern: 'scatter',
+      region: where,
+      note: 'Native grasses mixed with wildflowers, scattered loosely like a natural meadow.',
+      species: [...pick(plants, (p) => p.form === 'grass', 2), ...pick(plants, (p) => p.form === 'flower', 3)],
+    },
+    {
+      id: 'regional-woodland',
+      name: 'Woodland edge',
+      pattern: 'clusters',
+      region: where,
+      minArea: 1500,
+      note: 'A native tree grouped with shrubs and shade-tolerant plants beneath it.',
+      species: [...pick(plants, (p) => p.form === 'tree', 1), ...pick(plants, (p) => p.form === 'shrub', 2), ...pick(plants, (p) => /shade/i.test(p.sun || '') && p.form !== 'tree', 1)],
+    },
+    {
+      id: 'regional-groundcover',
+      name: 'Low groundcover',
+      pattern: 'scatter',
+      region: where,
+      note: 'Low native groundcovers and grasses for a soft, walkable lawn replacement.',
+      species: pick(plants, low, 4),
+    },
+  ];
+  return mixes
+    .map((m) => ({ ...m, species: even([...new Map(m.species.map((p) => [p.id, p])).values()]) }))
+    .filter((m) => m.species.length >= 3);
+}
+
+/** Arrangements that suit a property's plants: the curated mixes whose species are all native there, else regional starter mixes. */
+export function arrangementsFor(plants, regionName) {
+  const ids = new Set(plants.map((p) => p.id));
+  const curated = ARRANGEMENTS.filter((a) => a.species.every((s) => ids.has(s.speciesId)));
+  return curated.length >= 3 ? curated : [...curated, ...regionalArrangements(plants, regionName)];
+}
