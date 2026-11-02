@@ -99,6 +99,9 @@ const TREE_CUT_PAD_FT = 2; // and this far past its scanned crown
 // On the property Google keeps only its ground: lawn, paving, pools. Anything
 // standing higher than this (house, trees, fences, cars) goes; the model stands there.
 const LOT_CUT_FT = 1.2;
+// Around the property, Google's trees are cut this far out (they'd stand
+// between the camera and the yard); our models of them stand there instead.
+const NEAR_CLEAR_FT = 15;
 // Real 3D keeps the property in Google's own colours and mutes what's around it
 // (this much of its colour, this bright) so the property is always easy to find.
 const SURROUND_SATURATION = 0.6;
@@ -1094,9 +1097,9 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const ownTree = useCallback(
     (t) => {
       const reach = (t.radiusFt || 6) + TREE_CUT_PAD_FT;
-      const touches = (poly, pt) => insidePoly(pt, poly) || distToOutline(pt, poly) <= reach;
+      const touches = (poly, pt, extra = 0) => insidePoly(pt, poly) || distToOutline(pt, poly) <= reach + extra;
       if (!lot || lot.length < 3) return true;
-      return touches(lot, [t.x, t.y]) || (Boolean(frontRef.current) && touches(frontRef.current, [t.x - cx, -(t.y - cy)]));
+      return touches(lot, [t.x, t.y], NEAR_CLEAR_FT) || (Boolean(frontRef.current) && touches(frontRef.current, [t.x - cx, -(t.y - cy)]));
     },
     [lot, cx, cy],
   );
@@ -1315,6 +1318,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           const u = c.userData;
           if (u && (u.satellite || (u.offLot && !u.inFront))) c.visible = !t3;
           if (u && (u.outline || u.modelOnly)) c.visible = !t3;
+          if (u && u.realOnly) c.visible = !!t3;
           if (u && u.skirt) c.visible = !!t3;
           if (u && u.lotGround) c.visible = !t3;
         }
@@ -1516,6 +1520,19 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     };
     if (front) fillTree(front);
     if (lotPts) {
+      // The band around the property: Google's trees there go too.
+      tctx.strokeStyle = '#00ff00';
+      tctx.lineJoin = 'round';
+      tctx.lineWidth = (2 * NEAR_CLEAR_FT * W) / (nx1 - nx0);
+      tctx.beginPath();
+      lotPts.forEach(([x, z], i) => {
+        const px = ((x - nx0) / (nx1 - nx0)) * W;
+        const py = (1 - (z - nz0) / (nz1 - nz0)) * W;
+        if (i) tctx.lineTo(px, py);
+        else tctx.moveTo(px, py);
+      });
+      tctx.closePath();
+      tctx.stroke();
       // Added on top (blue), so the tree marks under it stay.
       tctx.globalCompositeOperation = 'lighter';
       tctx.fillStyle = '#0000ff';
@@ -2124,7 +2141,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // Only the property's own trees are drawn: the view from the street to the
     // front lawn stays clear, and neighbours' trees are left to the
     // satellite ground (or to Google's mesh in Real 3D).
-    trees.filter((t) => onLot(t.x, t.y)).forEach((t) => {
+    trees.filter((t) => onLot(t.x, t.y) || ownTree(t)).forEach((t) => {
       const mesh = buildExistingTree(t.radiusFt, t.heightFt);
       const [tx, tz] = [t.x - cx, -(t.y - cy)];
       const reach = Math.max(2, (t.radiusFt || 6) * 0.5);
@@ -2132,7 +2149,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       mesh.position.set(tx, base + MULCH_Y, tz);
       mesh.userData.existingTree = true;
       mesh.userData.offLot = !onLot(t.x, t.y);
-      mesh.userData.inFront = mesh.userData.offLot && ownTree(t);
+      // Next to the property it stands in for Google's tree, in Real 3D only.
+      mesh.userData.realOnly = mesh.userData.offLot;
       scene.add(mesh);
     });
 
