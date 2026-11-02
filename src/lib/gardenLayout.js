@@ -231,6 +231,42 @@ function spotsIn(poly, n, pattern, random) {
     }
     if (best) pts.push({ x: best.x, y: best.y });
   }
+  return fillGaps(pts, poly, Math.sqrt(area / n), inside);
+}
+
+// Narrow arms and odd corners can still be left bare (a grid can't reach into
+// them): while some part of the lawn is well over one spacing from every plant,
+// move the most crowded plant there. Skipped past a few hundred plants, where
+// the spacing is too fine for gaps to show.
+function fillGaps(pts, poly, pitch, inside) {
+  if (pts.length < 2 || pts.length > 500) return pts;
+  const xs = poly.map((p) => p[0]);
+  const ys = poly.map((p) => p[1]);
+  const step = pitch / 2;
+  const samples = [];
+  for (let x = Math.min(...xs) + step / 2; x < Math.max(...xs); x += step) {
+    for (let y = Math.min(...ys) + step / 2; y < Math.max(...ys); y += step) if (inside(x, y, 0)) samples.push([x, y]);
+  }
+  for (let iter = 0; iter < Math.min(60, pts.length); iter++) {
+    let far = null;
+    for (const [x, y] of samples) {
+      let d = Infinity;
+      for (const p of pts) d = Math.min(d, Math.hypot(p.x - x, p.y - y));
+      if (!far || d > far.d) far = { x, y, d };
+    }
+    if (!far || far.d <= pitch * 1.15) break;
+    let crowded = -1;
+    let tight = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = 0; j < pts.length; j++) {
+        if (i === j) continue;
+        const d = Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y);
+        if (d < tight) [tight, crowded] = [d, i];
+      }
+    }
+    if (tight >= far.d) break; // nothing is more crowded than the gap is bare
+    pts[crowded] = { x: far.x, y: far.y };
+  }
   return pts;
 }
 

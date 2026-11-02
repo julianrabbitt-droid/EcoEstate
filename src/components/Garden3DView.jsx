@@ -21,7 +21,7 @@ import { buildHouse, HOUSE_SHARED } from '@/lib/houseModel';
 import { usePremiumAccess } from '@/hooks/usePremiumAccess';
 import { useNavigate } from 'react-router-dom';
 import { plantModel, setSharedMarker } from '@/lib/plantModels';
-import { onPhotoLoaded, photo, preloadShrubs, scannedShrub, setPhotoSharedMarker } from '@/lib/photoTextures';
+import { onPhotoLoaded, photo, setPhotoSharedMarker } from '@/lib/photoTextures';
 import { disposeObject } from '@/lib/disposeThree';
 import { terrainElevations } from '@/lib/terrainTiles';
 import { arrangePlants, prepareBuildings, prepareLot, preparePolys, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
@@ -34,7 +34,6 @@ const isShared = (r) => SHARED.has(r);
 HOUSE_SHARED.forEach(shared);
 setSharedMarker(shared);
 setPhotoSharedMarker(shared);
-const SCANNED_SHRUBS_MAX = 80; // photo-scanned shrubs (17k-52k triangles each) only in smaller gardens
 
 const GEO = {
   ico0: shared(new THREE.IcosahedronGeometry(1, 0)),
@@ -913,18 +912,13 @@ function plantDetailFor(count) {
 // turn per plant keeps a bed of one species from looking cloned.
 // At maturity a plant spreads to meet its neighbours (`spacing`, from the
 // layout), up to twice its listed width, so the bed reads as planted, not dotted.
-function buildPlant(plant, mature, detail = 'normal', { scanned = false, variant = 0, spacing = 0 } = {}) {
+// (Photo-scanned shrub models were tried here; at garden scale their sparse
+// cut-out leaves read as bare sticks, so every shrub uses the full template.)
+function buildPlant(plant, mature, detail = 'normal', { spacing = 0 } = {}) {
   const s = mature ? 1 : 0.35;
   const listed = Math.max(0.8, plant.w);
   const w = (mature ? Math.min(listed * 2, Math.max(listed, spacing * 0.95)) : listed) * s;
   const h = Math.max(0.8, plant.h) * s;
-  // A photo-scanned shrub (CC0, Poly Haven) when it has loaded and the garden is small enough.
-  const scan = scanned && plant.form === 'shrub' ? scannedShrub(variant) : null;
-  if (scan) {
-    scan.scale.set(w, h, w);
-    scan.rotation.y = Math.random() * Math.PI * 2;
-    return scan;
-  }
   const bloom = new THREE.Color(plant.form === 'tree' || plant.form === 'grass' ? plant.accent || plant.color : plant.color);
   const g = plantModel(plant.form, foliageColor(plant), bloom, detail, detail !== 'low');
   g.scale.set(w, h, w);
@@ -968,14 +962,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const surroundingsRef = useRef(null); // the latest satellite-surroundings request; older ones are dropped
   const tilesRef = useRef(null); // { tiles, wantUpdate } while the Google 3D view is on
   const [terrain, setTerrain] = useState(null); // { at(x, z), min } ground heights in feet, or null while flat
-  const [assetsVersion, setAssetsVersion] = useState(0); // bumps as photo textures and scanned plants arrive
-  useEffect(() => {
-    preloadShrubs();
-    return onPhotoLoaded((kind) => {
-      threeRef.current?.markDirty?.(); // a texture just appears on its material
-      if (kind === 'model') setAssetsVersion((v) => v + 1); // plants rebuild to use the scanned shrub
-    });
-  }, []);
+  useEffect(() => onPhotoLoaded(() => threeRef.current?.markDirty?.()), []); // a texture just appears on its material
   // The ground everything stands on, in scene feet: the terrain, plus in Real 3D
   // the offset to Google's real ground (googleGround). The raw terrain alone is
   // what Google's mesh is levelled against.
@@ -2050,10 +2037,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     const moved = movedRef.current.map;
     const nth = new Map();
     const detail = plantDetailFor(layout.length);
-    const shrubCount = layout.filter((p) => p.plant.form === 'shrub').length;
-    const scanned = detail === 'high' && shrubCount <= SCANNED_SHRUBS_MAX;
     layout.forEach((p, i) => {
-      const mesh = buildPlant(p.plant, mature, detail, { scanned, variant: i, spacing: p.spacing });
+      const mesh = buildPlant(p.plant, mature, detail, { spacing: p.spacing });
       const k = nth.get(p.speciesId) || 0;
       nth.set(p.speciesId, k + 1);
       const moveKey = `${p.speciesId}:${k}`;
@@ -2089,7 +2074,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       onReadyRef.current = null;
       requestAnimationFrame(() => requestAnimationFrame(() => done()));
     }
-  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, groundFix, assetsVersion, checking, front, ownTree, lawnLabel, terrainDone, maxDim]);
+  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, groundFix, checking, front, ownTree, lawnLabel, terrainDone, maxDim]);
 
   useEffect(() => {
     moveModeRef.current = moveMode;
