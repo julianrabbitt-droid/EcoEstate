@@ -23,6 +23,16 @@ services:
       - key: SUPABASE_URL
         value: https://lzstqfqslvaxyaxqelkv.supabase.co
       - key: GOOGLE_MAPS_API_KEY
+        sync: false # server key, Street View Static only
+      - key: VITE_GOOGLE_MAPS_BROWSER_KEY
+        sync: false # browser key, Map Tiles only, limited to ecoestate.org (read at build time)
+      - key: RESEND_API_KEY
+        sync: false # send-only key; without it no email goes out
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
         sync: false
       - key: ADMIN_EMAILS
         sync: false

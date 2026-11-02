@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Leaf, Loader2, Move, ScanEye, Sun, Wand2 } from 'lucide-react';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { TilesRenderer } from '3d-tiles-renderer';
+import { GLTFExtensionsPlugin, GoogleCloudAuthPlugin, ReorientationPlugin, TileCompressionPlugin, TileFlatteningPlugin } from '3d-tiles-renderer/plugins';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Leaf, Loader2, Move, ScanEye, Sun, Wand2 } from 'lucide-react';
 import WalkThroughHandle from '@/components/WalkThroughHandle';
 import WalkSpeedControl from '@/components/WalkSpeedControl';
 import WalkMiniMap from '@/components/WalkMiniMap';
@@ -33,6 +36,22 @@ const GEO = {
 // Raised mulch slab geometry: a 0.35 ft mound with a soft rounded top edge.
 const MULCH_Y = 0.03; // mulch sits a hair above the ground so it reads as a flat 2D layer
 const EYE_HEIGHT = 5.5; // walkthrough camera height (ft) above the ground
+
+// Google Photorealistic 3D Tiles: the real house, trees and street around the
+// planned garden. The browser key only works from ecoestate.org and localhost.
+// Each time it's turned on is one paid session, so it's opt-in and remembered.
+const GOOGLE_TILES_KEY = import.meta.env.VITE_GOOGLE_MAPS_BROWSER_KEY || '';
+const PHOTO_PREF = 'ecoestate.photoReal';
+const M_TO_FT = 3.28084;
+const PHOTO_SINK_FT = 0.8; // real ground sits this far below the beds, so the photo mesh never pokes through them
+const FLATTEN_UP_TO_M = 2; // under the beds, the photo mesh is flattened up to this height (grass, low shrubs), never trees
+const readPhotoPref = () => {
+  try {
+    return localStorage.getItem(PHOTO_PREF) === '1';
+  } catch {
+    return false;
+  }
+};
 
 function canvasTexture(size, paint) {
   const c = document.createElement('canvas');
@@ -510,6 +529,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   // state only; it isn't saved with the project.
   const movedRef = useRef({ polys: null, pattern: null, map: new Map() });
   const surroundingsRef = useRef(null); // the latest satellite-surroundings request; older ones are dropped
+  const tilesRef = useRef(null); // { tiles, wantUpdate } while the Google 3D view is on
+  const [photoReal, setPhotoReal] = useState(() => Boolean(GOOGLE_TILES_KEY) && readPhotoPref());
+  const [photoStatus, setPhotoStatus] = useState('off'); // off | loading | ready | failed
+  const [photoCredit, setPhotoCredit] = useState('');
   const [custom, setCustom] = useState(null);
   const [prompt, setPrompt] = useState('');
   const [designing, setDesigning] = useState(false);
@@ -703,7 +726,18 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         }
         controls.update();
       }
+      const t3 = tilesRef.current;
+      if (t3 && (dirty || t3.wantUpdate)) {
+        t3.wantUpdate = false;
+        camera.updateMatrixWorld();
+        t3.tiles.update();
+      }
       if (dirty) {
+        // In the Google 3D view the real house, trees, paths and ground replace the modelled ones.
+        for (const c of scene.children) {
+          const u = c.userData;
+          if (u && (u.ground || u.building || u.path || u.existingTree)) c.visible = !t3;
+        }
         // Scale render resolution with camera distance: full quality up close, coarser when zoomed far out.
         const dist = camera.position.distanceTo(controls.target);
         const near = maxDim * 0.12;
@@ -735,12 +769,185 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       controls.removeEventListener('change', markDirty);
       controls.dispose();
       surroundingsRef.current = null; // drop a satellite load still in flight
+      tilesRef.current?.dispose();
+      tilesRef.current = null;
       disposeObject(scene, isShared); // the sky background is cached (shared), so it stays
       renderer.dispose();
       renderer.forceContextLoss();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
     };
   }, [maxDim]);
+
+  // Ground points (scene feet) for lining the Google mesh up with the model:
+  // lawn outline corners first (always open ground), then the property line.
+  const groundSamplesRef = useRef([]);
+  const lawnPolysRef = useRef([]);
+  useEffect(() => {
+    lawnPolysRef.current = polys.filter((p) => p && p.length >= 3).map((p) => p.map(([x, y]) => [x - cx, -(y - cy)]));
+    const pts = [...polys.flat(), ...(lot || [])].map(([x, y]) => [x - cx, -(y - cy)]);
+    groundSamplesRef.current = pts.length > 40 ? pts.filter((_, i) => i % Math.ceil(pts.length / 40) === 0) : pts;
+  }, [polys, lot, cx, cy]);
+
+  // Google Photorealistic 3D Tiles around the garden, while the toggle is on.
+  // The tileset is placed so the scene origin is the property's centre, east
+  // along +X and north along -Z like the model, in feet, with its ground just
+  // below the beds (measured by casting down onto the mesh as tiles load).
+  useEffect(() => {
+    const three = threeRef.current;
+    if (!photoReal || !three || !origin || !GOOGLE_TILES_KEY) {
+      setPhotoStatus('off');
+      setPhotoCredit('');
+      return undefined;
+    }
+    const { scene, camera, renderer, markDirty } = three;
+    const lat0 = origin.minLat + cy / 364000;
+    const lon0 = origin.minLng + cx / (364000 * origin.cosLat);
+    const DEG = Math.PI / 180;
+    let stopped = false;
+    let state = null;
+
+    // Placed at the ground's height above the ellipsoid, so the camera starts
+    // above the real surface wherever the property is (Google only loads
+    // detailed tiles near the camera). Fine-tuned against the mesh below.
+    const start = (heightM, knownHeight) => {
+      const tiles = new TilesRenderer();
+      tiles.registerPlugin(new GoogleCloudAuthPlugin({ apiToken: GOOGLE_TILES_KEY, autoRefreshToken: true }));
+      const draco = new DRACOLoader().setDecoderPath('/draco/');
+      tiles.registerPlugin(new GLTFExtensionsPlugin({ dracoLoader: draco }));
+      tiles.registerPlugin(new TileCompressionPlugin());
+      tiles.registerPlugin(new ReorientationPlugin({ lat: lat0 * DEG, lon: lon0 * DEG, height: heightM }));
+      const flattening = new TileFlatteningPlugin();
+      tiles.registerPlugin(flattening);
+      tiles.setCamera(camera);
+      tiles.setResolutionFromRenderer(camera, renderer);
+
+      // The plugin puts north on +Z and west on +X, in metres; turn and scale to the model's frame.
+      const holder = new THREE.Group();
+      holder.rotation.y = Math.PI;
+      holder.scale.setScalar(M_TO_FT);
+      holder.add(tiles.group);
+      scene.add(holder);
+
+      state = { tiles, wantUpdate: true, dispose: null };
+      const ray = new THREE.Raycaster();
+      ray.firstHitOnly = true;
+      const down = new THREE.Vector3(0, -1, 0);
+      const levelGround = () => {
+        holder.updateMatrixWorld(true);
+        // Heights are relative to where the tiles were placed (the holder's zero):
+        // within a few hundred feet when the elevation was known, otherwise the
+        // ellipsoid, where US ground is roughly -500 to +15,000 ft. Cast from far above.
+        const top = holder.position.y + 60000;
+        const heights = [];
+        for (const [x, z] of groundSamplesRef.current) {
+          ray.set(new THREE.Vector3(x, top, z), down);
+          const hit = ray.intersectObject(tiles.group, true)[0];
+          if (hit) heights.push(hit.point.y - holder.position.y);
+        }
+        if (heights.length < Math.max(3, groundSamplesRef.current.length / 3)) return;
+        heights.sort((a, b) => a - b);
+        // The lower quartile: lawn and yard, not roofs or tree tops.
+        const ground = heights[Math.floor(heights.length / 4)];
+        const median = heights[Math.floor(heights.length / 2)];
+        // Coarse globe tiles load first and can be far off; wait for detailed ones that agree.
+        const [lo, hi] = knownHeight ? [-400, 400] : [-1000, 15000];
+        if (ground < lo || ground > hi || median - ground > 60) return;
+        const y = -ground - PHOTO_SINK_FT;
+        if (Math.abs(y - holder.position.y) < 0.2 && flatShape) return;
+        holder.position.y = y;
+        flattenUnderBeds();
+        markDirty();
+      };
+      // Google's grass is a bumpy mesh that would swallow the beds; press it
+      // flat just under them (trees overhead are left alone).
+      let flatShape = null;
+      const flattenUnderBeds = () => {
+        if (flatShape) flattening.deleteShape(flatShape);
+        flatShape = null;
+        const shapes = lawnPolysRef.current.map((pts) => new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, z))));
+        if (!shapes.length) return;
+        const geometry = new THREE.ShapeGeometry(shapes).rotateX(Math.PI / 2).translate(0, -0.3, 0);
+        holder.updateMatrixWorld(true);
+        const toTileset = tiles.group.matrixWorld.clone().invert();
+        flatShape = new THREE.Mesh(geometry);
+        flatShape.applyMatrix4(toTileset);
+        flatShape.updateMatrixWorld(true);
+        const up = new THREE.Vector3(0, 1, 0).transformDirection(toTileset);
+        flattening.addShape(flatShape, up, { threshold: FLATTEN_UP_TO_M, thresholdMode: 'none' });
+        state.wantUpdate = true;
+      };
+      const credit = () => {
+        const text = tiles.getAttributions().filter((a) => a.type === 'string').map((a) => a.value).join(' ').trim();
+        setPhotoCredit(text);
+      };
+      const onNeedsUpdate = () => { state.wantUpdate = true; markDirty(); };
+      const onLoadEnd = () => { levelGround(); credit(); setPhotoStatus('ready'); markDirty(); };
+      const onRoot = () => {
+        // One root tileset request is one billed session; count it on the owner dashboard.
+        base44.functions.invoke('tilesSession', {}).catch(() => {});
+      };
+      const onError = (e) => {
+        if (!tiles.root) {
+          // Nothing loaded (bad key, quota, network): drop it so the modelled surroundings come back.
+          setPhotoStatus('failed');
+          if (tilesRef.current === state) tilesRef.current = null;
+          state.dispose();
+          markDirty();
+        }
+        console.warn('3D tiles failed to load', e?.error?.message || e);
+      };
+      tiles.addEventListener('needs-update', onNeedsUpdate);
+      tiles.addEventListener('load-model', onNeedsUpdate);
+      tiles.addEventListener('tile-visibility-change', markDirty);
+      tiles.addEventListener('tiles-load-end', onLoadEnd);
+      tiles.addEventListener('load-root-tileset', onRoot);
+      tiles.addEventListener('load-error', onError);
+
+      state.dispose = () => {
+        if (state.disposed) return; // the scene teardown may already have done it
+        state.disposed = true;
+        scene.remove(holder);
+        tiles.dispose();
+        draco.dispose();
+      };
+      tilesRef.current = state;
+      markDirty();
+    };
+
+    setPhotoStatus('loading');
+    // USGS ground elevation (orthometric, metres) plus the geoid, which sits
+    // about 30 m below it across the contiguous US.
+    const GEOID_M = -30;
+    fetch(`https://epqs.nationalmap.gov/v1/json?x=${lon0}&y=${lat0}&units=Meters&wkid=4326`, { signal: AbortSignal.timeout(6000) })
+      .then((r) => r.json())
+      .then((d) => {
+        const elev = Number(d?.value);
+        return Number.isFinite(elev) && elev > -500 ? [elev + GEOID_M, true] : [0, false];
+      })
+      .catch(() => [0, false])
+      .then(([heightM, known]) => {
+        if (!stopped) start(heightM, known);
+      });
+    return () => {
+      stopped = true;
+      if (state) {
+        if (tilesRef.current === state) tilesRef.current = null;
+        state.dispose();
+      }
+      markDirty();
+    };
+  }, [photoReal, origin, cx, cy, maxDim]);
+
+  const togglePhotoReal = () => {
+    setPhotoReal((on) => {
+      try {
+        localStorage.setItem(PHOTO_PREF, on ? '0' : '1');
+      } catch {
+        /* private browsing: the choice just isn't remembered */
+      }
+      return !on;
+    });
+  };
 
   // Build mulch beds (one per lawn outline), edging and plants.
   useEffect(() => {
@@ -1312,7 +1519,20 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
             </button>
           ))}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {GOOGLE_TILES_KEY && origin && (
+            <Button
+              variant={photoReal ? 'default' : 'outline'}
+              onClick={togglePhotoReal}
+              className="rounded-full"
+              size="sm"
+              aria-pressed={photoReal}
+              title="Show the real house, trees and street in 3D from Google"
+            >
+              {photoStatus === 'loading' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Box className="mr-1.5 h-4 w-4" />}
+              Real 3D
+            </Button>
+          )}
           {interactive && (
             <Button variant="outline" onClick={() => { if (walkMode) setWalkMode(false); else focusOnRef.current?.(-1); }} className="rounded-full" size="sm">
               <ScanEye className="mr-1.5 h-4 w-4" />
@@ -1334,9 +1554,26 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       </div>
 
       <div className="relative mt-3">
-        <span className="pointer-events-none absolute bottom-1.5 right-2 z-10 rounded bg-black/50 px-1.5 py-0.5 text-[9.5px] text-white">
-          Imagery © Esri, Maxar, Earthstar Geographics
-        </span>
+        {photoReal && photoStatus !== 'off' ? (
+          <span className="pointer-events-none absolute bottom-1.5 right-2 z-10 flex max-w-[85%] items-center gap-1.5 rounded bg-black/55 px-1.5 py-0.5 text-[9.5px] text-white">
+            <span className="text-[11px] font-medium tracking-tight">Google</span>
+            <span className="truncate">{photoCredit || 'Map data ©Google'}</span>
+          </span>
+        ) : (
+          <span className="pointer-events-none absolute bottom-1.5 right-2 z-10 rounded bg-black/50 px-1.5 py-0.5 text-[9.5px] text-white">
+            Imagery © Esri, Maxar, Earthstar Geographics
+          </span>
+        )}
+        {photoReal && photoStatus === 'ready' && (
+          <p className="pointer-events-none absolute left-3 top-3 z-10 max-w-[80%] rounded-lg bg-background/75 px-3 py-1.5 text-[11px] text-muted-foreground shadow backdrop-blur">
+            Real 3D from Google. Beds under real trees stay hidden by their canopy; drag to look around.
+          </p>
+        )}
+        {photoReal && photoStatus === 'failed' && (
+          <p role="status" className="absolute left-3 top-3 z-10 rounded-full bg-background/80 px-3 py-1 text-[11px] text-muted-foreground shadow backdrop-blur">
+            Google 3D isn't available here right now. Showing the model.
+          </p>
+        )}
         <div
           ref={mountRef}
           onDragOver={(e) => { if (!walkMode) e.preventDefault(); }}

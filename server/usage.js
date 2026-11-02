@@ -13,6 +13,7 @@ export const PRICES = {
   anthropic_output: { per: 'token', usd: 20 / 1e6, free: 'none (claude-opus-5-5 output)' },
   google_static_map: { per: 'request', usd: 0.002, free: 'monthly free allowance per Google Maps Platform SKU' },
   google_street_view: { per: 'request', usd: 0.007, free: 'monthly free allowance per Google Maps Platform SKU' },
+  google_3d_tiles: { per: 'session', usd: 0.006, free: 'monthly free allowance of root tile requests (Map Tiles API)' },
   rapidapi_zillow: { per: 'request', usd: Number(process.env.RAPIDAPI_COST_PER_CALL || 0), free: 'depends on your RapidAPI plan' },
 };
 

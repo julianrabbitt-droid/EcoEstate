@@ -21,7 +21,8 @@ export const CONSOLES = {
   clerk: 'https://dashboard.clerk.com',
   clerkUsers: 'https://dashboard.clerk.com/last-active?path=users',
   resend: 'https://resend.com/emails',
-  google: 'https://console.cloud.google.com/apis/dashboard',
+  google: 'https://console.cloud.google.com/google/maps-apis/metrics?project=project-b642fd21-6469-403c-892',
+  googleBilling: 'https://console.cloud.google.com/billing/011A45-06D76A-8A4A16/budgets?project=project-b642fd21-6469-403c-892',
   epa: 'https://www.epa.gov/ground-water-and-drinking-water',
   census: 'https://geocoding.geo.census.gov/geocoder/',
 };
@@ -34,8 +35,9 @@ export const FIXED_COSTS = [
   { name: 'Supabase (Free plan)', usd: 0, url: `${CONSOLES.supabase}/settings/billing` },
   { name: 'Clerk (Free plan)', usd: 0, url: CONSOLES.clerk },
   { name: 'Resend (Free plan)', usd: 0, url: CONSOLES.resend },
+  { name: 'Google Maps Platform (free trial to Jan 30, 2027; $5 budget alert)', usd: 0, url: CONSOLES.googleBilling },
 ];
-const METERED_CONSOLES = { google_static_map: CONSOLES.google, google_street_view: CONSOLES.google, resend: CONSOLES.resend };
+const METERED_CONSOLES = { google_static_map: CONSOLES.google, google_street_view: CONSOLES.google, google_3d_tiles: CONSOLES.google, resend: CONSOLES.resend };
 
 const DAY = 864e5;
 const ALERT_EMAIL = process.env.OPS_ALERT_EMAIL || 'support@ecoestate.org';
@@ -77,6 +79,20 @@ export async function healthChecks() {
     { id: 'clerk', name: 'Sign-in (Clerk)', url: CONSOLES.clerk, run: () => ping('https://clerk.ecoestate.org/v1/environment') },
     { id: 'epa', name: 'Water utility lookup (EPA)', url: CONSOLES.epa, run: () => ping('https://services.arcgis.com/cJ9YHowT8TU7DUyn/arcgis/rest/services/Water_System_Boundaries/FeatureServer/0?f=json') },
     { id: 'census', name: 'ZIP and county lookup (US Census)', url: CONSOLES.census, run: () => ping('https://geocoding.geo.census.gov/geocoder/benchmarks?format=json') },
+    {
+      id: 'google',
+      name: 'Street View and 3D maps (Google)',
+      url: CONSOLES.google,
+      // The metadata lookup is free; it proves the server key works.
+      run: async () => {
+        const key = process.env.GOOGLE_MAPS_API_KEY;
+        if (!key) throw new Error('GOOGLE_MAPS_API_KEY not set');
+        const r = await fetch(`https://maps.googleapis.com/maps/api/streetview/metadata?location=37.4419,-122.143&key=${key}`, { signal: AbortSignal.timeout(10000) });
+        const d = await r.json();
+        if (d.status !== 'OK' && d.status !== 'ZERO_RESULTS') throw new Error(`Street View: ${d.status}`);
+        return 'key working';
+      },
+    },
     { id: 'email', name: 'Email (Resend)', url: CONSOLES.resend, run: async () => (emailConfigured() ? 'key set' : Promise.reject(new Error('RESEND_API_KEY not set'))) },
   ];
   return Promise.all(checks.map(async (c) => ({ id: c.id, name: c.name, url: c.url, ...(await timed(c.run)) })));
