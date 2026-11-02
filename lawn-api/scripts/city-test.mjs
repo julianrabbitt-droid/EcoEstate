@@ -24,7 +24,7 @@ fs.mkdirSync(path.join(outDir, slug), { recursive: true });
 const log = fs.createWriteStream(path.join(outDir, `${slug}.jsonl`), { flags: 'a' });
 
 // Seeded, so a rerun tests the same homes.
-let seed = [...slug].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) >>> 0;
+let seed = ([...slug].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 2147483647, 7) % 2147483646) + 1; // never 0, which this generator can't leave
 const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
 const seen = new Set();
