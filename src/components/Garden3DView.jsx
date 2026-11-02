@@ -55,7 +55,7 @@ const PHOTO_PREF = 'ecoestate.photoReal';
 const M_TO_FT = 3.28084;
 const PHOTO_SINK_FT = 0.2; // Google's ground just outside the lot sits this far below the model's
 const SURROUND_FT = 110; // how far past the property Google's mesh is shown
-const MASK_INSET_FT = 1.5; // the cut-out stops this far inside the lot line
+const HOUSE_CUT_MARGIN_FT = 4; // Google's house is cut this far past the footprint (eaves, scan offsets)
 
 // Google's mesh is cut away over the property (everything on and above its
 // ground, so our model stands there instead) and faded out past the immediate
@@ -373,10 +373,12 @@ function drapedGround(outline, holes, at, texture, circles = [], skirt = false, 
       const x = x0 + ((x1 - x0) * i) / (nx - 1);
       const z = z0 + ((z1 - z0) * j) / (nz - 1);
       const inside = insidePoly([x, z], outline);
-      const drop = inside ? (skirt ? 0.3 : 0) : Math.min(SKIRT_DROP_MAX_FT, SKIRT_DROP_FT + distToOutline([x, z], outline) * 0.3);
+      // Inside the lot the fill sits well under Google's real yard (it only shows where the house was cut away).
+      const drop = inside ? (skirt ? 1 : 0) : Math.min(SKIRT_DROP_MAX_FT, SKIRT_DROP_FT + distToOutline([x, z], outline) * 0.3);
       pos.set([x, at(x, z) - drop, z], k * 3);
       // Off the lot the skirt mostly shows under canopies: shaded, earthy green.
-      col.set(inside ? [1, 1, 1] : [0.5, 0.58, 0.42], k * 3);
+      // The fill mostly shows under cut-away canopies: shaded, earthy green (the lot slab itself stays plain).
+      col.set(inside && !skirt ? [1, 1, 1] : [0.5, 0.58, 0.42], k * 3);
       uv.set([i / (nx - 1), j / (nz - 1)], k * 2); // v runs with z, matching the mask canvas rows (flipY off)
     }
   }
@@ -942,6 +944,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           const u = c.userData;
           if (u && (u.satellite || (u.offLot && !u.existingTree))) c.visible = !t3;
           if (u && u.skirt) c.visible = !!t3;
+          if (u && u.lotGround) c.visible = !t3;
         }
         // Scale render resolution with camera distance: full quality up close, coarser when zoomed far out.
         const dist = camera.position.distanceTo(controls.target);
@@ -1024,61 +1027,46 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     return () => { stale = true; };
   }, [origin, lot, polys, buildings, cx, cy]);
 
-  // The property outline that is cut out of Google's mesh: the lot, or a
-  // padded box around the lawns and buildings when no lot was scanned.
+  // What is cut out of Google's mesh: only where our model replaces something:
+  // the house (with a margin for eaves and scan offsets) and the planned beds.
+  // The rest of the yard stays Google's real one (lawn, patios, pools, sheds,
+  // fences), so nothing that straddles the property line gets sliced and the
+  // property blends into its surroundings; a soft dashed line marks it.
   useEffect(() => {
-    const pts = lot && lot.length >= 3
-      ? lot
-      : (() => {
-          const all = [...polys.flat(), ...buildings.flat()];
-          if (!all.length) return null;
-          const xs = all.map((p) => p[0]);
-          const ys = all.map((p) => p[1]);
-          const [x0, x1, y0, y1] = [Math.min(...xs) - 6, Math.max(...xs) + 6, Math.min(...ys) - 6, Math.max(...ys) + 6];
-          return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
-        })();
-    if (!pts) return undefined;
-    const scenePts = pts.map(([x, y]) => [x - cx, -(y - cy)]);
-    const xs = scenePts.map((p) => p[0]);
-    const zs = scenePts.map((p) => p[1]);
-    const [minX, maxX, minZ, maxZ] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
-    const W = 512;
+    const scene2 = (poly) => poly.map(([x, y]) => [x - cx, -(y - cy)]);
+    const houses = buildings.filter((b) => b && b.length >= 3).map(scene2);
+    const beds = polys.filter((q) => q && q.length >= 3).map(scene2);
+    const lotPts = lot && lot.length >= 3 ? scene2(lot) : null;
+    const all = [...houses.flat(), ...beds.flat(), ...(lotPts || [])];
+    if (!all.length) return undefined;
+    const pad = HOUSE_CUT_MARGIN_FT + 2;
+    const xs = all.map((p) => p[0]);
+    const zs = all.map((p) => p[1]);
+    const [minX, maxX, minZ, maxZ] = [Math.min(...xs) - pad, Math.max(...xs) + pad, Math.min(...zs) - pad, Math.max(...zs) + pad];
+    const W = 1024;
     const c = document.createElement('canvas');
     c.width = W;
     c.height = W;
     const ctx = c.getContext('2d');
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    scenePts.forEach(([x, z], i) => {
-      const px = ((x - minX) / (maxX - minX || 1)) * W;
-      const py = (1 - (z - minZ) / (maxZ - minZ || 1)) * W; // canvas rows run top-down; the texture is flipped
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    });
-    ctx.closePath();
-    ctx.fill();
-    // Pull the cut in a little from the lot line: county lines are often a
-    // foot or two off, and the cut shouldn't slice a neighbour's wall open.
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = (2 * MASK_INSET_FT * W) / Math.max(maxX - minX, maxZ - minZ, 1);
-    ctx.stroke();
-    // Public streets and sidewalks (paths centred off the lot) keep Google's real surface.
-    ctx.fillStyle = '#000';
-    paths.forEach((q) => {
-      if (!q || q.length < 3) return;
-      const mx = q.reduce((a, p) => a + p[0], 0) / q.length;
-      const my = q.reduce((a, p) => a + p[1], 0) / q.length;
-      if (insidePoly([mx, my], pts)) return;
+    const ftPx = W / Math.max(maxX - minX, maxZ - minZ, 1);
+    const trace = (pts) => {
       ctx.beginPath();
-      q.forEach(([x, y], i) => {
-        const px = ((x - cx - minX) / (maxX - minX || 1)) * W;
-        const py = (1 - (-(y - cy) - minZ) / (maxZ - minZ || 1)) * W;
+      pts.forEach(([x, z], i) => {
+        const px = ((x - minX) / (maxX - minX || 1)) * W;
+        const py = (1 - (z - minZ) / (maxZ - minZ || 1)) * W; // canvas rows run top-down; the texture is flipped
         if (i === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
       });
       ctx.closePath();
-      ctx.fill();
-    });
+    };
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#fff';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 2 * HOUSE_CUT_MARGIN_FT * ftPx;
+    houses.forEach((h) => { trace(h); ctx.fill(); ctx.stroke(); });
+    ctx.lineWidth = 2 * 1 * ftPx;
+    beds.forEach((h) => { trace(h); ctx.fill(); ctx.stroke(); });
+    const scenePts = lotPts || [[minX, minZ], [maxX, maxZ]];
     const tex = new THREE.CanvasTexture(c);
     const previous = clipUniforms.uEcoMask.value;
     clipUniforms.uEcoMask.value = tex;
@@ -1367,11 +1355,22 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         ground.receiveShadow = true;
       }
       ground.userData.ground = true;
+      ground.userData.lotGround = true; // Real 3D shows Google's real yard instead
       scene.add(ground);
       const gpts = outerPoly.map((p) => new THREE.Vector3(p[0] - cx, at(p[0] - cx, -(p[1] - cy)) + 0.05, -(p[1] - cy)));
       gpts.push(gpts[0].clone());
-      const gline = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(gpts), new THREE.LineBasicMaterial({ color: 0x6b6755 }));
+      // The property line: a soft dashed white line just above the ground, so the
+      // property reads as yours without a hard edge against the real surroundings.
+      gpts.forEach((p) => { p.y += 0.6; });
+      const gline = new THREE.LineLoop(
+        new THREE.BufferGeometry().setFromPoints(gpts),
+        // Drawn over everything (like a selection outline) so real grass and fences never hide it.
+        new THREE.LineDashedMaterial({ color: 0xffffff, dashSize: 3, gapSize: 2, transparent: true, opacity: 0.6, depthTest: false }),
+      );
+      gline.renderOrder = 10;
+      gline.computeLineDistances();
       gline.userData.ground = true;
+      gline.userData.propertyLine = true;
       scene.add(gline);
 
     }
