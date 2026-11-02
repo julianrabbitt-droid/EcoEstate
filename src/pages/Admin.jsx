@@ -111,7 +111,8 @@ export default function Admin() {
   }
 
   const m = data?.money;
-  const down = data?.health?.filter((h) => !h.ok) || [];
+  const down = data?.health?.filter((h) => !h.ok && !h.quiet) || [];
+  const degraded = data?.health?.filter((h) => !h.ok && h.quiet) || [];
 
   return (
     <div className="mx-auto w-full max-w-5xl px-5 py-12">
@@ -138,12 +139,17 @@ export default function Admin() {
             <p className={`mt-2 text-[15px] ${down.length ? 'text-destructive' : 'text-foreground'}`}>
               {down.length ? `${down.length} service${down.length > 1 ? 's' : ''} need attention: ${down.map((d) => d.name).join(', ')}.` : 'Everything is running.'}
             </p>
+            {degraded.length > 0 && (
+              <p className="mt-1 text-[13.5px] text-amber-700">
+                Using a fallback (nothing to do; they usually recover on their own): {degraded.map((d) => d.name).join(', ')}.
+              </p>
+            )}
             <ul className="mt-4 divide-y divide-border border-y border-border">
               {data.health.map((h) => (
                 <li key={h.id}>
                   <Out href={h.url} className="flex flex-wrap items-center justify-between gap-2 px-1 py-2.5 text-[14px]">
                     <span className="flex items-center gap-2.5">
-                      <span className={`h-2.5 w-2.5 rounded-full ${h.ok ? 'bg-emerald-600' : 'bg-destructive'}`} aria-hidden />
+                      <span className={`h-2.5 w-2.5 rounded-full ${h.ok ? 'bg-emerald-600' : h.quiet ? 'bg-amber-500' : 'bg-destructive'}`} aria-hidden />
                       {h.name}
                       <span className="sr-only">{h.ok ? 'working' : 'not working'}</span>
                       {h.url && <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />}

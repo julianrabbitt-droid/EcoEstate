@@ -25,6 +25,11 @@ export const CONSOLES = {
   googleBilling: 'https://console.cloud.google.com/billing/011A45-06D76A-8A4A16/budgets?project=project-b642fd21-6469-403c-892',
   epa: 'https://www.epa.gov/ground-water-and-drinking-water',
   census: 'https://geocoding.geo.census.gov/geocoder/',
+  naip: 'https://planetarycomputer.microsoft.com/dataset/naip',
+  usgs: 'https://apps.nationalmap.gov/epqs/',
+  lidar: 'https://registry.opendata.aws/usgs-lidar/',
+  overture: 'https://docs.overturemaps.org/',
+  terrain: 'https://registry.opendata.aws/terrain-tiles/',
 };
 const stripeUrl = (path) => `https://dashboard.stripe.com/${stripeLive() ? '' : 'test/'}${path}`;
 
@@ -98,8 +103,15 @@ export async function healthChecks() {
       },
     },
     { id: 'email', name: 'Email (Resend)', url: CONSOLES.resend, run: async () => (emailConfigured() ? 'key set' : Promise.reject(new Error('RESEND_API_KEY not set'))) },
+    // Free public data every scan uses. Aerial imagery has no stand-in, so it
+    // alerts; the others have fallbacks, so they're shown here without emails.
+    { id: 'naip', name: 'Aerial imagery (USDA NAIP, Planetary Computer)', url: CONSOLES.naip, run: () => ping('https://planetarycomputer.microsoft.com/api/sas/v1/token/naip') },
+    { id: 'usgs-elevation', name: 'Ground elevation (USGS; falls back to AWS terrain)', url: CONSOLES.usgs, quiet: true, run: () => ping('https://epqs.nationalmap.gov/v1/json?x=-122.143&y=37.4419&units=Meters&wkid=4326') },
+    { id: 'usgs-lidar', name: 'Lidar (USGS 3DEP; falls back to the canopy map)', url: CONSOLES.lidar, quiet: true, run: () => ping('https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_SantaClaraCounty_2020/ept.json') },
+    { id: 'overture', name: 'Buildings, roads and addresses (Overture Maps)', url: CONSOLES.overture, quiet: true, run: () => ping('https://stac.overturemaps.org/catalog.json') },
+    { id: 'terrain', name: 'Terrain tiles (AWS Open Data)', url: CONSOLES.terrain, quiet: true, run: () => ping('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/15/5661/13077.png') },
   ];
-  return Promise.all(checks.map(async (c) => ({ id: c.id, name: c.name, url: c.url, ...(await timed(c.run)) })));
+  return Promise.all(checks.map(async (c) => ({ id: c.id, name: c.name, url: c.url, quiet: Boolean(c.quiet), ...(await timed(c.run)) })));
 }
 
 async function stripeMoney() {
@@ -350,6 +362,7 @@ export async function runHealthAlerts() {
   for (const r of results) {
     const n = r.ok ? 0 : (failures.get(r.id) || 0) + 1;
     failures.set(r.id, n);
+    if (r.quiet) continue; // shown on the dashboard, never emailed
     if (n >= 2 && !open.has(r.id)) {
       open.add(r.id);
       await notify(`${r.name} is down`, [`${r.name} failed two checks in a row.`, `Detail: ${r.detail}`, ...(r.url ? [`Open it: ${r.url}`] : []), `Dashboard: https://ecoestate.org/admin`]);
