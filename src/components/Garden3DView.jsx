@@ -195,6 +195,37 @@ function mulchTexture() {
   });
   return _mulch;
 }
+const polyArea = (q) => Math.abs(q.reduce((a, p, i) => { const n = q[(i + 1) % q.length]; return a + p[0] * n[1] - n[0] * p[1]; }, 0)) / 2;
+// A label card standing over a lawn (always facing the camera, drawn on top),
+// sized to read at the property's overview distance.
+function lawnTag(lines, maxDim) {
+  const W = 640;
+  const H = 72 + 52 * (lines.length - 1) + 28;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = 'rgba(20, 33, 26, 0.86)';
+  ctx.beginPath();
+  ctx.roundRect(4, 4, W - 8, H - 8, 28);
+  ctx.fill();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  lines.forEach((line, i) => {
+    ctx.fillStyle = i ? '#cfe6bd' : '#ffffff';
+    ctx.font = i ? '500 34px "Inter Tight", Helvetica, Arial, sans-serif' : '600 46px "Inter Tight", Helvetica, Arial, sans-serif';
+    ctx.fillText(line, W / 2, 50 + i * 52);
+  });
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false }));
+  const w = Math.max(14, maxDim * 0.34);
+  sprite.scale.set(w, (w * H) / W, 1);
+  sprite.renderOrder = 20;
+  sprite.userData.lift = (w * H) / W / 2;
+  return sprite;
+}
+
 // Lawn as it is today (the scan check shows it before anything is designed):
 // mown turf, short blade strokes in a few greens.
 let _turf;
@@ -895,9 +926,14 @@ function buildPlant(plant, mature, detail = 'normal', { scanned = false, variant
 }
 
 // mode 'check': the scan as it is (lawn shown as lawn, no plants or design
-// tools), for the person to confirm before designing.
-export default function Garden3DView({ entries = [], project, activeArrangement, onApplyArrangement, mode = 'design' }) {
+// tools), for the person to confirm before designing; it always opens on the
+// model, with Real 3D one click away. lawnLabel: lines of text shown over the
+// largest lawn. onReady: called once the model stands on its terrain.
+export default function Garden3DView({ entries = [], project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady }) {
   const checking = mode === 'check';
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  const [terrainDone, setTerrainDone] = useState(false);
   const mountRef = useRef(null);
   const threeRef = useRef(null);
   const plantMeshesRef = useRef([]);
@@ -941,7 +977,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const terrainRef = useRef(null);
   const groundBoxRef = useRef([-60, 60, -60, 60]); // scene box [x0, x1, z0, z1] Google's ground is measured over
   const [realGround, setRealGround] = useState(null); // { terrain, fix(x, z) } measured on Google's mesh
-  const [photoReal, setPhotoReal] = useState(() => Boolean(GOOGLE_TILES_KEY) && readPhotoPref());
+  const [photoReal, setPhotoReal] = useState(() => !checking && Boolean(GOOGLE_TILES_KEY) && readPhotoPref());
   // Once Google 3D has loaded it stays loaded; the toggle only shows or hides
   // it (no reload, no new paid session). It loads hidden, behind the model, and
   // only shows once its tiles are in and the model stands on its ground.
@@ -1306,20 +1342,27 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   // Real ground heights for the property and a margin around it (USGS 3DEP).
   useEffect(() => {
     setTerrain(null);
+    setTerrainDone(false);
     terrainAtRef.current = () => 0;
     const all = lot && lot.length >= 3 ? lot : [...polys.flat(), ...buildings.flat()];
-    if (!origin || !all.length) return undefined;
+    if (!origin || !all.length) {
+      setTerrainDone(true);
+      return undefined;
+    }
     const xs = all.map((p) => p[0]);
     const ys = all.map((p) => p[1]);
     const m = 75; // reaches street trees, which can stand ~20 m from the lot line
     let stale = false;
     loadTerrain({ minX: Math.min(...xs) - m, maxX: Math.max(...xs) + m, minY: Math.min(...ys) - m, maxY: Math.max(...ys) + m }, origin, cx, cy)
       .then((t) => {
-        if (stale || !t) return;
-        terrainAtRef.current = t.at;
-        setTerrain(t);
+        if (stale) return;
+        if (t) {
+          terrainAtRef.current = t.at;
+          setTerrain(t);
+        }
+        setTerrainDone(true);
       })
-      .catch(() => {}); // stays flat
+      .catch(() => { if (!stale) setTerrainDone(true); }); // stays flat
     return () => { stale = true; };
   }, [origin, lot, polys, buildings, cx, cy]);
 
@@ -2012,8 +2055,27 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       });
     });
 
+    // The person's own numbers, floating over their largest lawn.
+    if (lawnLabel?.length && polys.length) {
+      const big = polys.filter((q) => q && q.length >= 3).reduce((a, q) => (!a || polyArea(q) > polyArea(a) ? q : a), null);
+      if (big) {
+        const lx = big.reduce((t, p) => t + p[0], 0) / big.length - cx;
+        const lz = -(big.reduce((t, p) => t + p[1], 0) / big.length - cy);
+        const tag = lawnTag(lawnLabel, maxDim);
+        tag.position.set(lx, at(lx, lz) + 2 + tag.userData.lift, lz);
+        tag.userData.bed = true;
+        scene.add(tag);
+      }
+    }
+
     three.markDirty?.();
-  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, groundFix, assetsVersion, checking, front]);
+    // Ready once the model stands on its terrain and has been drawn.
+    if (terrainDone && onReadyRef.current) {
+      const done = onReadyRef.current;
+      onReadyRef.current = null;
+      requestAnimationFrame(() => requestAnimationFrame(() => done()));
+    }
+  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, groundFix, assetsVersion, checking, front, lawnLabel, terrainDone, maxDim]);
 
   useEffect(() => {
     moveModeRef.current = moveMode;
@@ -2312,7 +2374,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
               title={locked ? 'Real 3D is part of Pro and the free student unlock' : 'Show the real house, trees and street in 3D from Google'}
             >
               {photoReal && photoStatus === 'loading' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : locked ? <Lock className="mr-1.5 h-4 w-4" /> : <Box className="mr-1.5 h-4 w-4" />}
-              {photoReal && photoStatus === 'loading' ? 'Setting up Real 3D…' : 'Real 3D'}
+              {photoReal && photoStatus === 'loading' ? 'Setting up Real 3D…' : checking && !photoReal ? 'Try Real 3D' : 'Real 3D'}
             </Button>
           )}
           {interactive && (

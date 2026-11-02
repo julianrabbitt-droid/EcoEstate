@@ -2,10 +2,11 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import L from 'leaflet';
 import { Circle, GeoJSON, MapContainer, Marker, Polygon, TileLayer, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { AlertTriangle, Box, Check, Loader2, Pencil, RefreshCw, Ruler, Undo2 } from 'lucide-react';
+import { AlertTriangle, Box, Check, Leaf, Loader2, Pencil, RefreshCw, Ruler, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import LawnImpact from '@/components/scan/LawnImpact';
 import { geoJsonOuterRings } from '@/lib/geo';
+import { num } from '@/lib/landscapeMath';
 
 // The 3D view (three.js) loads only when a scan result is shown.
 const Garden3DView = lazy(() => import('@/components/Garden3DView'));
@@ -108,6 +109,18 @@ export default function LawnApiResult({ data, preview, onConfirm, onEdit, onResc
   const initialCorners = useMemo(() => geoJsonOuterRings(data.parcel?.geometry)[0] || [], [data.parcel]);
   const [corners, setCorners] = useState(initialCorners);
   const [view, setView] = useState(preview ? '3d' : '2d');
+  // Scanning and building the 3D model are one step for the person: the
+  // result shows once the model is drawn (or after a while regardless).
+  const [modelReady, setModelReady] = useState(false);
+  useEffect(() => {
+    setModelReady(false);
+    const giveUp = setTimeout(() => setModelReady(true), 15000);
+    return () => clearTimeout(giveUp);
+  }, [preview]);
+  const lawnLabel = useMemo(
+    () => (data.lawnSqft > 0 ? [`${num(data.lawnSqft)} sq ft of lawn`, data.impact?.gallonsSavedPerYear ? `${num(data.impact.gallonsSavedPerYear)} gal of water a year` : null].filter(Boolean) : null),
+    [data.lawnSqft, data.impact],
+  );
   const [adjusting, setAdjusting] = useState(estimated && !preview);
   const [measuring, setMeasuring] = useState(false);
   const [error, setError] = useState('');
@@ -150,12 +163,22 @@ export default function LawnApiResult({ data, preview, onConfirm, onEdit, onResc
 
   if (view === '3d') {
     return (
-      <div>
+      <div className="relative">
+        {!modelReady && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center bg-card px-6 pt-20 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary">
+              <Leaf className="h-5 w-5 text-accent" />
+            </div>
+            <p className="mt-4 font-display text-lg tracking-tight">Scanning the property…</p>
+            <p className="mt-1 max-w-xs text-[12px] leading-relaxed text-muted-foreground">Lawn found. Building your property in 3D.</p>
+            <Loader2 className="mt-5 h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        )}
         <div className="p-4">
           <p className="font-display text-[1.5rem] leading-tight tracking-tight">Is this scan right?</p>
           <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
             Your property in 3D as we scanned it: the lawn we found in green, and the house and trees from public map
-            and lidar data.
+            and lidar data. Try Real 3D to see it among Google’s 3D surroundings.
             {estimated ? ' There’s no public parcel map here, so the dashed property line is estimated.' : ''}
           </p>
           <div className="mt-3">
@@ -166,7 +189,7 @@ export default function LawnApiResult({ data, preview, onConfirm, onEdit, onResc
                 </div>
               )}
             >
-              <Garden3DView project={preview} mode="check" />
+              <Garden3DView project={preview} mode="check" lawnLabel={lawnLabel} onReady={() => setModelReady(true)} />
             </Suspense>
           </div>
         </div>
