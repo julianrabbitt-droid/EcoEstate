@@ -76,8 +76,12 @@ const clipUniforms = {
 clipUniforms.uEcoMask.value.needsUpdate = true;
 clipUniforms.uEcoTrees.value.needsUpdate = true;
 clipUniforms.uEcoGround.value.needsUpdate = true;
-const TREE_CUT_ABOVE_FT = 1; // Google's mesh around a modelled tree is cut from this height above the ground (our ground fills below)
-const TREE_CUT_PAD_FT = 3; // and this far past its scanned crown
+// Google's mesh around a modelled tree is cut above the ground (our ground fills
+// below): from 1 ft inside the scanned crown, so no stump is left, and from 3 ft
+// in the margin around it, so nearby pool decks, fences and low walls stay.
+const TREE_CUT_CORE_FT = 1;
+const TREE_CUT_ABOVE_FT = 3;
+const TREE_CUT_PAD_FT = 2; // and this far past its scanned crown
 function clipTileMaterial(m) {
   if (!m || m.userData.ecoClip) return;
   m.userData.ecoClip = true;
@@ -102,8 +106,11 @@ function clipTileMaterial(m) {
   if (ecoUv.x > 0.0 && ecoUv.x < 1.0 && ecoUv.y > 0.0 && ecoUv.y < 1.0 && texture2D(uEcoMask, ecoUv).r > 0.5) discard;
   if (length(vEcoWorld.xz - uEcoCenter) > uEcoRadius) discard;
   vec2 ecoNear = (vEcoWorld.xz - uEcoNearBox.xy) / uEcoNearBox.zw;
-  if (ecoNear.x > 0.0 && ecoNear.x < 1.0 && ecoNear.y > 0.0 && ecoNear.y < 1.0 && texture2D(uEcoTrees, ecoNear).r > 0.5
-      && vEcoWorld.y > texture2D(uEcoGround, ecoNear).r + ${TREE_CUT_ABOVE_FT.toFixed(1)}) discard;`),
+  if (ecoNear.x > 0.0 && ecoNear.x < 1.0 && ecoNear.y > 0.0 && ecoNear.y < 1.0) {
+    vec4 ecoTree = texture2D(uEcoTrees, ecoNear); // green: crown plus margin; red: the crown itself
+    float ecoAbove = ecoTree.r > 0.5 ? ${TREE_CUT_CORE_FT.toFixed(1)} : ${TREE_CUT_ABOVE_FT.toFixed(1)};
+    if (ecoTree.g > 0.5 && vEcoWorld.y > texture2D(uEcoGround, ecoNear).r + ecoAbove) discard;
+  }`),
     ].join('\n');
   };
   m.customProgramCacheKey = () => 'eco-clip';
@@ -334,7 +341,7 @@ async function loadTerrain(planBounds, origin, cx, cy) {
 // trees) out of it can leave gaps to the sky; a skirt runs SKIRT_FT past the
 // lot line and under every cut-out tree circle ([[x, z, r]]), set slightly
 // below the real ground there so Google's ground wins wherever it exists.
-const SKIRT_FT = 15;
+const SKIRT_FT = 45; // reaches neighbours' yards, where Google often has canopy but no ground
 const SKIRT_DROP_FT = 0.6; // just past the lot line…
 const SKIRT_DROP_MAX_FT = 2.5; // …sinking to this much lower further out
 const distToOutline = ([x, z], pts) => {
@@ -1087,15 +1094,15 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     tc.width = W;
     tc.height = W;
     const tctx = tc.getContext('2d');
-    tctx.fillStyle = '#fff';
-    trees.forEach((t) => {
-      const x = t.x - cx;
-      const z = -(t.y - cy);
-      const r = (t.radiusFt || 6) + TREE_CUT_PAD_FT;
+    const circle = (x, z, r) => {
       tctx.beginPath();
       tctx.ellipse(((x - nx0) / (nx1 - nx0)) * W, (1 - (z - nz0) / (nz1 - nz0)) * W, (r / (nx1 - nx0)) * W, (r / (nz1 - nz0)) * W, 0, 0, Math.PI * 2);
       tctx.fill();
-    });
+    };
+    tctx.fillStyle = '#00ff00'; // crown plus margin
+    trees.forEach((t) => circle(t.x - cx, -(t.y - cy), (t.radiusFt || 6) + TREE_CUT_PAD_FT));
+    tctx.fillStyle = '#ffff00'; // the crown itself
+    trees.forEach((t) => circle(t.x - cx, -(t.y - cy), t.radiusFt || 6));
     const treeTex = new THREE.CanvasTexture(tc);
     const G = 64;
     const heights = new Float32Array(G * G);
