@@ -2078,7 +2078,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       // and the neighbours' paths are left out of the model.
       if (offLot && outerPoly && outerPoly.length >= 3) {
         const inStrip = front && insidePoly([pmx - cx, -(pmy - cy)], front);
-        const near = Math.min(...poly.map((p) => distToOutline(p, outerPoly)));
+        // Lot corners to the road's edges (a long road's own corners can be far away).
+        const near = Math.min(...outerPoly.map((p) => distToOutline(p, poly)));
         if (!inStrip && !(road && near <= FRONT_MAX_FT)) return;
       }
       // Laid flat like the real thing: walks and paving level with the ground,
