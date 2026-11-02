@@ -13,7 +13,7 @@ import { buildingsInBox, segmentsInBox } from './buildings.js';
 import { forEachPixel, makeGrid, polygonsOf, rasterize, rasterizeLabels } from './grid.js';
 import { findNaip, readNaip } from './naip.js';
 import { osmLawnShapes, PATH_WIDTH_M } from './osmLawns.js';
-import { dilate, erode, labelRegions, localStats } from './raster.js';
+import { dilate, distanceTo, erode, labelRegions, localStats } from './raster.js';
 import { regionShape } from './shapes.js';
 import { separateLayers } from './layers.js';
 import { buildingsOnParcel, describeBuildings, describeNearbyRoads, describePaths, detectTrees, NEARBY } from './structures.js';
@@ -22,6 +22,13 @@ const SQM_TO_SQFT = 10.7639;
 
 export const SETTINGS = {
   ndviMin: 0.2, // NDVI at or above this counts as green (healthy turf is usually 0.3+)
+  // Aerial photos are flown mid-morning to early afternoon, never with the sun
+  // straight overhead, so houses and trees cast shadows across lawns. Shaded
+  // grass is dim in every band and its NDVI drops; a dark pixel with a lower
+  // NDVI still counts as lawn when it adjoins lawn found in the sun.
+  shadowNir: 85, // near-infrared at or below this (0-255) is in shade
+  shadowNdviMin: 0.1,
+  shadowReachPx: 6, // how far shaded lawn can extend from sunlit lawn
   canopyMaxM: 1, // taller than this is a tree, shrub or building, not lawn
   canopyGrowM: 0.6, // extend the canopy mask ~1 pixel: the map sits slightly off NAIP in places
   minLawnSqft: 50, // drop fragments smaller than this…
@@ -46,6 +53,11 @@ export const SETTINGS = {
   scatteredShare: 0.001, // …and than this share of the property are grouped as "scattered patches"
   templateMinGreen: 0.5, // use a mapped (OpenStreetMap) lawn shape when imagery shows at least this share of it green
   templateMinSqft: 1000,
+  // Street trees: the canopy between the property line and a bordering road
+  // (planting strip, sidewalk, overhanging neighbours) is shown in the 3D model.
+  streetReachM: 20, // only this far out from the property line
+  streetSlackM: 2, // how far off the straight line from property to road a tree may stand
+  streetMaxResM: 1, // skipped on campuses and parks measured at a coarse grid
 };
 
 function widen([w, s, e, n], metres) {
@@ -84,6 +96,41 @@ function majority(mask, w, h) {
 }
 
 const ringAreaSqft = (ring) => turfArea({ type: 'Polygon', coordinates: [ring] }) * SQM_TO_SQFT;
+
+/**
+ * Trees standing between the property line and the roads that border it,
+ * from the canopy map on a grid widened past the property. A spot counts when
+ * going from the property to a road through it is barely longer than the
+ * shortest way across, so the neighbours' front yards to either side are left out.
+ */
+async function findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBuildings) {
+  if (!nearbyRoads.features.length) return [];
+  try {
+    const wide = makeGrid(grid.epsg, grid.res, box, SETTINGS.streetReachM + 5);
+    const { w, h } = wide;
+    const parcel = rasterize(wide, polygonsOf(parcelGeometry));
+    const roofs = rasterizeLabels(wide, nearbyBuildings.map((b) => b.geometry));
+    const roads = rasterizeLabels(wide, nearbyRoads.features.map((f) => f.geometry));
+    const fromParcel = distanceTo(parcel, w, h);
+    const reachPx = SETTINGS.streetReachM / wide.res;
+    const slackPx = SETTINGS.streetSlackM / wide.res;
+    const include = new Uint8Array(w * h);
+    for (let label = 1; label <= nearbyRoads.features.length; label++) {
+      const fromRoad = distanceTo(Uint8Array.from(roads, (v) => (v === label ? 1 : 0)), w, h);
+      let gap = Infinity;
+      for (let k = 0; k < w * h; k++) gap = Math.min(gap, fromParcel[k] + fromRoad[k]);
+      if (gap > reachPx) continue;
+      for (let k = 0; k < w * h; k++) {
+        if (!parcel[k] && !roofs[k] && fromParcel[k] <= reachPx && fromParcel[k] + fromRoad[k] <= gap + slackPx) include[k] = 1;
+      }
+    }
+    const canopy = await readCanopy(wide);
+    return detectTrees(wide, canopy, include).map((t) => ({ ...t, street: true }));
+  } catch (err) {
+    console.warn(`street trees unavailable: ${err.message}`);
+    return [];
+  }
+}
 
 /**
  * Detect lawn inside a parcel (GeoJSON Polygon/MultiPolygon in lon/lat).
@@ -180,6 +227,25 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     green[k] = vegetation[k] && !trees[k] && !rough[k] ? 1 : 0;
   }
   green = majority(green, w, h);
+
+  // Shaded lawn: dark, faintly green pixels that connect to sunlit lawn.
+  const shade = new Uint8Array(n);
+  for (let k = 0; k < n; k++) {
+    shade[k] =
+      !green[k] && parcel[k] && naip.filled[k] && !roofLabels[k] && !pathMask[k] && !trees[k] &&
+      naip.nir[k] <= SETTINGS.shadowNir && ndvi[k] >= SETTINGS.shadowNdviMin ? 1 : 0;
+  }
+  for (let step = 0; step < SETTINGS.shadowReachPx; step++) {
+    const grown = dilate(green, w, h, 1);
+    let added = 0;
+    for (let k = 0; k < n; k++) {
+      if (shade[k] && grown[k] && !green[k]) {
+        green[k] = 1;
+        added++;
+      }
+    }
+    if (!added) break;
+  }
   // Bridge narrow gaps (paths, edging, shadow lines) so one lawn isn't cut into
   // pieces. A closing (grow then shrink) only adds pixels inside narrow gaps,
   // and never on trees, roofs, lumpy vegetation or off the property.
@@ -318,6 +384,8 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   const lawn = layers.lawn;
 
   const onParcelNotRoof = Uint8Array.from(parcel, (v, k) => (v && !roofLabels[k] ? 1 : 0));
+  const nearbyRoads = describeNearbyRoads(mappedPaths, parcelGeometry);
+  const streetTrees = grid.res <= SETTINGS.streetMaxResM ? await findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBuildings) : [];
   const result = {
     lawn,
     totalSqft: lawn.features.reduce((s, f) => s + f.properties.areaSqft, 0),
@@ -329,9 +397,9 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     // Some canopy tiles couldn't be loaded, so trees there weren't removed; don't cache either.
     canopyIncomplete: canopy.failedTiles > 0,
     buildings: buildingLayer,
-    trees: detectTrees(grid, canopy, onParcelNotRoof),
+    trees: [...detectTrees(grid, canopy, onParcelNotRoof), ...streetTrees],
     paths: layers.paths,
-    nearbyRoads: describeNearbyRoads(mappedPaths, parcelGeometry),
+    nearbyRoads,
   };
   if (debug) result.debug = { grid, naip, canopy, ndvi, parcel, green, trees, rough, roofs: roofLabels };
   return result;

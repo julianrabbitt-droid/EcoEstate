@@ -64,6 +64,35 @@ export function dilate(mask, w, h, r) {
   return out;
 }
 
+/** Distance in pixels from every pixel to the nearest set pixel of a 0/1 mask (3-4 chamfer). */
+export function distanceTo(mask, w, h) {
+  const d = Float32Array.from(mask, (v) => (v ? 0 : Infinity));
+  const step = (k, q, c) => { if (d[q] + c < d[k]) d[k] = d[q] + c; };
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      const k = j * w + i;
+      if (i > 0) step(k, k - 1, 3);
+      if (j > 0) {
+        step(k, k - w, 3);
+        if (i > 0) step(k, k - w - 1, 4);
+        if (i < w - 1) step(k, k - w + 1, 4);
+      }
+    }
+  }
+  for (let j = h - 1; j >= 0; j--) {
+    for (let i = w - 1; i >= 0; i--) {
+      const k = j * w + i;
+      if (i < w - 1) step(k, k + 1, 3);
+      if (j < h - 1) {
+        step(k, k + w, 3);
+        if (i < w - 1) step(k, k + w + 1, 4);
+        if (i > 0) step(k, k + w - 1, 4);
+      }
+    }
+  }
+  return d.map((v) => v / 3);
+}
+
 /** Shrink a 0/1 mask by a disk of radius r pixels. */
 export function erode(mask, w, h, r) {
   if (r <= 0) return mask;

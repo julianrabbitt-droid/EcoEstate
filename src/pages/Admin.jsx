@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { ExternalLink, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { usePageMeta } from '@/hooks/usePageMeta';
@@ -15,13 +15,36 @@ async function fetchOverview() {
   return data;
 }
 
-function Figure({ label, value, note }) {
+// Opens a service's own dashboard in a new tab; plain content when there's no link.
+function Out({ href, className = '', children }) {
+  if (!href) return <div className={className}>{children}</div>;
   return (
-    <div className="border-t border-border pt-3">
-      <p className="text-[13px] text-muted-foreground">{label}</p>
+    <a href={href} target="_blank" rel="noopener noreferrer" className={`group block rounded-sm transition-colors hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${className}`}>
+      {children}
+    </a>
+  );
+}
+
+function Figure({ label, value, note, href }) {
+  return (
+    <Out href={href} className="border-t border-border pt-3 pb-2">
+      <p className="flex items-center gap-1 text-[13px] text-muted-foreground">
+        {label}
+        {href && <ExternalLink className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />}
+      </p>
       <p className="mt-1 font-display text-[1.9rem] leading-none tracking-tight">{value}</p>
       {note && <p className="mt-1.5 text-[12.5px] text-muted-foreground">{note}</p>}
-    </div>
+    </Out>
+  );
+}
+
+function Cell({ href, children }) {
+  if (!href) return children;
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline-offset-4 hover:underline">
+      {children}
+      <ExternalLink className="h-3 w-3 text-muted-foreground" aria-hidden />
+    </a>
   );
 }
 
@@ -84,15 +107,18 @@ export default function Admin() {
             </p>
             <ul className="mt-4 divide-y divide-border border-y border-border">
               {data.health.map((h) => (
-                <li key={h.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-[14px]">
-                  <span className="flex items-center gap-2.5">
-                    <span className={`h-2.5 w-2.5 rounded-full ${h.ok ? 'bg-emerald-600' : 'bg-destructive'}`} aria-hidden />
-                    {h.name}
-                    <span className="sr-only">{h.ok ? 'working' : 'not working'}</span>
-                  </span>
-                  <span className="text-[13px] text-muted-foreground">
-                    {h.detail} · {h.ms} ms
-                  </span>
+                <li key={h.id}>
+                  <Out href={h.url} className="flex flex-wrap items-center justify-between gap-2 px-1 py-2.5 text-[14px]">
+                    <span className="flex items-center gap-2.5">
+                      <span className={`h-2.5 w-2.5 rounded-full ${h.ok ? 'bg-emerald-600' : 'bg-destructive'}`} aria-hidden />
+                      {h.name}
+                      <span className="sr-only">{h.ok ? 'working' : 'not working'}</span>
+                      {h.url && <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />}
+                    </span>
+                    <span className="text-[13px] text-muted-foreground">
+                      {h.detail} · {h.ms} ms
+                    </span>
+                  </Out>
                 </li>
               ))}
             </ul>
@@ -107,8 +133,8 @@ export default function Admin() {
               <p className="mt-2 text-[13px] text-destructive">{m.error || m.subscriptionsError || m.chargesError}</p>
             )}
             <div className="mt-5 grid gap-6 sm:grid-cols-4">
-              <Figure label="Monthly recurring revenue" value={usd(m.mrrUsd)} note={`${m.activeSubscriptions ?? 0} active subscriptions`} />
-              <Figure label="Payments, last 30 days" value={usd(m.gross30dUsd)} note={`${m.charges30d ?? 0} charges · ${usd(m.refunded30dUsd)} refunded`} />
+              <Figure label="Monthly recurring revenue" value={usd(m.mrrUsd)} note={`${m.activeSubscriptions ?? 0} active subscriptions`} href={m.links?.subscriptions} />
+              <Figure label="Payments, last 30 days" value={usd(m.gross30dUsd)} note={`${m.charges30d ?? 0} charges · ${usd(m.refunded30dUsd)} refunded`} href={m.links?.payments} />
               <Figure label="Costs per month" value={usd(m.costs.fixedMonthlyUsd + m.costs.metered30dUsd)} note={`${usd(m.costs.fixedMonthlyUsd)} plans + ${usd(m.costs.metered30dUsd)} usage`} />
               <Figure label="Net per month" value={usd(m.netMonthlyUsd)} note="Recurring revenue minus costs" />
             </div>
@@ -118,7 +144,7 @@ export default function Admin() {
                 <tbody>
                   {m.costs.fixed.map((c) => (
                     <tr key={c.name} className="border-t border-border/70">
-                      <td className="py-2 pr-4">{c.name}</td>
+                      <td className="py-2 pr-4"><Cell href={c.url}>{c.name}</Cell></td>
                       <td className="py-2 text-right tabular-nums">{usd(c.usd)}</td>
                     </tr>
                   ))}
@@ -132,7 +158,7 @@ export default function Admin() {
                   )}
                   {m.costs.metered30d.map((r) => (
                     <tr key={r.service} className="border-t border-border/70">
-                      <td className="py-2 pr-4">{r.service.replace(/_/g, ' ')}</td>
+                      <td className="py-2 pr-4"><Cell href={r.url}>{r.service.replace(/_/g, ' ')}</Cell></td>
                       <td className="py-2 pr-4 text-right tabular-nums text-muted-foreground">{Math.round(r.units).toLocaleString()}</td>
                       <td className="py-2 text-right tabular-nums">{usd(r.usd)}</td>
                     </tr>
@@ -145,9 +171,9 @@ export default function Admin() {
           <section className="mt-12">
             <h2 className="text-[17px] font-medium">Users</h2>
             <div className="mt-5 grid gap-6 sm:grid-cols-4">
-              <Figure label="Accounts" value={data.users.total} />
-              <Figure label="New this week" value={data.users.new7d} note={`${data.users.new30d} in 30 days`} />
-              <Figure label="Pro members" value={data.users.pro} />
+              <Figure label="Accounts" value={data.users.total} href={data.users.url} />
+              <Figure label="New this week" value={data.users.new7d} note={`${data.users.new30d} in 30 days`} href={data.users.url} />
+              <Figure label="Pro members" value={data.users.pro} href={data.users.proUrl} />
               <Figure label="Student unlocks" value={data.users.studentUnlocks} />
             </div>
           </section>
@@ -176,10 +202,16 @@ export default function Admin() {
               {data.projects.map((p) => (
                 <li key={p.id}>
                   {p.name} · <a href={p.url} className="underline underline-offset-4">{p.url.replace('https://', '')}</a>
+                  {p.console && (
+                    <>
+                      {' · '}
+                      <a href={p.console} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">hosting</a>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-[13px] text-muted-foreground">To add a project, add it to PROJECTS in server/ops.js; its health then shows here and alerts like the rest.</p>
+            <p className="mt-2 text-[13px] text-muted-foreground">Click any service, figure or cost to open its own dashboard. To add a project, add it to PROJECTS in server/ops.js; its health then shows here and alerts like the rest.</p>
           </section>
         </>
       )}

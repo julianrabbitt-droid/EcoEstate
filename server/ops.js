@@ -10,17 +10,32 @@ import { emailConfigured, sendEmail } from './email.js';
 import { stripeClient, stripeLive } from './shared/billing.ts';
 
 export const PROJECTS = [
-  { id: 'ecoestate', name: 'EcoEstate', url: 'https://ecoestate.org', health: 'https://ecoestate.org/api/app/public-settings' },
+  { id: 'ecoestate', name: 'EcoEstate', url: 'https://ecoestate.org', health: 'https://ecoestate.org/api/app/public-settings', console: 'https://dashboard.render.com' },
 ];
+
+// Where to go to deal with each service: its own dashboard.
+export const CONSOLES = {
+  render: 'https://dashboard.render.com',
+  cloudflare: 'https://dash.cloudflare.com',
+  supabase: 'https://supabase.com/dashboard/project/lzstqfqslvaxyaxqelkv',
+  clerk: 'https://dashboard.clerk.com',
+  clerkUsers: 'https://dashboard.clerk.com/last-active?path=users',
+  resend: 'https://resend.com/emails',
+  google: 'https://console.cloud.google.com/apis/dashboard',
+  epa: 'https://www.epa.gov/ground-water-and-drinking-water',
+  census: 'https://geocoding.geo.census.gov/geocoder/',
+};
+const stripeUrl = (path) => `https://dashboard.stripe.com/${stripeLive() ? '' : 'test/'}${path}`;
 
 // Monthly plan costs, from each provider's current plan. Metered usage is added separately.
 export const FIXED_COSTS = [
-  { name: 'Render (Standard web service)', usd: 25 },
-  { name: 'Cloudflare (ecoestate.org domain, yearly / 12)', usd: 10.44 / 12 },
-  { name: 'Supabase (Free plan)', usd: 0 },
-  { name: 'Clerk (Free plan)', usd: 0 },
-  { name: 'Resend (Free plan)', usd: 0 },
+  { name: 'Render (Free web service)', usd: 0, url: CONSOLES.render },
+  { name: 'Cloudflare (ecoestate.org domain, yearly / 12)', usd: 10.44 / 12, url: CONSOLES.cloudflare },
+  { name: 'Supabase (Free plan)', usd: 0, url: `${CONSOLES.supabase}/settings/billing` },
+  { name: 'Clerk (Free plan)', usd: 0, url: CONSOLES.clerk },
+  { name: 'Resend (Free plan)', usd: 0, url: CONSOLES.resend },
 ];
+const METERED_CONSOLES = { google_static_map: CONSOLES.google, google_street_view: CONSOLES.google, resend: CONSOLES.resend };
 
 const DAY = 864e5;
 const ALERT_EMAIL = process.env.OPS_ALERT_EMAIL || 'support@ecoestate.org';
@@ -45,12 +60,13 @@ async function ping(url, init = {}) {
 export async function healthChecks() {
   const lawnBase = (process.env.LAWN_API_URL || `http://localhost:${process.env.LAWN_PORT || 3000}`).replace(/\/$/, '');
   const checks = [
-    ...PROJECTS.map((p) => ({ id: `site:${p.id}`, name: `${p.name} website`, run: () => ping(p.health) })),
-    { id: 'lawn-api', name: 'Lawn measurement service', run: () => ping(`${lawnBase}/health`) },
-    { id: 'database', name: 'Database (Supabase)', run: async () => `${(await sql`select count(*)::int n from users`)[0].n} users` },
+    ...PROJECTS.map((p) => ({ id: `site:${p.id}`, name: `${p.name} website`, url: p.console, run: () => ping(p.health) })),
+    { id: 'lawn-api', name: 'Lawn measurement service', url: CONSOLES.render, run: () => ping(`${lawnBase}/health`) },
+    { id: 'database', name: 'Database (Supabase)', url: CONSOLES.supabase, run: async () => `${(await sql`select count(*)::int n from users`)[0].n} users` },
     {
       id: 'stripe',
       name: 'Payments (Stripe)',
+      url: stripeUrl('dashboard'),
       run: async () => {
         const s = stripeClient();
         if (!s) throw new Error('No Stripe key');
@@ -58,12 +74,12 @@ export async function healthChecks() {
         return stripeLive() ? 'live key' : 'test key';
       },
     },
-    { id: 'clerk', name: 'Sign-in (Clerk)', run: () => ping('https://clerk.ecoestate.org/v1/environment') },
-    { id: 'epa', name: 'Water utility lookup (EPA)', run: () => ping('https://services.arcgis.com/cJ9YHowT8TU7DUyn/arcgis/rest/services/Water_System_Boundaries/FeatureServer/0?f=json') },
-    { id: 'census', name: 'ZIP and county lookup (US Census)', run: () => ping('https://geocoding.geo.census.gov/geocoder/benchmarks?format=json') },
-    { id: 'email', name: 'Email (Resend)', run: async () => (emailConfigured() ? 'key set' : Promise.reject(new Error('RESEND_API_KEY not set'))) },
+    { id: 'clerk', name: 'Sign-in (Clerk)', url: CONSOLES.clerk, run: () => ping('https://clerk.ecoestate.org/v1/environment') },
+    { id: 'epa', name: 'Water utility lookup (EPA)', url: CONSOLES.epa, run: () => ping('https://services.arcgis.com/cJ9YHowT8TU7DUyn/arcgis/rest/services/Water_System_Boundaries/FeatureServer/0?f=json') },
+    { id: 'census', name: 'ZIP and county lookup (US Census)', url: CONSOLES.census, run: () => ping('https://geocoding.geo.census.gov/geocoder/benchmarks?format=json') },
+    { id: 'email', name: 'Email (Resend)', url: CONSOLES.resend, run: async () => (emailConfigured() ? 'key set' : Promise.reject(new Error('RESEND_API_KEY not set'))) },
   ];
-  return Promise.all(checks.map(async (c) => ({ id: c.id, name: c.name, ...(await timed(c.run)) })));
+  return Promise.all(checks.map(async (c) => ({ id: c.id, name: c.name, url: c.url, ...(await timed(c.run)) })));
 }
 
 async function stripeMoney() {
@@ -126,11 +142,19 @@ export async function overview() {
     projects: PROJECTS,
     money: {
       ...money,
-      costs: { fixed: FIXED_COSTS, fixedMonthlyUsd: round(fixedUsd), metered30d: usage.map((r) => ({ ...r, usd: round(r.usd) })), metered30dUsd: round(meteredUsd) },
+      links: { subscriptions: stripeUrl('subscriptions'), payments: stripeUrl('payments'), customers: stripeUrl('customers') },
+      costs: {
+        fixed: FIXED_COSTS,
+        fixedMonthlyUsd: round(fixedUsd),
+        metered30d: usage.map((r) => ({ ...r, usd: round(r.usd), url: METERED_CONSOLES[r.service] || null })),
+        metered30dUsd: round(meteredUsd),
+      },
       netMonthlyUsd: round(revenue - fixedUsd - meteredUsd),
     },
     users: {
       ...users[0],
+      url: CONSOLES.clerkUsers,
+      proUrl: stripeUrl('subscriptions'),
       pro: members.find((m) => m.product === 'premium')?.n ?? 0,
       studentUnlocks: members.find((m) => m.product === '3d_view')?.n ?? 0,
     },
@@ -165,7 +189,7 @@ export async function runHealthAlerts() {
     failures.set(r.id, n);
     if (n >= 2 && !open.has(r.id)) {
       open.add(r.id);
-      await notify(`${r.name} is down`, [`${r.name} failed two checks in a row.`, `Detail: ${r.detail}`, `Dashboard: https://ecoestate.org/admin`]);
+      await notify(`${r.name} is down`, [`${r.name} failed two checks in a row.`, `Detail: ${r.detail}`, ...(r.url ? [`Open it: ${r.url}`] : []), `Dashboard: https://ecoestate.org/admin`]);
     } else if (r.ok && open.has(r.id)) {
       open.delete(r.id);
       await notify(`${r.name} recovered`, [`${r.name} is responding again (${r.detail}).`]);
