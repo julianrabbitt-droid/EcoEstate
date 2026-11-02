@@ -1051,10 +1051,18 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const cx = (boundsAll.minX + boundsAll.maxX) / 2;
   const cy = (boundsAll.minY + boundsAll.maxY) / 2;
   const scenePoly = useCallback((poly) => poly.map(([x, y]) => [x - cx, -(y - cy)]), [cx, cy]);
+  // In Real 3D only the trees on the lot or in the strip to the street are ours;
+  // the neighbours' stay Google's.
+  const ownTree = useCallback(
+    (t) => (lot && lot.length >= 3 ? insidePoly([t.x, t.y], lot) : true) || (Boolean(frontRef.current) && insidePoly([t.x - cx, -(t.y - cy)], frontRef.current)),
+    [lot, cx, cy],
+  );
+  const frontRef = useRef(null);
   const front = useMemo(
     () => frontStrip(lot && lot.length >= 3 ? scenePoly(lot) : null, paths.filter((q) => q && q.length >= 3 && ROAD_KINDS.has(q.kind)).map(scenePoly)),
     [lot, paths, scenePoly],
   );
+  frontRef.current = front;
   const maxDim = Math.max(boundsAll.maxX - boundsAll.minX, boundsAll.maxY - boundsAll.minY, 30);
 
   // Real-world origin (lat/lng) of the scene's local feet space, used to map the
@@ -1256,7 +1264,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         // trees) and our model shows the property, which is cut out of Google's mesh.
         for (const c of scene.children) {
           const u = c.userData;
-          if (u && (u.satellite || (u.offLot && !u.existingTree && !u.inFront))) c.visible = !t3;
+          if (u && (u.satellite || (u.offLot && !u.inFront))) c.visible = !t3;
           if (u && u.frontStrip) c.visible = !!t3;
           if (u && u.skirt) c.visible = !!t3;
           if (u && u.lotGround) c.visible = !t3;
@@ -1445,9 +1453,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       tctx.fill();
     };
     tctx.fillStyle = '#00ff00'; // crown plus margin
-    trees.forEach((t) => circle(t.x - cx, -(t.y - cy), (t.radiusFt || 6) + TREE_CUT_PAD_FT));
+    const own = trees.filter(ownTree);
+    own.forEach((t) => circle(t.x - cx, -(t.y - cy), (t.radiusFt || 6) + TREE_CUT_PAD_FT));
     tctx.fillStyle = '#ffff00'; // the crown itself
-    trees.forEach((t) => circle(t.x - cx, -(t.y - cy), t.radiusFt || 6));
+    own.forEach((t) => circle(t.x - cx, -(t.y - cy), t.radiusFt || 6));
     const treeTex = new THREE.CanvasTexture(tc);
     const G = 64;
     const heights = new Float32Array(G * G);
@@ -1467,7 +1476,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     if (oldGround.image?.width > 1) oldGround.dispose();
     threeRef.current?.markDirty?.();
     return undefined;
-  }, [lot, polys, buildings, trees, paths, groundAt, front, cx, cy]);
+  }, [lot, polys, buildings, trees, paths, groundAt, front, ownTree, cx, cy]);
 
   // Google Photorealistic 3D Tiles around the garden, while the toggle is on.
   // The tileset is placed so the scene origin is the property's centre, east
@@ -1757,7 +1766,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       if (sloped) {
         const toScene = (poly) => poly.map((p) => [p[0] - cx, -(p[1] - cy)]);
         // Same circles as the tree cut-outs in Google's mesh (TREE_CUT_PAD_FT past each crown).
-        const circles = trees.map((t) => [t.x - cx, -(t.y - cy), (t.radiusFt || 6) + TREE_CUT_PAD_FT]);
+        const circles = trees.filter(ownTree).map((t) => [t.x - cx, -(t.y - cy), (t.radiusFt || 6) + TREE_CUT_PAD_FT]);
         const publicWays = paths.filter((q) => q && q.length >= 3 && !onLot(q.reduce((s2, p) => s2 + p[0], 0) / q.length, q.reduce((s2, p) => s2 + p[1], 0) / q.length)).map(toScene);
         ground = drapedGround(toScene(outerPoly), polys.filter((q) => q && q.length >= 3).map(toScene), at, gt, [], false, publicWays);
         const skirtTex = gt.clone();
@@ -2030,6 +2039,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       mesh.position.set(tx, base + MULCH_Y, tz);
       mesh.userData.existingTree = true;
       mesh.userData.offLot = !onLot(t.x, t.y);
+      mesh.userData.inFront = mesh.userData.offLot && ownTree(t);
       scene.add(mesh);
     });
 
@@ -2079,7 +2089,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       onReadyRef.current = null;
       requestAnimationFrame(() => requestAnimationFrame(() => done()));
     }
-  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, groundFix, assetsVersion, checking, front, lawnLabel, terrainDone, maxDim]);
+  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, groundFix, assetsVersion, checking, front, ownTree, lawnLabel, terrainDone, maxDim]);
 
   useEffect(() => {
     moveModeRef.current = moveMode;
