@@ -675,7 +675,7 @@ export default function Scan() {
                 stage={stageEl}
                 onModelReady={setModelShown}
                 onConfirm={() => confirmLawn()}
-                onFix={() => confirmLawn({ edit: true })}
+                onFix={editLawn}
                 onEdit={editLawn}
                 onRescan={() => scanAddress(lawnData?.address || query, place)}
                 onRemeasure={remeasureLawn}
@@ -688,8 +688,18 @@ export default function Scan() {
         )}
 
         {(phase === 'manual' || (phase === 'lawn' && !previewProject)) && (
-          <div className="mx-auto w-full max-w-2xl px-4 pb-12 pt-6">
-            <div className="pointer-events-auto text-foreground">{addressForm(true)}</div>
+          <div className={`mx-auto w-full px-4 pb-12 pt-6 duration-700 animate-in fade-in slide-in-from-bottom-4 ${editSeed ? 'max-w-4xl' : 'max-w-2xl'}`}>
+            {editSeed ? (
+              <div className="pointer-events-auto text-white">
+                <p className="font-display text-[1.8rem] leading-tight tracking-tight drop-shadow">Fix the scan</p>
+                <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-white/85 drop-shadow">
+                  Drag the corners of the green lawn outlines, add or remove a lawn, or fix the house and property line.
+                  The 3D model is rebuilt from this plan.
+                </p>
+              </div>
+            ) : (
+              <div className="pointer-events-auto text-foreground">{addressForm(true)}</div>
+            )}
             {note && <p className="mt-2 text-[13px] text-white/90">{note}</p>}
             <div className="pointer-events-auto mt-4">
         <div className="overflow-hidden rounded-[26px] border border-border bg-card shadow-[0_30px_70px_-40px_rgba(16,35,28,0.55)]">
@@ -771,7 +781,7 @@ export default function Scan() {
                     onClick={() => setPhase('lawn')}
                     className="mt-2 w-full text-center text-[11px] text-muted-foreground underline-offset-2 hover:underline"
                   >
-                    Back to the auto estimate
+                    Back to the 3D scan
                   </button>
                 )}
               </div>

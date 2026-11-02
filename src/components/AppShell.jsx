@@ -38,7 +38,9 @@ export default function AppShell() {
   }, [isAuthenticated]);
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="relative isolate flex min-h-screen flex-col">
+      {/* The whole site sits on the same soft sage as the scan's backdrop. */}
+      <div className="pointer-events-none fixed inset-0 -z-20" style={{ background: 'radial-gradient(120% 80% at 50% 0%, #dde4cf 0%, #e7eadd 55%, #f0f1e8 100%)' }} aria-hidden />
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-full focus:bg-primary focus:px-4 focus:py-2 focus:text-[13px] focus:text-primary-foreground"

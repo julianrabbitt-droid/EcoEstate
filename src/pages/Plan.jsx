@@ -109,7 +109,7 @@ export default function Plan() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-10">
-      <StepNav projectId={id} current="plan" />
+      <StepNav projectId={id} project={project} current="plan" />
 
       <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
         <div>
