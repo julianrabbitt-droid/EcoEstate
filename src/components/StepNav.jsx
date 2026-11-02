@@ -47,24 +47,26 @@ export default function StepNav({ projectId, current, project }) {
         <div className="absolute inset-0 bg-[#e4e8da]/45" />
       </div>
     )}
-    <nav className="-mx-5 overflow-x-auto px-5 sm:mx-0 sm:px-0">
-      <ol className="flex min-w-max items-center gap-1 text-[12.5px]">
+    <nav aria-label="Project steps" className="-mx-5 overflow-x-auto px-5 pb-1 sm:mx-0 sm:px-0">
+      <ol className="inline-flex min-w-max items-center gap-1 rounded-full border border-white/15 bg-[#14211a]/80 p-1 text-[12.5px] text-white shadow-[0_12px_40px_-12px_rgba(0,0,0,0.55)] backdrop-blur-md">
         {STEPS.map((step, i) => {
           const active = step.key === current;
+          const done = STEPS.findIndex((x) => x.key === current) > i;
           return (
-            <li key={step.key} className="flex items-center gap-1">
-              {i > 0 && <span className="mx-1 h-px w-5 bg-border" aria-hidden />}
+            <li key={step.key} className="flex items-center">
+              {i > 0 && <span className={cn('mx-0.5 h-px w-4 sm:w-6', done || active ? 'bg-[#9fe870]' : 'bg-white/25')} aria-hidden />}
               <Link
                 to={step.path(projectId)}
                 state={project ? { project } : undefined}
+                aria-current={active ? 'step' : undefined}
                 className={cn(
-                  'rounded-full px-3 py-1.5 transition',
-                  active
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                  'flex items-center gap-2 rounded-full px-3.5 py-1.5 transition',
+                  active ? 'bg-[#9fe870] text-[#14211a] shadow-[0_0_18px_rgba(159,232,112,0.45)]' : 'text-white/75 hover:bg-white/10 hover:text-white'
                 )}
               >
-                <span className="mr-1.5 font-mono text-[10px] opacity-60">0{i + 1}</span>
+                <span className={cn('flex h-5 w-5 items-center justify-center rounded-full font-mono text-[10px]', active ? 'bg-[#14211a] text-[#9fe870]' : done ? 'bg-[#9fe870]/25 text-[#9fe870]' : 'bg-white/10')}>
+                  {done ? '✓' : i + 1}
+                </span>
                 {step.label}
               </Link>
             </li>

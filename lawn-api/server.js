@@ -224,6 +224,7 @@ async function lawnResponse({ address, location, parcel, parcelSource, query }) 
     dormant: detection.dormant,
     paths: detection.paths,
     paved: detection.paved,
+    fences: detection.fences,
     nearbyRoads: detection.nearbyRoads,
     impact: impact(detection.totalSqft, query),
     cached,

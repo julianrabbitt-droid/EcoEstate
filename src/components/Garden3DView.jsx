@@ -26,7 +26,7 @@ import { disposeObject } from '@/lib/disposeThree';
 import { terrainElevations } from '@/lib/terrainTiles';
 import { createWildlife } from '@/lib/wildlife';
 import { environmental } from '@/lib/landscapeMath';
-import { arrangePlants, prepareBuildings, prepareLot, preparePolys, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
+import { arrangePlants, prepareBuildings, prepareFences, prepareLot, preparePolys, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
 
 // Module-level geometries, materials and textures are reused across scene
 // rebuilds and remounts; they're tracked here so disposal skips them.
@@ -52,6 +52,8 @@ const GEO = {
 const MULCH_Y = 0.03; // mulch sits a hair above the ground so it reads as a flat 2D layer
 const CURB_FT = 0.5; // the street sits this far below the sidewalk
 const SIDEWALK_FT = 5; // a typical residential sidewalk, along the curb
+const FENCE_FT = 6; // a typical back and side yard fence
+const GEO_BOX = shared(new THREE.BoxGeometry(1, 1, 1)); // reused by every fence panel and post, never disposed
 const EYE_HEIGHT = 5.5; // walkthrough camera height (ft) above the ground
 
 // Google Photorealistic 3D Tiles: the real house, trees and street around the
@@ -1090,6 +1092,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const buildings = useMemo(() => prepareBuildings(project), [project]);
   const trees = useMemo(() => prepareTrees(project), [project]);
   const paths = useMemo(() => preparePaths(project), [project]);
+  const fences = useMemo(() => prepareFences(project), [project]);
   const layout = useMemo(() => arrangePlants(polys, entries, pattern), [polys, entries, pattern]);
   const boundsAll = useMemo(() => {
     const model = (lot && lot.length >= 3) ? [lot] : polys;
@@ -2149,6 +2152,40 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       scene.add(walk);
     }
 
+    // Fences the scan found on the lot lines: 6 ft board panels between posts,
+    // following the ground.
+    if (fences.length) {
+      const boards = new THREE.MeshStandardMaterial({ map: photo('brown_planks_05', 'diffuse', 6.5), color: 0xb89a78, roughness: 0.9, metalness: 0 });
+      const postMat = new THREE.MeshStandardMaterial({ color: 0x6f5640, roughness: 0.9 });
+      for (const line of fences) {
+        for (let i = 1; i < line.length; i++) {
+          const [ax, az] = [line[i - 1][0] - cx, -(line[i - 1][1] - cy)];
+          const [bx, bz] = [line[i][0] - cx, -(line[i][1] - cy)];
+          const len = Math.hypot(bx - ax, bz - az);
+          const panels = Math.max(1, Math.round(len / 8));
+          for (let k = 0; k < panels; k++) {
+            const t0 = k / panels;
+            const t1 = (k + 1) / panels;
+            const [x0, z0] = [ax + (bx - ax) * t0, az + (bz - az) * t0];
+            const [x1, z1] = [ax + (bx - ax) * t1, az + (bz - az) * t1];
+            const [mx, mz] = [(x0 + x1) / 2, (z0 + z1) / 2];
+            const panel = new THREE.Mesh(GEO_BOX, boards);
+            panel.scale.set(len / panels, FENCE_FT, 0.15);
+            panel.position.set(mx, Math.min(at(x0, z0), at(x1, z1)) + FENCE_FT / 2, mz);
+            panel.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
+            panel.castShadow = true;
+            panel.userData.bed = true; // rebuilt with the planting
+            scene.add(panel);
+            const post = new THREE.Mesh(GEO_BOX, postMat);
+            post.scale.set(0.35, FENCE_FT + 0.3, 0.35);
+            post.position.set(x0, at(x0, z0) + (FENCE_FT + 0.3) / 2, z0);
+            post.userData.bed = true;
+            scene.add(post);
+          }
+        }
+      }
+    }
+
     // Existing mature trees kept from the scan, sized to their scanned canopy.
     // Each stands on the lowest ground under its crown (never on a roof, wall or
     // lump in Google's mesh) and keeps its scanned height above that ground.
@@ -2225,7 +2262,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       requestAnimationFrame(() => requestAnimationFrame(() => done()));
       if (fillRef.current) setTimeout(() => focusOnRef.current?.(-1), 900); // tilt down into 3D
     }
-  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries]);
+  }, [layout, polys, pattern, lot, buildings, trees, paths, fences, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries]);
 
   useEffect(() => {
     moveModeRef.current = moveMode;

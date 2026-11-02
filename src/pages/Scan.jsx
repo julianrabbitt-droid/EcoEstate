@@ -101,7 +101,9 @@ function scannedStructures(d) {
   const paths = [...(d?.paths?.features || []), ...(d?.nearbyRoads?.features || []), ...(d?.paved?.features || [])]
     .map((f) => ({ polygonLatLng: geoJsonOuterRings(f.geometry)[0], kind: f.properties?.kind, name: f.properties?.name || null }))
     .filter((p) => p.polygonLatLng);
-  return { buildings, buildingHeightsFt, trees, paths };
+  // Fences on the lot lines (from lidar), as [lat, lng] lines.
+  const fences = (d?.fences?.features || []).map((f) => f.geometry.coordinates.map(([lon, lat]) => [lat, lon]));
+  return { buildings, buildingHeightsFt, trees, paths, fences };
 }
 
 const STEPS = [

@@ -92,6 +92,17 @@ export function prepareLot(project) {
 
 // Existing mature trees kept from the scan: canopy centers in the same local
 // coordinate space as preparePolys, each with a canopy radius in feet.
+// Fences on the lot lines (project.fences, [lat, lng] lines from the scan's
+// lidar) in the same local feet as preparePolys. [] when none were found.
+export function prepareFences(project) {
+  const origin = projectOrigin(project);
+  if (!origin || !Array.isArray(project?.fences)) return [];
+  const { minLat, minLng, cosLat } = origin;
+  return project.fences
+    .filter((line) => Array.isArray(line) && line.length >= 2)
+    .map((line) => line.map(([lat, lng]) => [(lng - minLng) * 364000 * cosLat, (lat - minLat) * 364000]));
+}
+
 export function prepareTrees(project) {
   const origin = projectOrigin(project);
   const trees = project?.trees;

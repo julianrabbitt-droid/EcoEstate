@@ -22,6 +22,13 @@ import { buildingsOnParcel, describeBuildings, describeNearbyRoads, describePath
 const SQM_TO_SQFT = 10.7639;
 
 export const SETTINGS = {
+  // Fences (or walls and hedges) on the property line: lidar returns between
+  // understoryMinM and canopyMinM following a side or back lot line for at
+  // least fenceMinM (gaps up to fenceGapM bridged). Lot lines within
+  // fenceFrontM of a road are the street side and skipped.
+  fenceMinM: 4,
+  fenceGapM: 1.5,
+  fenceFrontM: 9,
   // Paving on the property (driveways, patios, walks): bare, flat ground that
   // isn't lawn, a roof, a tree or a pool, in patches at least this big.
   paveNdviMax: 0.2, // concrete reads a little green in some surveys; lawn and shrubs are excluded already
@@ -324,6 +331,62 @@ function grassBrightness(measured, ndvi, open) {
  * Returns { lawn, totalSqft, surveyDate, buildings, trees }, plus the raster
  * layers in `debug` when options.debug is set.
  */
+// Fences along the side and back lot lines, from lidar (see SETTINGS.fence*).
+// Returns a FeatureCollection of LineStrings in lon/lat.
+function findFences(grid, parcelGeometry, measured, nearbyRoads) {
+  const { w, h, res } = grid;
+  const toPx = ([x, y]) => [(x - grid.x0) / res, (grid.y0 - y) / res];
+  const roadPts = (nearbyRoads?.features || []).flatMap((f) => polygonsOf(f.geometry).flat(2)).map((p) => grid.fromLonLat(p));
+  const nearRoad = ([x, y]) => roadPts.some(([rx, ry]) => Math.hypot(rx - x, ry - y) <= SETTINGS.fenceFrontM);
+  const hit = (x, y) => {
+    const [pi, pj] = toPx([x, y]);
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        const i = Math.round(pi + di);
+        const j = Math.round(pj + dj);
+        if (i < 0 || j < 0 || i >= w || j >= h) continue;
+        const k = j * w + i;
+        if (measured.known[k] && measured.obstacle[k]) return true;
+      }
+    }
+    return false;
+  };
+  const features = [];
+  for (const polygon of polygonsOf(parcelGeometry)) {
+    const ring = polygon[0].map((p) => grid.fromLonLat(p));
+    for (let e = 0; e + 1 < ring.length; e++) {
+      const [a, b] = [ring[e], ring[e + 1]];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (len < SETTINGS.fenceMinM) continue;
+      const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      if (nearRoad(mid) || nearRoad(a) || nearRoad(b)) continue; // the street side
+      const step = 0.6;
+      let run = null;
+      let gap = 0;
+      const close = () => {
+        if (run && run.to - run.from >= SETTINGS.fenceMinM) {
+          const at = (t) => grid.toLonLat([a[0] + ((b[0] - a[0]) * t) / len, a[1] + ((b[1] - a[1]) * t) / len]);
+          features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [at(run.from), at(run.to)] }, properties: { kind: 'fence', lengthM: Math.round((run.to - run.from) * 10) / 10 } });
+        }
+        run = null;
+      };
+      for (let t = 0; t <= len; t += step) {
+        const p = [a[0] + ((b[0] - a[0]) * t) / len, a[1] + ((b[1] - a[1]) * t) / len];
+        if (hit(p[0], p[1])) {
+          if (!run) run = { from: t, to: t };
+          run.to = t;
+          gap = 0;
+        } else if (run) {
+          gap += step;
+          if (gap > SETTINGS.fenceGapM) close();
+        }
+      }
+      close();
+    }
+  }
+  return { type: 'FeatureCollection', features };
+}
+
 export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   const box = lonLatBox(parcelGeometry);
   const items = await findNaip(box);
@@ -745,6 +808,7 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
 
   const onParcelNotRoof = Uint8Array.from(parcel, (v, k) => (v && !roofLabels[k] ? 1 : 0));
   const nearbyRoads = describeNearbyRoads(mappedPaths, parcelGeometry);
+  const fences = measured ? findFences(grid, parcelGeometry, measured, nearbyRoads) : { type: 'FeatureCollection', features: [] };
   const streetTrees = grid.res <= SETTINGS.streetMaxResM ? await findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBuildings) : [];
   const result = {
     lawn,
@@ -764,6 +828,7 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     trees: [...detectTrees(grid, canopy, onParcelNotRoof), ...streetTrees],
     paths: layers.paths,
     paved,
+    fences,
     nearbyRoads,
   };
   if (debug) result.debug = { grid, naip, canopy, ndvi, parcel, green, trees, rough, roofs: roofLabels, measured, newerTurf, underCanopy, tall, grassInt, prevNaip, usable };
