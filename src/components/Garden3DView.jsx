@@ -219,7 +219,7 @@ function lawnTag(lines, maxDim) {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false }));
-  const w = Math.max(14, maxDim * 0.34);
+  const w = Math.max(18, maxDim * 0.45);
   sprite.scale.set(w, (w * H) / W, 1);
   sprite.renderOrder = 20;
   sprite.userData.lift = (w * H) / W / 2;
@@ -377,6 +377,7 @@ function removeFloaters(model, toScene) {
 // earth, 1 m lidar where available), so the model sits on the real slope
 // instead of a flat slab. Public data, sampled once per project view.
 const USGS_SAMPLES = 'https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/getSamples';
+const USGS_WAIT_MS = 2500;
 async function loadTerrain(planBounds, origin, cx, cy) {
   const { minX, maxX, minY, maxY } = planBounds;
   const span = Math.max(maxX - minX, maxY - minY, 1);
@@ -401,18 +402,21 @@ async function loadTerrain(planBounds, origin, cx, cy) {
     f: 'json',
   });
   const metres = new Float64Array(pts.length).fill(NaN);
+  // The AWS tiles load alongside; USGS gets a short head start, since the
+  // model waits on this before it is shown.
+  const aws = terrainElevations(pts).catch(() => []);
   try {
-    const res = await fetch(USGS_SAMPLES, { method: 'POST', body, signal: AbortSignal.timeout(12000) });
+    const res = await fetch(USGS_SAMPLES, { method: 'POST', body, signal: AbortSignal.timeout(USGS_WAIT_MS) });
     const data = await res.json();
     for (const smp of data?.samples || []) {
       const v = Number(smp.value);
       if (Number.isFinite(v) && v > -500 && smp.locationId >= 0 && smp.locationId < pts.length) metres[smp.locationId] = v;
     }
   } catch {
-    // USGS didn't answer; the coarser AWS terrain tiles below stand in.
+    // USGS didn't answer in time; the coarser AWS terrain tiles stand in.
   }
   if (metres.filter(Number.isFinite).length < pts.length * 0.6) {
-    const fallback = await terrainElevations(pts).catch(() => []);
+    const fallback = await aws;
     fallback.forEach((v, k) => { if (Number.isFinite(v) && v > -500) metres[k] = v; });
   }
   const known = [...metres].filter(Number.isFinite);
