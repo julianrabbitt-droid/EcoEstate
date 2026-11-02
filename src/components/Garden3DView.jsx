@@ -18,6 +18,7 @@ import { buildHouse, HOUSE_SHARED } from '@/lib/houseModel';
 import { usePremiumAccess } from '@/hooks/usePremiumAccess';
 import { useNavigate } from 'react-router-dom';
 import { plantModel, setSharedMarker } from '@/lib/plantModels';
+import { onPhotoLoaded, photo, preloadShrubs, scannedShrub, setPhotoSharedMarker } from '@/lib/photoTextures';
 import { disposeObject } from '@/lib/disposeThree';
 import { arrangePlants, prepareBuildings, prepareLot, preparePolys, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
 
@@ -28,6 +29,8 @@ const shared = (r) => { SHARED.add(r); return r; };
 const isShared = (r) => SHARED.has(r);
 HOUSE_SHARED.forEach(shared);
 setSharedMarker(shared);
+setPhotoSharedMarker(shared);
+const SCANNED_SHRUBS_MAX = 80; // photo-scanned shrubs (17k-52k triangles each) only in smaller gardens
 
 const GEO = {
   ico0: shared(new THREE.IcosahedronGeometry(1, 0)),
@@ -152,6 +155,23 @@ const insidePoly = ([x, y], pts) => {
   }
   return inside;
 };
+const ROAD_KINDS = new Set(['service', 'living_street', 'residential', 'unclassified', 'tertiary', 'secondary', 'primary']);
+let _asphalt;
+function asphaltTexture() {
+  if (_asphalt) return _asphalt;
+  _asphalt = canvasTexture(256, (ctx, s) => {
+    ctx.fillStyle = '#45464a';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 5000; i++) {
+      const v = 55 + Math.floor(Math.random() * 45);
+      ctx.fillStyle = `rgb(${v},${v},${v + 3})`;
+      ctx.fillRect(Math.random() * s, Math.random() * s, 1.6, 1.6);
+    }
+  });
+  _asphalt.repeat.set(1 / 12, 1 / 12); // one tile per 12 ft
+  return _asphalt;
+}
+
 // Photogrammetry leaves small loose pieces hanging in the air (birds, wires,
 // bits of foliage it couldn't attach). In each loaded tile, pieces of mesh that
 // connect to nothing else are found; a piece is dropped when it is small, sits
@@ -431,41 +451,6 @@ function drape(mesh, at) {
   mesh.geometry.computeBoundingSphere();
 }
 
-const ROAD_KINDS = new Set(['service', 'living_street', 'residential', 'unclassified', 'tertiary', 'secondary', 'primary']);
-let _asphalt;
-function asphaltTexture() {
-  if (_asphalt) return _asphalt;
-  _asphalt = canvasTexture(256, (ctx, s) => {
-    ctx.fillStyle = '#45464a';
-    ctx.fillRect(0, 0, s, s);
-    for (let i = 0; i < 5000; i++) {
-      const v = 55 + Math.floor(Math.random() * 45);
-      ctx.fillStyle = `rgb(${v},${v},${v + 3})`;
-      ctx.fillRect(Math.random() * s, Math.random() * s, 1.6, 1.6);
-    }
-  });
-  _asphalt.repeat.set(1 / 12, 1 / 12); // one tile per 12 ft
-  return _asphalt;
-}
-let _pavers;
-function paverTexture() {
-  if (_pavers) return _pavers;
-  _pavers = canvasTexture(256, (ctx, s) => {
-    ctx.fillStyle = '#d8cfbd';
-    ctx.fillRect(0, 0, s, s);
-    const n = 4;
-    for (let row = 0; row < n; row++) {
-      for (let col = 0; col < n; col++) {
-        const shade = 200 + Math.floor(Math.random() * 30);
-        ctx.fillStyle = `rgb(${shade},${shade - 8},${shade - 24})`;
-        ctx.fillRect((col * s) / n + 3, (row * s) / n + 3, s / n - 6, s / n - 6);
-      }
-    }
-  });
-  _pavers.repeat.set(1 / 4, 1 / 4); // pavers about 1 ft square
-  return _pavers;
-}
-
 // Centre, direction and size of a road/path outline (principal axis of its points).
 function slabAxis(poly) {
   const n = poly.length;
@@ -645,10 +630,17 @@ function plantDetailFor(count) {
 // Prepared plant models (see plantModels.js): one consistent template per
 // form, textured leaf cards tinted per species, scaled to its size. A random
 // turn per plant keeps a bed of one species from looking cloned.
-function buildPlant(plant, mature, detail = 'normal') {
+function buildPlant(plant, mature, detail = 'normal', { scanned = false, variant = 0 } = {}) {
   const s = mature ? 1 : 0.35;
   const w = Math.max(0.8, plant.w) * s;
   const h = Math.max(0.8, plant.h) * s;
+  // A photo-scanned shrub (CC0, Poly Haven) when it has loaded and the garden is small enough.
+  const scan = scanned && plant.form === 'shrub' ? scannedShrub(variant) : null;
+  if (scan) {
+    scan.scale.set(w, h, w);
+    scan.rotation.y = Math.random() * Math.PI * 2;
+    return scan;
+  }
   const bloom = new THREE.Color(plant.form === 'tree' || plant.form === 'grass' ? plant.accent || plant.color : plant.color);
   const g = plantModel(plant.form, foliageColor(plant), bloom, detail, detail !== 'low');
   g.scale.set(w, h, w);
@@ -684,6 +676,14 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const surroundingsRef = useRef(null); // the latest satellite-surroundings request; older ones are dropped
   const tilesRef = useRef(null); // { tiles, wantUpdate } while the Google 3D view is on
   const [terrain, setTerrain] = useState(null); // { at(x, z), min } ground heights in feet, or null while flat
+  const [assetsVersion, setAssetsVersion] = useState(0); // bumps as photo textures and scanned plants arrive
+  useEffect(() => {
+    preloadShrubs();
+    return onPhotoLoaded((kind) => {
+      threeRef.current?.markDirty?.(); // a texture just appears on its material
+      if (kind === 'model') setAssetsVersion((v) => v + 1); // plants rebuild to use the scanned shrub
+    });
+  }, []);
   const groundAtRef = useRef(() => 0);
   const [photoReal, setPhotoReal] = useState(() => Boolean(GOOGLE_TILES_KEY) && readPhotoPref());
   const [photoStatus, setPhotoStatus] = useState('off'); // off | loading | ready | failed
@@ -1430,7 +1430,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       // a layer on top of the property base, not a raised mound.
       const bed = new THREE.Mesh(
         new THREE.ShapeGeometry(shape),
-        new THREE.MeshStandardMaterial({ map: mulch, color: 0x8a7562, roughness: 1, metalness: 0, side: THREE.DoubleSide }), // shredded bark mulch
+        // Photographed wood-chip mulch (CC0, Poly Haven); shape UVs are in feet.
+        new THREE.MeshStandardMaterial({ map: photo('aerial_wood_snips', 'diffuse'), normalMap: photo('aerial_wood_snips', 'nor_gl'), color: 0xc9b8a6, roughness: 1, metalness: 0, side: THREE.DoubleSide }),
       );
       bed.userData.bed = true;
       bed.userData.bedIndex = bi;
@@ -1480,7 +1481,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // out from mulch and ground: asphalt roads with a pale curb, paver paths
     // with darker edging. Named roads get their street name painted on.
     const roadMat = new THREE.MeshStandardMaterial({ map: asphaltTexture(), roughness: 0.95, metalness: 0 });
-    const paverMat = new THREE.MeshStandardMaterial({ map: paverTexture(), roughness: 0.9, metalness: 0 });
+    // Photographed concrete pavers (CC0, Poly Haven) for walks and patios.
+    const paverMat = new THREE.MeshStandardMaterial({ map: photo('concrete_pavement', 'diffuse'), normalMap: photo('concrete_pavement', 'nor_gl'), roughness: 0.9, metalness: 0 });
     const curbMat = new THREE.LineBasicMaterial({ color: 0xe8e4da });
     const edgeMat = new THREE.LineBasicMaterial({ color: 0x8a7f6b });
     const labelled = new Set();
@@ -1539,8 +1541,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     const moved = movedRef.current.map;
     const nth = new Map();
     const detail = plantDetailFor(layout.length);
+    const shrubCount = layout.filter((p) => p.plant.form === 'shrub').length;
+    const scanned = detail === 'high' && shrubCount <= SCANNED_SHRUBS_MAX;
     layout.forEach((p, i) => {
-      const mesh = buildPlant(p.plant, mature, detail);
+      const mesh = buildPlant(p.plant, mature, detail, { scanned, variant: i });
       const k = nth.get(p.speciesId) || 0;
       nth.set(p.speciesId, k + 1);
       const moveKey = `${p.speciesId}:${k}`;
@@ -1557,7 +1561,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     });
 
     three.markDirty?.();
-  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain]);
+  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, assetsVersion]);
 
   useEffect(() => {
     moveModeRef.current = moveMode;

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { photo } from '@/lib/photoTextures';
 
 // Conventional low-poly buildings from scanned footprints. Scanned outlines are
 // noisy (jagged edges, slivers, odd angles), so each one is squared up to its
@@ -341,6 +342,17 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front } = {}
   const roofMat = new THREE.MeshStandardMaterial({ map: roofTex, roughness: 0.95, side: THREE.DoubleSide });
   const wallTile = wallTex.userData.sizeFt;
   const roofTile = roofTex.userData.sizeFt;
+  // Photographed surface relief (CC0, Poly Haven) over the wall colour: plaster
+  // for stucco, painted boards for siding, real brick for brick; clay tile roofs
+  // on stucco houses, as on most California Mediterranean homes.
+  const look = wallColor === 'brick' || wallColor === 'red' ? 'brick' : STUCCO_COLORS.has(wallColor) ? 'stucco' : 'siding';
+  const wallPhoto = { brick: 'brick_wall_001', stucco: 'beige_wall_002', siding: 'brown_planks_05' }[look];
+  wallMat.normalMap = photo(wallPhoto, 'nor_gl', wallTile);
+  if (look === 'brick') wallMat.map = photo('brick_wall_001', 'diffuse', wallTile);
+  if (look === 'stucco' && type !== 'flat') {
+    roofMat.map = photo('clay_roof_tiles_02', 'diffuse', roofTile);
+    roofMat.normalMap = photo('clay_roof_tiles_02', 'nor_gl', roofTile);
+  }
 
   // One eave height for the whole building so the blocks join cleanly.
   const main = blocks[0];

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { photo } from '@/lib/photoTextures';
 
 // Prepared plant models for the 3D garden. Every plant of a form (grass,
 // groundcover, shrub, flower, tree) is built from the same template: textured
@@ -239,7 +240,12 @@ function materials(leafColor, bloomColor, form) {
   const mats = {
     leaf: markShared(new THREE.MeshStandardMaterial({ map: leafMap, color: leafColor, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.82 })),
     bloom: markShared(new THREE.MeshStandardMaterial({ map: bloom(), color: bloomColor, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.6 })),
-    wood: markShared(new THREE.MeshStandardMaterial({ map: bark(), color: form === 'tree' ? 0xffffff : leafColor.clone().multiplyScalar(0.8), roughness: 0.95 })),
+    wood: markShared(
+      form === 'tree'
+        ? // Photographed bark (CC0, Poly Haven) on trunks and limbs.
+          new THREE.MeshStandardMaterial({ map: photo('bark_brown_02', 'diffuse', 0.6), normalMap: photo('bark_brown_02', 'nor_gl', 0.6), roughness: 0.95 })
+        : new THREE.MeshStandardMaterial({ map: bark(), color: leafColor.clone().multiplyScalar(0.8), roughness: 0.95 }),
+    ),
     // A darker inner mass so you never see daylight straight through a shrub.
     core: markShared(new THREE.MeshStandardMaterial({ color: leafColor.clone().multiplyScalar(0.45), roughness: 1 })),
   };
