@@ -24,6 +24,10 @@ export class LRU {
     return value;
   }
 
+  delete(key) {
+    return this.map.delete(key);
+  }
+
   set(key, value) {
     this.map.delete(key);
     this.map.set(key, value);

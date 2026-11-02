@@ -16,11 +16,25 @@ const READ_TIMEOUT_MS = 120000;
 let sas = null; // { token, expires }
 const tiffs = new LRU(32); // href -> { token, tiff }
 
+// Planetary Computer drops a request now and then: try twice more, a moment
+// apart (reset, if given, clears whatever the failed attempt left cached).
+async function retry(fn, reset = () => {}) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= 2) throw err;
+      reset();
+      await new Promise((done) => setTimeout(done, 700 * (attempt + 1)));
+    }
+  }
+}
+
 async function sasToken() {
   if (sas && sas.expires - Date.now() > 5 * 60 * 1000) return sas.token;
   let r;
   try {
-    r = await fetch(SAS_URL, { signal: AbortSignal.timeout(15000) });
+    r = await retry(() => fetch(SAS_URL, { signal: AbortSignal.timeout(15000) }));
   } catch {
     throw new UpstreamError('imagery', 'network');
   }
@@ -56,7 +70,7 @@ export async function findNaip(box) {
   const [w, s, e, n] = box;
   let r;
   try {
-    r = await fetch(STAC_SEARCH, {
+    r = await retry(() => fetch(STAC_SEARCH, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -66,7 +80,10 @@ export async function findNaip(box) {
         limit: 50,
       }),
       signal: AbortSignal.timeout(20000),
-    });
+    }).then((res) => {
+      if (res.status >= 500) throw new Error(`STAC ${res.status}`); // retried
+      return res;
+    }));
   } catch {
     throw new UpstreamError('imagery', 'network');
   }
@@ -114,7 +131,7 @@ export async function readNaip(grid, items) {
     if (item.year !== items[0].year && filledCount === n) break;
     let level;
     try {
-      level = await withTimeout(openTiff(item.href).then((tiff) => pickLevel(tiff, grid.res)), OPEN_TIMEOUT_MS, 'imagery', 'open');
+      level = await retry(() => withTimeout(openTiff(item.href).then((tiff) => pickLevel(tiff, grid.res)), OPEN_TIMEOUT_MS, 'imagery', 'open'), () => tiffs.delete(item.href));
     } catch (err) {
       throw err instanceof UpstreamError ? err : new UpstreamError('imagery', 'open');
     }
@@ -141,7 +158,7 @@ export async function readNaip(grid, items) {
     if (win[0] >= win[2] || win[1] >= win[3]) continue;
     let data;
     try {
-      data = await image.readRasters({ window: win, interleave: false, signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
+      data = await retry(() => image.readRasters({ window: win, interleave: false, signal: AbortSignal.timeout(READ_TIMEOUT_MS) }));
     } catch {
       throw new UpstreamError('imagery', 'read');
     }

@@ -1778,17 +1778,25 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         ];
         const skirt = drapedGround(toScene(outerPoly), [], at, skirtTex, circles, true, publicWays, cutFills);
         // The strip to the street (front yard to curb), where Google's mesh is cut
-        // away in Real 3D: grass, with the sidewalks and driveways on it as slabs.
+        // away in Real 3D: a clean, evenly mown lawn in full colour (Google's
+        // surroundings are muted), edged with a pale curb line, with sidewalks
+        // and driveways on it as slabs. Nothing stands between the street and
+        // the property except what the scan modelled.
         if (front) {
           const roadsScene = paths.filter((q) => q && q.length >= 3 && ROAD_KINDS.has(q.kind)).map(toScene);
           const stripTex = turfTexture().clone();
           stripTex.needsUpdate = true;
           const strip = drapedGround(front, [toScene(outerPoly)], at, stripTex, [], false, roadsScene);
-          strip.material.color.set(0xd9e2cc);
+          strip.material.color.set(0xe6f2d6);
           strip.userData.ground = true;
           strip.userData.frontStrip = true; // Real 3D only
           strip.visible = false;
           scene.add(strip);
+          const edge = screenLine(front.map(([x, z]) => new THREE.Vector3(x, at(x, z) + 0.3, z)).concat([new THREE.Vector3(front[0][0], at(front[0][0], front[0][1]) + 0.3, front[0][1])]), { color: 0xf4f1e8, width: 1.6, opacity: 0.9, order: 9 });
+          edge.userData.ground = true;
+          edge.userData.frontStrip = true;
+          edge.visible = false;
+          scene.add(edge);
         }
         skirt.userData.ground = true;
         skirt.userData.skirt = true; // Real 3D only
