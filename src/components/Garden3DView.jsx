@@ -686,6 +686,21 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   }, []);
   const groundAtRef = useRef(() => 0);
   const [photoReal, setPhotoReal] = useState(() => Boolean(GOOGLE_TILES_KEY) && readPhotoPref());
+  // Once Google 3D has loaded it stays loaded; the toggle only shows or hides
+  // it (no reload, no new paid session).
+  const [tilesWanted, setTilesWanted] = useState(photoReal);
+  const photoRealRef = useRef(photoReal);
+  useEffect(() => {
+    photoRealRef.current = photoReal;
+    if (photoReal) setTilesWanted(true);
+    const t = tilesRef.current;
+    if (t) {
+      t.active = photoReal;
+      t.holder.visible = photoReal;
+      t.wantUpdate = true;
+    }
+    threeRef.current?.markDirty?.();
+  }, [photoReal]);
   const [photoStatus, setPhotoStatus] = useState('off'); // off | loading | ready | failed
   const [photoCredit, setPhotoCredit] = useState('');
   const [custom, setCustom] = useState(null);
@@ -907,7 +922,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         }
         controls.update();
       }
-      const t3 = tilesRef.current;
+      const t3 = tilesRef.current?.active ? tilesRef.current : null;
       if (t3 && (dirty || t3.wantUpdate)) {
         t3.wantUpdate = false;
         camera.updateMatrixWorld();
@@ -965,10 +980,22 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   // Ground points (scene feet) for lining the Google mesh up with the model:
   // lawn outline corners first (always open ground), then the property line.
   const groundSamplesRef = useRef([]);
+  // Streets and sidewalks off the lot: open, bare ground, the best reference
+  // for where Google's ground really is (yards are often under canopy or roofs).
+  const roadSamplesRef = useRef([]);
   useEffect(() => {
     const pts = [...polys.flat(), ...(lot || [])].map(([x, y]) => [x - cx, -(y - cy)]);
     groundSamplesRef.current = pts.length > 40 ? pts.filter((_, i) => i % Math.ceil(pts.length / 40) === 0) : pts;
-  }, [polys, lot, cx, cy]);
+    const road = [];
+    for (const q of paths) {
+      if (!q || q.length < 3) continue;
+      const mx = q.reduce((a, p) => a + p[0], 0) / q.length;
+      const my = q.reduce((a, p) => a + p[1], 0) / q.length;
+      if (lot && lot.length >= 3 && insidePoly([mx, my], lot)) continue; // driveways and walks on the lot
+      road.push([mx - cx, -(my - cy)], ...q.map(([x, y]) => [x - cx, -(y - cy)]));
+    }
+    roadSamplesRef.current = road.length > 60 ? road.filter((_, i) => i % Math.ceil(road.length / 60) === 0) : road;
+  }, [polys, lot, paths, cx, cy]);
 
   // Real ground heights for the property and a margin around it (USGS 3DEP).
   useEffect(() => {
@@ -1097,7 +1124,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   // below the beds (measured by casting down onto the mesh as tiles load).
   useEffect(() => {
     const three = threeRef.current;
-    if (!photoReal || locked || !three || !origin || !GOOGLE_TILES_KEY) {
+    if (!tilesWanted || locked || !three || !origin || !GOOGLE_TILES_KEY) {
       setPhotoStatus('off');
       setPhotoCredit('');
       return undefined;
@@ -1129,7 +1156,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       holder.add(tiles.group);
       scene.add(holder);
 
-      state = { tiles, wantUpdate: true, dispose: null };
+      holder.visible = photoRealRef.current;
+      state = { tiles, holder, active: photoRealRef.current, wantUpdate: true, dispose: null };
       const ray = new THREE.Raycaster();
       ray.firstHitOnly = true;
       const down = new THREE.Vector3(0, -1, 0);
@@ -1139,16 +1167,21 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         // within a few hundred feet when the elevation was known, otherwise the
         // ellipsoid, where US ground is roughly -500 to +15,000 ft. Cast from far above.
         const top = holder.position.y + 60000;
-        const heights = [];
-        for (const [x, z] of groundSamplesRef.current) {
-          ray.set(new THREE.Vector3(x, top, z), down);
-          const hit = ray.intersectObject(tiles.group, true)[0];
-          // Google's ground minus ours: one offset lines the two up everywhere.
-        if (hit) heights.push(hit.point.y - holder.position.y - groundAtRef.current(x, z));
-        }
-        if (heights.length < Math.max(3, groundSamplesRef.current.length / 3)) return;
-        heights.sort((a, b) => a - b);
-        // The lower quartile: lawn and yard, not roofs or tree tops.
+        // Google's ground minus ours at each point: one offset lines the two up everywhere.
+        const offsets = (pts) => {
+          const out = [];
+          for (const [x, z] of pts) {
+            ray.set(new THREE.Vector3(x, top, z), down);
+            const hit = ray.intersectObject(tiles.group, true)[0];
+            if (hit) out.push(hit.point.y - holder.position.y - groundAtRef.current(x, z));
+          }
+          return out.sort((a, b) => a - b);
+        };
+        // Streets and sidewalks first; the yard (lawn and lot corners) when there are none.
+        let heights = offsets(roadSamplesRef.current);
+        if (heights.length < 4) heights = offsets(groundSamplesRef.current);
+        if (heights.length < 3) return;
+        // The lower quartile: pavement and lawn, not street trees, roofs or cars.
         const ground = heights[Math.floor(heights.length / 4)];
         const median = heights[Math.floor(heights.length / 2)];
         // Coarse globe tiles load first and can be far off; wait for detailed ones that agree.
@@ -1227,7 +1260,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       }
       markDirty();
     };
-  }, [photoReal, locked, origin, cx, cy, maxDim]);
+  }, [tilesWanted, locked, origin, cx, cy, maxDim]);
 
   const togglePhotoReal = () => {
     if (locked) {
