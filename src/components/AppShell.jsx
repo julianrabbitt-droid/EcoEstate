@@ -74,6 +74,7 @@ export default function AppShell() {
             <p>Estimates are modeled, not engineering, financial or legal advice.</p>
           </div>
           <nav aria-label="Legal" className="flex flex-wrap gap-x-4 gap-y-1">
+            <Link to="/plans" className="underline-offset-2 hover:underline">Plans</Link>
             <Link to="/privacy" className="underline-offset-2 hover:underline">Privacy</Link>
             <Link to="/terms" className="underline-offset-2 hover:underline">Terms</Link>
             <Link to="/refunds" className="underline-offset-2 hover:underline">Refunds</Link>

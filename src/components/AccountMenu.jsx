@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ChevronDown, Crown, Gift, GraduationCap, Leaf, LogIn, LogOut, RefreshCw, Sprout, Trash2, User } from 'lucide-react';
+import { ChevronDown, Crown, Gift, GraduationCap, Layers, Leaf, LogIn, LogOut, RefreshCw, Sprout, Trash2, User } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -136,6 +136,9 @@ export default function AccountMenu() {
               <Crown className="h-4 w-4 text-accent" /> Manage subscription
             </DropdownMenuItem>
           )}
+          <DropdownMenuItem onClick={() => navigate('/plans')} className="gap-2">
+            <Layers className="h-4 w-4" /> Plans
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => navigate('/invite')} className="gap-2">
             <Gift className="h-4 w-4" /> Invite friends — get a free month
           </DropdownMenuItem>

@@ -19,6 +19,7 @@ import Register from '@/pages/Register';
 import { Cookies, Privacy, Refunds, Terms } from '@/pages/Legal';
 import WhyNative from '@/pages/WhyNative';
 import Examples from '@/pages/Examples';
+import Plans from '@/pages/Plans';
 import Admin from '@/pages/Admin';
 // Add page imports here
 import Scan from '@/pages/Scan';
@@ -104,6 +105,7 @@ const AuthenticatedApp = () => {
         <Route path="/project/:id/legacy" element={<ToPayoff />} />
         <Route path="/why-native" element={<WhyNative />} />
         <Route path="/examples" element={<Examples />} />
+        <Route path="/plans" element={<Plans />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/cookies" element={<Cookies />} />
