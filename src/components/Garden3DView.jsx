@@ -1266,6 +1266,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           const u = c.userData;
           if (u && (u.satellite || (u.offLot && !u.inFront))) c.visible = !t3;
           if (u && u.frontStrip) c.visible = !!t3;
+          if (u && u.outline) c.visible = !t3;
           if (u && u.skirt) c.visible = !!t3;
           if (u && u.lotGround) c.visible = !t3;
         }
@@ -1794,7 +1795,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         const skirt = drapedGround(toScene(outerPoly), [], at, skirtTex, circles, true, publicWays, cutFills);
         // The strip to the street (front yard to curb), where Google's mesh is cut
         // away in Real 3D: plain light ground like an architectural model's base
-        // (so the lawn is the only green), edged with a pale curb line, with sidewalks
+        // (so the lawn is the only green), with sidewalks
         // and driveways on it as slabs. Nothing stands between the street and
         // the property except what the scan modelled.
         if (front) {
@@ -1808,11 +1809,6 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           strip.userData.frontStrip = true; // Real 3D only
           strip.visible = false;
           scene.add(strip);
-          const edge = screenLine(front.map(([x, z]) => new THREE.Vector3(x, at(x, z) + 0.3, z)).concat([new THREE.Vector3(front[0][0], at(front[0][0], front[0][1]) + 0.3, front[0][1])]), { color: 0xf4f1e8, width: 1.6, opacity: 0.9, order: 9 });
-          edge.userData.ground = true;
-          edge.userData.frontStrip = true;
-          edge.visible = false;
-          scene.add(edge);
         }
         skirt.userData.ground = true;
         skirt.userData.skirt = true; // Real 3D only
@@ -1835,6 +1831,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const gline = haloOutline(gpts, 0xffffff, 2.5, { dashed: true, order: 10 });
       gline.userData.ground = true;
       gline.userData.propertyLine = true;
+      gline.userData.outline = true;
       scene.add(gline);
 
     }
@@ -1961,6 +1958,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const outlinePts = poly.map((p) => new THREE.Vector3(p[0] - cx, at(p[0] - cx, -(p[1] - cy)) + MULCH_Y + 0.1, -(p[1] - cy)));
       const outline = haloOutline(outlinePts, LAWN_OUTLINE, 2.5, { order: 12 });
       outline.userData.bed = true;
+      outline.userData.outline = true; // the model view only; Real 3D shows the property as it looks
       scene.add(outline);
     });
 

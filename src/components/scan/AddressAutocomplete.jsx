@@ -4,7 +4,9 @@ import { autocompleteAddresses } from '@/lib/geo';
 
 // Address input with live suggestions. Calls onChange on every keystroke and
 // onSelect(hit) when the user picks a suggestion.
-export default function AddressAutocomplete({ value, onChange, onSelect, placeholder }) {
+// onSuggestions(hits) with every new list, so the form can accept text typed
+// exactly as one of them.
+export default function AddressAutocomplete({ value, onChange, onSelect, onSuggestions, placeholder }) {
   const [suggestions, setSuggestions] = useState([]);
   const [open, setOpen] = useState(false);
   const [fetching, setFetching] = useState(false);
@@ -29,6 +31,7 @@ export default function AddressAutocomplete({ value, onChange, onSelect, placeho
       setFetching(true);
       const hits = await autocompleteAddresses(q);
       setSuggestions(hits);
+      onSuggestions?.(hits);
       setFetching(false);
       setOpen(hits.length > 0 && dismissed.current !== q);
       setActive(-1);

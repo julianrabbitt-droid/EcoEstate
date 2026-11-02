@@ -92,6 +92,7 @@ export default function Scan() {
   // so it is usually done by the time they click; a moved pin scans afresh.
   const earlyScan = useRef(null); // { key, promise }
   const picked = useRef(null); // the suggestion last picked from the address list
+  const [hits, setHits] = useState([]); // the list's current suggestions
   const scanKey = (address, hit) => `${address}|${hit?.lat}|${hit?.lng}|${hit?.osm || ''}`;
   const [editSeed, setEditSeed] = useState(null);
   const [method, setMethod] = useState('satellite');
@@ -253,16 +254,18 @@ export default function Scan() {
     scanAddress(address, { ...hit, lat, lng, ...(moved ? { osm: undefined } : {}) });
   };
 
-  // Only an address picked from the suggestions is scanned, so it is always
-  // one the map knows.
+  // Only an address picked from the suggestions (or typed exactly as one) is
+  // scanned, so it is always one the map knows; until then Scan is greyed out.
+  const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  const chosen = picked.current && same(picked.current.label, query) ? picked.current : hits.find((h) => same(h.label, query) || same(h.short, query)) || null;
   const handleScan = (e) => {
     e?.preventDefault();
     if (!query.trim()) {
       setNote('Enter an address to scan it.');
       return;
     }
-    if (picked.current && picked.current.label === query) {
-      locate(picked.current.label, picked.current);
+    if (chosen) {
+      locate(chosen.label, chosen);
       return;
     }
     setNote('Choose your address from the suggestions as you type.');
@@ -431,13 +434,14 @@ export default function Scan() {
             <AddressAutocomplete
               value={query}
               onChange={setQuery}
+              onSuggestions={setHits}
               onSelect={(hit) => {
                 picked.current = hit;
                 locate(hit.label || query, hit);
               }}
               placeholder="Enter your address"
             />
-            <Button type="submit" disabled={loading} className="h-12 rounded-full px-6 text-[15px]">
+            <Button type="submit" disabled={loading || !chosen} className="h-12 rounded-full px-6 text-[15px]">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Scan my lawn'}
             </Button>
           </form>
