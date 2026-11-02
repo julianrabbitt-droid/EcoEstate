@@ -33,8 +33,9 @@ export default function Community() {
   return (
     <div>
       <p className="text-[13px] text-muted-foreground">
-        Share your project, comment on others, and message members. Members appear as “Member”: no names, addresses or exact
-        locations are shown. Photos have their location data removed and are only shown in the feed.
+        Share your project, comment on others, and message members. Posts and comments appear as “Member”, never under your
+        name. Projects you choose to put on the map show your first name and a location rounded to about 1 km, never your
+        address. Photos have their location data removed and are only shown in the feed.
       </p>
 
       <div className="mt-6">
