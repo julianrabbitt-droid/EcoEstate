@@ -23,6 +23,7 @@ import { useNavigate } from 'react-router-dom';
 import { plantModel, setSharedMarker } from '@/lib/plantModels';
 import { onPhotoLoaded, photo, preloadShrubs, scannedShrub, setPhotoSharedMarker } from '@/lib/photoTextures';
 import { disposeObject } from '@/lib/disposeThree';
+import { terrainElevations } from '@/lib/terrainTiles';
 import { arrangePlants, prepareBuildings, prepareLot, preparePolys, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
 
 // Module-level geometries, materials and textures are reused across scene
@@ -347,12 +348,20 @@ async function loadTerrain(planBounds, origin, cx, cy) {
     interpolation: 'RSP_BilinearInterpolation',
     f: 'json',
   });
-  const res = await fetch(USGS_SAMPLES, { method: 'POST', body, signal: AbortSignal.timeout(12000) });
-  const data = await res.json();
   const metres = new Float64Array(pts.length).fill(NaN);
-  for (const smp of data?.samples || []) {
-    const v = Number(smp.value);
-    if (Number.isFinite(v) && v > -500 && smp.locationId >= 0 && smp.locationId < pts.length) metres[smp.locationId] = v;
+  try {
+    const res = await fetch(USGS_SAMPLES, { method: 'POST', body, signal: AbortSignal.timeout(12000) });
+    const data = await res.json();
+    for (const smp of data?.samples || []) {
+      const v = Number(smp.value);
+      if (Number.isFinite(v) && v > -500 && smp.locationId >= 0 && smp.locationId < pts.length) metres[smp.locationId] = v;
+    }
+  } catch {
+    // USGS didn't answer; the coarser AWS terrain tiles below stand in.
+  }
+  if (metres.filter(Number.isFinite).length < pts.length * 0.6) {
+    const fallback = await terrainElevations(pts).catch(() => []);
+    fallback.forEach((v, k) => { if (Number.isFinite(v) && v > -500) metres[k] = v; });
   }
   const known = [...metres].filter(Number.isFinite);
   if (known.length < pts.length * 0.6) return null;
@@ -1326,13 +1335,15 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // USGS ground elevation (orthometric, metres) plus the geoid, which sits
     // about 30 m below it across the contiguous US.
     const GEOID_M = -30;
+    // When USGS doesn't answer, the AWS terrain tiles; without any height the
+    // camera would start underground and Google would send nothing to show.
+    const usable = (elev) => (Number.isFinite(elev) && elev > -500 ? [elev + GEOID_M, true] : null);
     fetch(`https://epqs.nationalmap.gov/v1/json?x=${lon0}&y=${lat0}&units=Meters&wkid=4326`, { signal: AbortSignal.timeout(6000) })
       .then((r) => r.json())
-      .then((d) => {
-        const elev = Number(d?.value);
-        return Number.isFinite(elev) && elev > -500 ? [elev + GEOID_M, true] : [0, false];
-      })
-      .catch(() => [0, false])
+      .then((d) => usable(Number(d?.value)))
+      .catch(() => null)
+      .then((found) => found || terrainElevations([[lon0, lat0]]).then(([elev]) => usable(elev)).catch(() => null))
+      .then((found) => found || [0, false])
       .then(([heightM, known]) => {
         if (!stopped) start(heightM, known);
       });
