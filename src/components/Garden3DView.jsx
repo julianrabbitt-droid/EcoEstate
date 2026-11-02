@@ -77,10 +77,10 @@ clipUniforms.uEcoMask.value.needsUpdate = true;
 clipUniforms.uEcoTrees.value.needsUpdate = true;
 clipUniforms.uEcoGround.value.needsUpdate = true;
 // Google's mesh around a modelled tree is cut above the ground (our ground fills
-// below): from 1 ft inside the scanned crown, so no stump is left, and from 3 ft
-// in the margin around it, so nearby pool decks, fences and low walls stay.
-const TREE_CUT_CORE_FT = 1;
-const TREE_CUT_ABOVE_FT = 3;
+// below): from 2.5 ft inside the scanned crown and from 4 ft in the margin
+// around it, so pools, decks, fences and low walls nearby stay whole.
+const TREE_CUT_CORE_FT = 2.5; // Google's ground can sit a foot or two off the USGS terrain; pools and decks must survive
+const TREE_CUT_ABOVE_FT = 4;
 const TREE_CUT_PAD_FT = 2; // and this far past its scanned crown
 function clipTileMaterial(m) {
   if (!m || m.userData.ecoClip) return;
@@ -708,6 +708,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       t.holder.visible = photoReal;
       t.wantUpdate = true;
     }
+    applyLiftRef.current();
     threeRef.current?.markDirty?.();
   }, [photoReal]);
   const [photoStatus, setPhotoStatus] = useState('off'); // off | loading | ready | failed
@@ -990,12 +991,22 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   // Ground points (scene feet) for lining the Google mesh up with the model:
   // lawn outline corners first (always open ground), then the property line.
   const groundSamplesRef = useRef([]);
+  // In Real 3D the planting sits on Google's real lawn, which can be a little
+  // above the model's ground; the beds and plants are lifted by this much (ft).
+  const plantLiftRef = useRef(0);
+  const applyLiftRef = useRef(() => {});
+  const bedSamplesRef = useRef([]);
   // Streets and sidewalks off the lot: open, bare ground, the best reference
   // for where Google's ground really is (yards are often under canopy or roofs).
   const roadSamplesRef = useRef([]);
   useEffect(() => {
     const pts = [...polys.flat(), ...(lot || [])].map(([x, y]) => [x - cx, -(y - cy)]);
     groundSamplesRef.current = pts.length > 40 ? pts.filter((_, i) => i % Math.ceil(pts.length / 40) === 0) : pts;
+    const bedPts = polys.filter((q) => q && q.length >= 3).flatMap((q) => [
+      [q.reduce((a, p) => a + p[0], 0) / q.length - cx, -(q.reduce((a, p) => a + p[1], 0) / q.length - cy)],
+      ...q.map(([x, y]) => [x - cx, -(y - cy)]),
+    ]);
+    bedSamplesRef.current = bedPts.length > 60 ? bedPts.filter((_, i) => i % Math.ceil(bedPts.length / 60) === 0) : bedPts;
     const road = [];
     for (const q of paths) {
       if (!q || q.length < 3) continue;
@@ -1183,6 +1194,17 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         const [lo, hi] = knownHeight ? [-400, 400] : [-1000, 15000];
         if (ground < lo || ground > hi || median - ground > 60) return;
         holder.position.y = -ground - PHOTO_SINK_FT;
+        // How high Google's real lawn stands where the beds go (raycasts see the
+        // mesh even where it is cut away): the lower quartile, so canopy above
+        // a bed doesn't count.
+        holder.updateMatrixWorld(true);
+        // offsets() = Google's surface minus the model's ground before the
+        // holder's shift; adding the shift gives its height in the scene.
+        const lawn = offsets(bedSamplesRef.current);
+        if (lawn.length >= 3) {
+          plantLiftRef.current = Math.min(2.5, Math.max(0, lawn[Math.floor(lawn.length / 4)] + holder.position.y + 0.15));
+          applyLiftRef.current();
+        }
         markDirty();
       };
       const credit = () => {
@@ -1256,6 +1278,20 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       markDirty();
     };
   }, [tilesWanted, locked, origin, cx, cy, maxDim]);
+
+  // Beds, their outlines and plants rise by the lift while Real 3D is showing.
+  applyLiftRef.current = () => {
+    const three = threeRef.current;
+    if (!three) return;
+    const y = photoRealRef.current && tilesRef.current?.active ? plantLiftRef.current : 0;
+    three.plantGroup.position.y = y;
+    for (const c of three.scene.children) {
+      if (!c.userData?.bed) continue;
+      if (c.userData.baseY === undefined) c.userData.baseY = c.position.y;
+      c.position.y = c.userData.baseY + y;
+    }
+    three.markDirty?.();
+  };
 
   const togglePhotoReal = () => {
     if (locked) {
@@ -1599,6 +1635,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       });
     });
 
+    applyLiftRef.current(); // a rebuilt planting keeps its Real 3D lift
     three.markDirty?.();
   }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, assetsVersion]);
 
