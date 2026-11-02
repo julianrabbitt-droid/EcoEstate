@@ -2058,7 +2058,17 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const heightFt = poly.heightFt > 0 ? poly.heightFt : Number(bAttr.heightFt) > 0 ? Number(bAttr.heightFt) : null;
       // Each block stands on the lowest ground under its own corners: on a
       // hillside the house steps down the slope; uphill walls run into it like a foundation.
-      const mesh = buildHouse(pts, heightFt, { wallColor: bAttr.wallColor, roofType: bAttr.roofType, front, groundAt: (x, y) => at(x, -y) });
+      // A garage door where a driveway (scanned paving or a mapped service road) meets the house.
+      let garageAt = null;
+      let gapBest = 12;
+      for (const q of paths) {
+        if (!q || q.length < 3 || (q.kind !== 'paved' && q.kind !== 'service')) continue;
+        for (const [qx, qy] of q) {
+          const d = distToOutline([qx - cx, qy - cy], pts);
+          if (d < gapBest) { gapBest = d; garageAt = [qx - cx, qy - cy]; }
+        }
+      }
+      const mesh = buildHouse(pts, heightFt, { wallColor: bAttr.wallColor, roofType: bAttr.roofType, front, groundAt: (x, y) => at(x, -y), roof: poly.roof, garageAt });
       mesh.userData.building = true;
       scene.add(mesh);
     });

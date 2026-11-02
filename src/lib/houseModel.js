@@ -319,6 +319,9 @@ const MULLION_V = new THREE.PlaneGeometry(0.16, 4);
 const MULLION_H = new THREE.PlaneGeometry(3, 0.16);
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const TRIM = new THREE.MeshStandardMaterial({ color: 0xf3f0e8, roughness: 0.75 });
+const GARAGE = new THREE.MeshStandardMaterial({ color: 0xe9e6de, roughness: 0.8, ...proud(-2) });
+const GARAGE_SEAM = new THREE.MeshStandardMaterial({ color: 0xc9c4b8, roughness: 0.8, ...proud(-3) });
+const GARAGE_H = 7.5;
 const FOUNDATION = new THREE.MeshStandardMaterial({ color: 0x8f8b84, roughness: 1 });
 const MULLION = new THREE.MeshStandardMaterial({ color: 0xf4f1ea, roughness: 0.8, ...proud(-6) });
 /** Shared geometries and materials, so the 3D view's disposal can skip them. */
@@ -334,14 +337,22 @@ export const HOUSE_SHARED = [WINDOW_GEO, DOOR_GEO, GLASS, FRAME, DOOR, FRAME_GEO
 // the house stands on the lowest ground under its own corners, so on a hillside
 // the house steps down the slope (like a split-level) instead of one floor
 // level burying the uphill side; the group's y is then 0.
-export function buildHouse(points, heightFt, { wallColor, roofType, front, groundAt = null } = {}) {
+// roof: { color: '#rrggbb', shape: 'flat' | 'pitched' } measured by the scan.
+// garageAt: [x, y] plan point where the driveway meets the house: a garage
+// door goes on the nearest wall.
+export function buildHouse(points, heightFt, { wallColor, roofType, front, groundAt = null, roof = null, garageAt = null } = {}) {
   const group = new THREE.Group();
   const total = area(points);
   const blocks = blocksFor(points);
   const big = total > 8000; // shops, schools, apartment blocks: flat roofs read as conventional
-  const type = big || roofType === 'flat' ? 'flat' : roofType === 'gable' ? 'gable' : 'hip';
+  const type = big || roofType === 'flat' || roof?.shape === 'flat' ? 'flat' : roofType === 'gable' ? 'gable' : 'hip';
   const wallHex = WALL_COLORS[wallColor] ?? WALL_COLORS.gray;
-  const roofHex = ROOF_COLORS[type] ?? ROOF_COLORS.unknown;
+  // The roof's own colour from the aerial photo (brightened a little: the
+  // survey is taken from high up, through haze), else a typical one.
+  const scanned = roof?.color ? new THREE.Color(roof.color) : null;
+  if (scanned) scanned.multiplyScalar(1.15);
+  const roofHex = scanned ? scanned.getHex() : ROOF_COLORS[type] ?? ROOF_COLORS.unknown;
+  const terracotta = scanned ? scanned.r > scanned.g * 1.12 && scanned.r > scanned.b * 1.2 : false;
   const wallTex = wallTexture(wallColor, wallHex);
   const roofTex = type === 'flat' ? stuccoTexture(roofHex) : shingleTexture(roofHex);
   const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9, side: THREE.DoubleSide });
@@ -355,7 +366,7 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
   const wallPhoto = { brick: 'brick_wall_001', stucco: 'beige_wall_002', siding: 'brown_planks_05' }[look];
   wallMat.normalMap = photo(wallPhoto, 'nor_gl', wallTile);
   if (look === 'brick') wallMat.map = photo('brick_wall_001', 'diffuse', wallTile);
-  if (look === 'stucco' && type !== 'flat') {
+  if (type !== 'flat' && (scanned ? terracotta : look === 'stucco')) {
     roofMat.map = photo('clay_roof_tiles_02', 'diffuse', roofTile);
     roofMat.normalMap = photo('clay_roof_tiles_02', 'nor_gl', roofTile);
   }
@@ -370,6 +381,19 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
 
   // Which block side faces the street, for the door.
   let doorDone = !front;
+  // The block nearest the driveway gets the garage door (within 25 ft of it).
+  let garageBlock = -1;
+  if (garageAt) {
+    let best = 25;
+    blocks.forEach((b, bi) => {
+      const c = Math.cos(-b.angle);
+      const sn = Math.sin(-b.angle);
+      const dx = garageAt[0] - b.cx;
+      const dy = garageAt[1] - b.cy;
+      const d = Math.hypot(Math.max(0, Math.abs(dx * c - dy * sn) - b.w / 2), Math.max(0, Math.abs(dx * sn + dy * c) - b.d / 2));
+      if (d < best) { best = d; garageBlock = bi; }
+    });
+  }
 
   blocks.forEach((b, bi) => {
     const block = new THREE.Group();
@@ -453,6 +477,41 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
       { o: [hw, hd], t: [-1, 0], nrm: [0, 1], len: b.w },
       { o: [-hw, hd], t: [0, -1], nrm: [-1, 0], len: b.d },
     ];
+    // The wall nearest the driveway gets a garage door, centred where the
+    // driveway meets it; no windows or front door in that stretch.
+    let garage = null;
+    if (bi === garageBlock) {
+      sides.forEach((sd, si) => {
+        const p0 = local2plan(sd.o[0], sd.o[1]);
+        const p1 = local2plan(sd.o[0] + sd.t[0] * sd.len, sd.o[1] + sd.t[1] * sd.len);
+        const t = Math.max(0, Math.min(1, ((garageAt[0] - p0[0]) * (p1[0] - p0[0]) + (garageAt[1] - p0[1]) * (p1[1] - p0[1])) / (sd.len * sd.len)));
+        const d = Math.hypot(garageAt[0] - (p0[0] + (p1[0] - p0[0]) * t), garageAt[1] - (p0[1] + (p1[1] - p0[1]) * t));
+        if (sd.len >= 12 && (!garage || d < garage.d)) {
+          const width = Math.min(16, sd.len * 0.7);
+          garage = { si, d, width, along: Math.max(width / 2 + 0.5, Math.min(sd.len - width / 2 - 0.5, t * sd.len)) };
+        }
+      });
+      if (garage) {
+        const sd = sides[garage.si];
+        const yaw = Math.atan2(sd.nrm[0], sd.nrm[1]);
+        const lx = sd.o[0] + sd.t[0] * garage.along + sd.nrm[0] * 0.14;
+        const ln = sd.o[1] + sd.t[1] * garage.along + sd.nrm[1] * 0.14;
+        const door = new THREE.Mesh(BOX, GARAGE);
+        door.scale.set(garage.width, GARAGE_H, 0.2);
+        door.position.set(lx, GARAGE_H / 2 + 0.2, -ln);
+        door.rotation.y = Math.PI - yaw;
+        block.add(door);
+        for (let k = 1; k <= 3; k++) {
+          const seam = new THREE.Mesh(BOX, GARAGE_SEAM);
+          seam.scale.set(garage.width - 0.4, 0.12, 0.24);
+          seam.position.set(lx, 0.2 + (GARAGE_H * k) / 4, -ln);
+          seam.rotation.y = Math.PI - yaw;
+          block.add(seam);
+        }
+      }
+    }
+    const inGarage = (si, along) => garage && si === garage.si && Math.abs(along - garage.along) < garage.width / 2 + 1.5;
+
     // The side whose outward normal points most toward the street gets the door.
     let doorSide = -1;
     if (!doorDone && bi === 0) {
@@ -475,8 +534,9 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
         const lx = sd.o[0] + sd.t[0] * along + sd.nrm[0] * 0.12;
         const ln = sd.o[1] + sd.t[1] * along + sd.nrm[1] * 0.12;
         if (coveredByOther(lx + sd.nrm[0], ln + sd.nrm[1])) continue;
-        const isDoor = si === doorSide && k === Math.ceil(count / 2);
+        const isDoor = si === doorSide && k === Math.ceil(count / 2) && !inGarage(si, along);
         for (let f = 0; f < floors; f++) {
+          if (f === 0 && inGarage(si, along)) continue; // the garage door is here
           if (isDoor && f === 0) {
             const door = new THREE.Mesh(DOOR_GEO, DOOR);
             door.position.set(lx, 3.5, -ln);

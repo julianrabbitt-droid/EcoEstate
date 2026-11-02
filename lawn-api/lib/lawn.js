@@ -735,7 +735,7 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   // Buildings over roads and paths over lawn: cut each higher layer out of the
   // ones below so nothing overlaps (simplified and rectangle outlines can
   // otherwise stray onto a path or roof).
-  const buildingLayer = describeBuildings(ownBuildings, roofLabels, canopy);
+  const buildingLayer = describeBuildings(ownBuildings, roofLabels, canopy, naip);
   // Which roofs and paths actually touch each lawn region and path, from the
   // rasters (pixels within 2 of each other count, to catch sub-pixel overlaps),
   // so only those are cut. Each path is walked over its own pixels, so crossing

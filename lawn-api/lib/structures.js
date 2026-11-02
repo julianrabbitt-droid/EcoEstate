@@ -63,18 +63,33 @@ function buildingHeight(b, roof) {
 }
 
 /**
- * Buildings as a FeatureCollection with heightFt, heightSource and areaSqft.
+ * Buildings as a FeatureCollection with heightFt, heightSource, areaSqft and,
+ * when the photo covers them, roofColor (the median colour of the roof in the
+ * aerial photo, '#rrggbb') and roofShape ('flat' or 'pitched', from how much
+ * the canopy height model varies across the roof).
  * `labels` is rasterizeLabels() over `buildings` (same order).
  */
-export function describeBuildings(buildings, labels, canopy) {
-  // Canopy heights over each roof, gathered in one pass.
-  const roofs = buildings.map(() => ({ pixels: 0, heights: [] }));
+export function describeBuildings(buildings, labels, canopy, naip = null) {
+  // Canopy heights and photo colours over each roof, gathered in one pass.
+  const roofs = buildings.map(() => ({ pixels: 0, heights: [], r: [], g: [], b: [] }));
   for (let k = 0; k < labels.length; k++) {
     const roof = roofs[labels[k] - 1];
     if (!roof) continue;
     roof.pixels++;
     if (canopy.known[k] && canopy.height[k] >= 2) roof.heights.push(canopy.height[k]);
+    if (naip?.filled[k]) {
+      roof.r.push(naip.red[k]);
+      roof.g.push(naip.green[k]);
+      roof.b.push(naip.blue[k]);
+    }
   }
+  const hex = (v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
+  const look = (roof) => {
+    const out = {};
+    if (roof.r.length >= 6) out.roofColor = `#${hex(percentile(roof.r, 0.5))}${hex(percentile(roof.g, 0.5))}${hex(percentile(roof.b, 0.5))}`;
+    if (roof.heights.length >= 8) out.roofShape = percentile(roof.heights, 0.9) - percentile(roof.heights, 0.1) >= 1.2 ? 'pitched' : 'flat';
+    return out;
+  };
   return {
     type: 'FeatureCollection',
     features: buildings.map((b, i) => {
@@ -82,7 +97,7 @@ export function describeBuildings(buildings, labels, canopy) {
       return {
         type: 'Feature',
         geometry: b.geometry,
-        properties: { id: b.id, heightFt: Math.round(heightM * M_TO_FT), heightSource: source, areaSqft: Math.round(b.areaM2 * SQM_TO_SQFT) },
+        properties: { id: b.id, heightFt: Math.round(heightM * M_TO_FT), heightSource: source, areaSqft: Math.round(b.areaM2 * SQM_TO_SQFT), ...look(roofs[i]) },
       };
     }),
   };

@@ -91,11 +91,13 @@ const isOutsideUS = (hit) => Boolean(hit?.countryCode) && hit.countryCode !== 'U
 function scannedStructures(d) {
   const buildings = [];
   const buildingHeightsFt = [];
+  const buildingRoofs = []; // { color, shape } from the aerial photo and canopy heights, same order
   for (const f of d?.buildings?.features || []) {
     const ring = geoJsonOuterRings(f.geometry)[0];
     if (!ring) continue;
     buildings.push(ring);
     buildingHeightsFt.push(f.properties?.heightFt ?? null);
+    buildingRoofs.push({ color: f.properties?.roofColor || null, shape: f.properties?.roofShape || null });
   }
   const trees = (d?.trees || []).map((t) => ({ latLng: [t.lat, t.lon], radiusFt: t.radiusFt, heightFt: t.heightFt }));
   const paths = [...(d?.paths?.features || []), ...(d?.nearbyRoads?.features || []), ...(d?.paved?.features || [])]
@@ -103,7 +105,7 @@ function scannedStructures(d) {
     .filter((p) => p.polygonLatLng);
   // Fences on the lot lines (from lidar), as [lat, lng] lines.
   const fences = (d?.fences?.features || []).map((f) => f.geometry.coordinates.map(([lon, lat]) => [lat, lon]));
-  return { buildings, buildingHeightsFt, trees, paths, fences };
+  return { buildings, buildingHeightsFt, buildingRoofs, trees, paths, fences };
 }
 
 const STEPS = [
