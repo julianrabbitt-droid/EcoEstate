@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Leaf, Loader2 } from 'lucide-react';
 import { getLawn, getLawnForParcel, measureArea, mergeLawnOutlines } from '@/api/lawnApi';
+import LocationConfirm from '@/components/scan/LocationConfirm';
 import { Button } from '@/components/ui/button';
 import MethodPicker from '@/components/scan/MethodPicker';
 import SatelliteMethod from '@/components/scan/SatelliteMethod';
@@ -82,7 +83,8 @@ export default function Scan() {
   const [place, setPlace] = useState(null);
   const [note, setNote] = useState('');
   const [unavailable, setUnavailable] = useState(null);
-  const [phase, setPhase] = useState('idle');
+  const [phase, setPhase] = useState('idle'); // idle | locating | confirm | scanning | lawn | manual
+  const [pending, setPending] = useState(null); // { address, hit } waiting for "is this your property?"
   const [lawnData, setLawnData] = useState(null);
   const [areaCalc, setAreaCalc] = useState(NO_AREA);
   const areaRequest = useRef(0);
@@ -177,13 +179,49 @@ export default function Scan() {
     }
   };
 
+  // First find where the address is and ask the person to confirm (or move
+  // the pin onto) their property; the scan only runs on a confirmed spot.
+  const locate = async (address, knownHit = null) => {
+    setNote('');
+    setUnavailable(null);
+    let hit = knownHit;
+    if (!hit) {
+      setLoading(true);
+      setPhase('locating');
+      try {
+        hit = await geocodeAddress(address);
+      } catch {
+        hit = null;
+      } finally {
+        setLoading(false);
+      }
+    }
+    if (!hit || !Number.isFinite(hit.lat) || !Number.isFinite(hit.lng)) {
+      // Our quick lookup missed it; the lawn service has its own geocoder, so scan directly.
+      scanAddress(address);
+      return;
+    }
+    setPlace(hit);
+    setCenter([hit.lat, hit.lng]);
+    setPending({ address, hit });
+    setPhase('confirm');
+  };
+
+  const confirmLocation = ([lat, lng]) => {
+    const { address, hit } = pending;
+    setPending(null);
+    // A moved pin means the parcel is found from the point, not the address's own lookup.
+    const moved = lat !== hit.lat || lng !== hit.lng;
+    scanAddress(address, { ...hit, lat, lng, ...(moved ? { osm: undefined } : {}) });
+  };
+
   const handleScan = (e) => {
     e?.preventDefault();
     if (!query.trim()) {
       setNote('Enter an address to scan it.');
       return;
     }
-    scanAddress(query.trim());
+    locate(query.trim());
   };
 
   // Re-detect the lawn inside a property line the user adjusted (estimated boundaries).
@@ -303,7 +341,7 @@ export default function Scan() {
   };
 
   const searchKey = `${center[0]},${center[1]}`;
-  const showAuto = phase === 'scanning' || phase === 'lawn';
+  const showAuto = phase === 'scanning' || phase === 'lawn' || phase === 'confirm' || phase === 'locating';
   const measured = result.source === 'satellite' && areaCalc.lawnSqft !== null ? areaCalc.lawnSqft : result.area;
   const turfDisplay = result.source === 'upload' || result.source === 'satellite' ? measured : measured * 0.76;
 
@@ -323,7 +361,7 @@ export default function Scan() {
             <AddressAutocomplete
               value={query}
               onChange={setQuery}
-              onSelect={(hit) => scanAddress(hit.label || query, hit)}
+              onSelect={(hit) => locate(hit.label || query, hit)}
               placeholder="Enter your address"
             />
             <Button type="submit" disabled={loading} className="h-12 rounded-full px-6 text-[15px]">
@@ -352,7 +390,20 @@ export default function Scan() {
 
         <div className="overflow-hidden rounded-[26px] border border-border bg-card shadow-[0_30px_70px_-40px_rgba(16,35,28,0.55)]">
           {showAuto ? (
-            phase === 'scanning' ? (
+            phase === 'locating' ? (
+              <div className="flex flex-col items-center justify-center px-6 py-24 text-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                <p className="mt-3 text-[13px] text-muted-foreground">Finding the address…</p>
+              </div>
+            ) : phase === 'confirm' && pending ? (
+              <LocationConfirm
+                key={`${pending.hit.lat},${pending.hit.lng}`}
+                label={shortAddress(pending.hit.label) || pending.address}
+                point={[pending.hit.lat, pending.hit.lng]}
+                onConfirm={confirmLocation}
+                onCancel={() => { setPending(null); setPhase('idle'); }}
+              />
+            ) : phase === 'scanning' ? (
               <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary">
                   <Leaf className="h-5 w-5 text-accent" />

@@ -127,16 +127,140 @@ export function blocksFor(points) {
   return blocks;
 }
 
+// ---- Surface textures, drawn once per look and tiled in real-world feet ----
+const texCache = new Map();
+function canvasTexture(key, sizeFt, draw) {
+  if (texCache.has(key)) return texCache.get(key);
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  draw(c.getContext('2d'), 256);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  t.userData.sizeFt = sizeFt;
+  texCache.set(key, t);
+  return t;
+}
+const rand = (seed) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
+const shade = (n, f) => {
+  const r = Math.min(255, Math.round(((n >> 16) & 255) * f));
+  const g = Math.min(255, Math.round(((n >> 8) & 255) * f));
+  const b = Math.min(255, Math.round((n & 255) * f));
+  return `rgb(${r},${g},${b})`;
+};
+// Lap siding: boards 6 in tall with a shadow line under each.
+function sidingTexture(color) {
+  return canvasTexture(`siding:${color}`, 4, (ctx, S) => {
+    const r = rand(color % 997 + 3);
+    const boards = 8;
+    for (let i = 0; i < boards; i++) {
+      const y = (i * S) / boards;
+      ctx.fillStyle = shade(color, 0.97 + r() * 0.06);
+      ctx.fillRect(0, y, S, S / boards);
+      const grad = ctx.createLinearGradient(0, y + S / boards - 5, 0, y + S / boards);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.28)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, y + S / boards - 5, S, 5);
+    }
+  });
+}
+// Stucco: fine mottled plaster.
+function stuccoTexture(color) {
+  return canvasTexture(`stucco:${color}`, 3, (ctx, S) => {
+    ctx.fillStyle = hex(color);
+    ctx.fillRect(0, 0, S, S);
+    const r = rand(color % 991 + 7);
+    for (let i = 0; i < 2600; i++) {
+      ctx.fillStyle = r() > 0.5 ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+      const d = 1 + r() * 3;
+      ctx.fillRect(r() * S, r() * S, d, d);
+    }
+  });
+}
+// Running-bond brick with mortar joints.
+function brickTexture(color) {
+  return canvasTexture(`brick:${color}`, 2.5, (ctx, S) => {
+    ctx.fillStyle = '#cfc8bc';
+    ctx.fillRect(0, 0, S, S);
+    const r = rand(color % 983 + 11);
+    const rows = 11;
+    const bh = S / rows;
+    for (let j = 0; j < rows; j++) {
+      const off = j % 2 ? bh * 1.5 : 0;
+      for (let x = -off; x < S; x += bh * 3) {
+        ctx.fillStyle = shade(color, 0.85 + r() * 0.3);
+        ctx.fillRect(x + 1.5, j * bh + 1.5, bh * 3 - 3, bh - 3);
+      }
+    }
+  });
+}
+// Asphalt shingles: staggered tabs with dark gaps and granule speckle.
+function shingleTexture(color) {
+  return canvasTexture(`shingle:${color}`, 4, (ctx, S) => {
+    const r = rand(color % 977 + 13);
+    const rows = 10;
+    const rh = S / rows;
+    for (let j = 0; j < rows; j++) {
+      const off = j % 2 ? rh * 1.4 : 0;
+      for (let x = -off; x < S; x += rh * 2.8) {
+        ctx.fillStyle = shade(color, 0.82 + r() * 0.36);
+        ctx.fillRect(x, j * rh, rh * 2.8 - 2, rh);
+      }
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(0, (j + 1) * rh - 2, S, 2);
+    }
+    for (let i = 0; i < 3000; i++) {
+      ctx.fillStyle = r() > 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)';
+      ctx.fillRect(r() * S, r() * S, 1.5, 1.5);
+    }
+  });
+}
+const STUCCO_COLORS = new Set(['beige', 'tan', 'cream', 'yellow']);
+function wallTexture(wallColor, color) {
+  if (wallColor === 'brick' || wallColor === 'red') return brickTexture(color);
+  if (STUCCO_COLORS.has(wallColor)) return stuccoTexture(color);
+  return sidingTexture(color);
+}
+
 // A triangle soup (flat shaded) from quads and triangles given as plan-space
-// points with heights: [x, y, z] where y is height and z is north.
-function solid(faces, material) {
+// points with heights: [x, y, z] where y is height and z is north. UVs are in
+// feet along each face (horizontal, then up the face), divided by the
+// texture's tile size, so siding and shingles keep a real-world scale.
+function solid(faces, material, tileFt = 4) {
   const pos = [];
+  const uv = [];
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const nrm = new THREE.Vector3();
+  const uAxis = new THREE.Vector3();
+  const vAxis = new THREE.Vector3();
+  const up = new THREE.Vector3(0, 1, 0);
   for (const f of faces) {
-    const tris = f.length === 4 ? [[f[0], f[1], f[2]], [f[0], f[2], f[3]]] : [f];
-    for (const t of tris) for (const [x, y, n] of t) pos.push(x, y, -n);
+    const pts = f.map(([x, y, n]) => new THREE.Vector3(x, y, -n));
+    a.copy(pts[0]); b.copy(pts[1]); c.copy(pts[2]);
+    nrm.subVectors(b, a).cross(c.clone().sub(a)).normalize();
+    uAxis.crossVectors(up, nrm);
+    if (uAxis.lengthSq() < 1e-6) uAxis.set(1, 0, 0);
+    uAxis.normalize();
+    vAxis.crossVectors(nrm, uAxis).normalize();
+    if (vAxis.y < 0) vAxis.negate();
+    const tris = pts.length === 4 ? [[0, 1, 2], [0, 2, 3]] : [[0, 1, 2]];
+    for (const t of tris) {
+      for (const i of t) {
+        pos.push(pts[i].x, pts[i].y, pts[i].z);
+        uv.push(pts[i].dot(uAxis) / tileFt, pts[i].dot(vAxis) / tileFt);
+      }
+    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.computeVertexNormals();
   const m = new THREE.Mesh(g, material);
   m.castShadow = true;
@@ -188,8 +312,14 @@ const GLASS = new THREE.MeshStandardMaterial({ color: 0x2f3b45, roughness: 0.25,
 const FRAME = new THREE.MeshStandardMaterial({ color: 0xf4f1ea, roughness: 0.8, ...proud(-2) });
 const DOOR = new THREE.MeshStandardMaterial({ color: 0x5a3f2c, roughness: 0.7, ...proud(-2) });
 const FRAME_GEO = new THREE.PlaneGeometry(3.6, 4.6);
+const MULLION_V = new THREE.PlaneGeometry(0.16, 4);
+const MULLION_H = new THREE.PlaneGeometry(3, 0.16);
+const BOX = new THREE.BoxGeometry(1, 1, 1);
+const TRIM = new THREE.MeshStandardMaterial({ color: 0xf3f0e8, roughness: 0.75 });
+const FOUNDATION = new THREE.MeshStandardMaterial({ color: 0x8f8b84, roughness: 1 });
+const MULLION = new THREE.MeshStandardMaterial({ color: 0xf4f1ea, roughness: 0.8, ...proud(-6) });
 /** Shared geometries and materials, so the 3D view's disposal can skip them. */
-export const HOUSE_SHARED = [WINDOW_GEO, DOOR_GEO, GLASS, FRAME, DOOR, FRAME_GEO];
+export const HOUSE_SHARED = [WINDOW_GEO, DOOR_GEO, GLASS, FRAME, DOOR, FRAME_GEO, MULLION_V, MULLION_H, BOX, TRIM, FOUNDATION, MULLION];
 
 /**
  * A conventional building for a footprint.
@@ -203,8 +333,14 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front } = {}
   const blocks = blocksFor(points);
   const big = total > 8000; // shops, schools, apartment blocks: flat roofs read as conventional
   const type = big || roofType === 'flat' ? 'flat' : roofType === 'gable' ? 'gable' : 'hip';
-  const wallMat = new THREE.MeshStandardMaterial({ color: WALL_COLORS[wallColor] ?? WALL_COLORS.gray, roughness: 0.92, flatShading: true, side: THREE.DoubleSide });
-  const roofMat = new THREE.MeshStandardMaterial({ color: ROOF_COLORS[type] ?? ROOF_COLORS.unknown, roughness: 0.85, flatShading: true, side: THREE.DoubleSide });
+  const wallHex = WALL_COLORS[wallColor] ?? WALL_COLORS.gray;
+  const roofHex = ROOF_COLORS[type] ?? ROOF_COLORS.unknown;
+  const wallTex = wallTexture(wallColor, wallHex);
+  const roofTex = type === 'flat' ? stuccoTexture(roofHex) : shingleTexture(roofHex);
+  const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9, side: THREE.DoubleSide });
+  const roofMat = new THREE.MeshStandardMaterial({ map: roofTex, roughness: 0.95, side: THREE.DoubleSide });
+  const wallTile = wallTex.userData.sizeFt;
+  const roofTile = roofTex.userData.sizeFt;
 
   // One eave height for the whole building so the blocks join cleanly.
   const main = blocks[0];
@@ -231,8 +367,30 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front } = {}
     ];
     const blockRise = type === 'flat' ? 0 : Math.min(rise, (b.d / 2) * PITCH);
     const { roof, gables } = roofFaces(type, b.w, b.d, eave, blockRise);
-    block.add(solid([...walls, ...gables], wallMat));
-    block.add(solid(roof, roofMat));
+    block.add(solid([...walls, ...gables], wallMat, wallTile));
+    block.add(solid(roof, roofMat, roofTile));
+    // Concrete foundation band, white corner boards and fascia along the eaves.
+    const base = new THREE.Mesh(BOX, FOUNDATION);
+    base.scale.set(b.w + 0.3, 1.2, b.d + 0.3);
+    base.position.y = 0.45;
+    block.add(base);
+    for (const [cxx, czz] of [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]]) {
+      const post = new THREE.Mesh(BOX, TRIM);
+      post.scale.set(0.45, eave, 0.45);
+      post.position.set(cxx, eave / 2, -czz);
+      block.add(post);
+    }
+    if (type !== 'flat') {
+      const W2 = hw + OVERHANG_FT;
+      const D2 = hd + OVERHANG_FT;
+      for (const [len, x, z, ry] of [[2 * W2, 0, D2, 0], [2 * W2, 0, -D2, 0], [2 * D2, W2, 0, Math.PI / 2], [2 * D2, -W2, 0, Math.PI / 2]]) {
+        const fascia = new THREE.Mesh(BOX, TRIM);
+        fascia.scale.set(len, 0.55, 0.15);
+        fascia.position.set(x, eave - 0.2, z);
+        fascia.rotation.y = ry;
+        block.add(fascia);
+      }
+    }
     if (type === 'flat') {
       // A low parapet so flat roofs don't look unfinished.
       const p = 2;
@@ -241,7 +399,7 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front } = {}
         [[hw, eave, -hd], [hw, eave, hd], [hw, eave + p, hd], [hw, eave + p, -hd]],
         [[hw, eave, hd], [-hw, eave, hd], [-hw, eave + p, hd], [hw, eave + p, hd]],
         [[-hw, eave, hd], [-hw, eave, -hd], [-hw, eave + p, -hd], [-hw, eave + p, hd]],
-      ], wallMat));
+      ], wallMat, wallTile));
     }
 
     // Windows along each side, one row per floor, skipping spots covered by another block.
@@ -310,7 +468,17 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front } = {}
           const glass = new THREE.Mesh(WINDOW_GEO, GLASS);
           glass.position.set(lx + sd.nrm[0] * 0.08, y, -(ln + sd.nrm[1] * 0.08));
           glass.rotation.y = Math.PI - yaw;
-          block.add(frame, glass);
+          // Divided-light mullions and a sill, as on a typical double-hung window.
+          const mv = new THREE.Mesh(MULLION_V, MULLION);
+          const mh = new THREE.Mesh(MULLION_H, MULLION);
+          for (const m of [mv, mh]) {
+            m.position.set(lx + sd.nrm[0] * 0.14, y, -(ln + sd.nrm[1] * 0.14));
+            m.rotation.y = Math.PI - yaw;
+          }
+          const sill = new THREE.Mesh(BOX, TRIM);
+          sill.scale.set(Math.abs(sd.t[0]) * 3.9 + Math.abs(sd.t[1]) * 0.35, 0.18, Math.abs(sd.t[1]) * 3.9 + Math.abs(sd.t[0]) * 0.35);
+          sill.position.set(lx + sd.nrm[0] * 0.2, y - 2.35, -(ln + sd.nrm[1] * 0.2));
+          block.add(frame, glass, mv, mh, sill);
         }
       }
     });

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { TilesRenderer } from '3d-tiles-renderer';
 import { GLTFExtensionsPlugin, GoogleCloudAuthPlugin, ReorientationPlugin, TileCompressionPlugin } from '3d-tiles-renderer/plugins';
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Leaf, Loader2, Move, ScanEye, Sun, Wand2 } from 'lucide-react';
@@ -14,6 +15,7 @@ import { plantsForProject, regionForProject } from '@/data/regions';
 import { base44 } from '@/api/base44Client';
 import { arrangementsFor } from '@/data/arrangements';
 import { buildHouse, HOUSE_SHARED } from '@/lib/houseModel';
+import { plantModel, setSharedMarker } from '@/lib/plantModels';
 import { disposeObject } from '@/lib/disposeThree';
 import { arrangePlants, prepareBuildings, prepareLot, preparePolys, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
 
@@ -23,6 +25,7 @@ const SHARED = new WeakSet();
 const shared = (r) => { SHARED.add(r); return r; };
 const isShared = (r) => SHARED.has(r);
 HOUSE_SHARED.forEach(shared);
+setSharedMarker(shared);
 
 const GEO = {
   ico0: shared(new THREE.IcosahedronGeometry(1, 0)),
@@ -73,6 +76,7 @@ const TREE_CUT_PAD_FT = 3; // and this far past its scanned crown
 function clipTileMaterial(m) {
   if (!m || m.userData.ecoClip) return;
   m.userData.ecoClip = true;
+  m.toneMapped = false; // Google's tiles are photos; keep their colours as captured
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, clipUniforms);
     sh.vertexShader = 'varying vec3 vEcoWorld;\n' + sh.vertexShader.replace(
@@ -343,7 +347,7 @@ function drapedGround(outline, holes, at, texture, circles = [], skirt = false, 
       const drop = inside ? (skirt ? 0.3 : 0) : Math.min(SKIRT_DROP_MAX_FT, SKIRT_DROP_FT + distToOutline([x, z], outline) * 0.3);
       pos.set([x, at(x, z) - drop, z], k * 3);
       // Off the lot the skirt mostly shows under canopies: shaded, earthy green.
-      col.set(inside ? [1, 1, 1] : [0.55, 0.6, 0.47], k * 3);
+      col.set(inside ? [1, 1, 1] : [0.5, 0.58, 0.42], k * 3);
       uv.set([i / (nx - 1), j / (nz - 1)], k * 2); // v runs with z, matching the mask canvas rows (flipY off)
     }
   }
@@ -402,7 +406,7 @@ function drapedGround(outline, holes, at, texture, circles = [], skirt = false, 
   alpha.flipY = false;
   texture.repeat.set((x1 - x0) / 6, (z1 - z0) / 6);
   const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-    map: texture, alphaMap: alpha, alphaTest: 0.5, color: 0xd8d4cc, vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide,
+    map: texture, alphaMap: alpha, alphaTest: 0.5, color: 0xa39a8a, vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide,
   }));
   mesh.receiveShadow = true;
   return mesh;
@@ -626,19 +630,6 @@ function foliageColor(plant) {
   return plant.form === 'grass' ? green.lerp(new THREE.Color(plant.color), 0.35) : green;
 }
 
-const _matCache = new Map();
-function plantMaterials(plant, mature) {
-  const key = plant.id + ':' + (mature ? 'm' : 'y');
-  if (_matCache.has(key)) return _matCache.get(key);
-  const mats = {
-    leaf: shared(new THREE.MeshStandardMaterial({ color: foliageColor(plant), roughness: 0.85, flatShading: true })),
-    // A plant's catalog colour is its flower/fruit colour: used for blooms.
-    accent: shared(new THREE.MeshStandardMaterial({ color: new THREE.Color(plant.form === 'tree' || plant.form === 'grass' ? plant.accent || plant.color : plant.color), roughness: 0.7, flatShading: true })),
-    trunk: shared(new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.95 })),
-  };
-  _matCache.set(key, mats);
-  return mats;
-}
 
 // Plant detail scales with the scene: small yards get fuller, smoother
 // plants; big properties get lighter ones (fewer pieces, no plant shadows)
@@ -649,161 +640,17 @@ function plantDetailFor(count) {
   return 'low';
 }
 
+// Prepared plant models (see plantModels.js): one consistent template per
+// form, textured leaf cards tinted per species, scaled to its size. A random
+// turn per plant keeps a bed of one species from looking cloned.
 function buildPlant(plant, mature, detail = 'normal') {
-  const g = new THREE.Group();
-  const hi = detail === 'high';
-  const lo = detail === 'low';
   const s = mature ? 1 : 0.35;
   const w = Math.max(0.8, plant.w) * s;
   const h = Math.max(0.8, plant.h) * s;
-  const { leaf: leafMat, accent: accentMat, trunk: trunkMat } = plantMaterials(plant, mature);
-  const hasAccent = plant.accent && plant.accent !== plant.color;
-  const ico = hi ? GEO.ico2 : lo ? GEO.ico0 : GEO.ico1;
-  const shadows = !lo;
-  const n = (base) => Math.max(1, Math.round(base * (hi ? 1.7 : lo ? 0.45 : 1)));
-
-  const add = (m) => {
-    m.castShadow = shadows; m.receiveShadow = shadows;
-    g.add(m);
-    return m;
-  };
-  const blob = (geo, mat, x, y, z, sx, sy, sz, rot) => {
-    const m = new THREE.Mesh(geo, mat);
-    m.scale.set(sx, sy, sz);
-    m.position.set(x, y, z);
-    m.rotation.y = rot || 0;
-    return add(m);
-  };
-  const dots = (count, size, place) => {
-    if (!hasAccent || lo) return;
-    for (let i = 0; i < count; i++) {
-      const b = new THREE.Mesh(GEO.sphere, accentMat);
-      b.scale.setScalar(size);
-      b.position.set(...place());
-      add(b);
-    }
-  };
-
-  if (plant.form === 'tree') {
-    const trunk = new THREE.Mesh(GEO.cyl, trunkMat);
-    trunk.scale.set(0.13, h * 0.5, 0.13);
-    trunk.position.y = h * 0.25;
-    add(trunk);
-    if (hi) {
-      // A couple of limbs reaching into the crown.
-      for (const a of [0.6, 2.6, 4.4]) {
-        const limb = new THREE.Mesh(GEO.cyl, trunkMat);
-        limb.scale.set(0.05, h * 0.22, 0.05);
-        limb.position.set(Math.cos(a) * w * 0.08, h * 0.55, Math.sin(a) * w * 0.08);
-        limb.rotation.set(Math.sin(a) * 0.5, 0, Math.cos(a) * 0.5);
-        add(limb);
-      }
-    }
-    const cw = w * 0.55;
-    const crowns = lo ? 1 : hi ? 6 : 3;
-    for (let i = 0; i < crowns; i++) {
-      const a = (i / crowns) * Math.PI * 2 + 0.4;
-      const r = i === 0 ? 0 : cw * 0.38;
-      const k = i === 0 ? 1 : 0.62 + Math.random() * 0.15;
-      blob(ico, leafMat, Math.cos(a) * r, h * 0.5 + h * (0.22 + (i ? 0.1 : 0)), Math.sin(a) * r, cw * k, cw * k * 0.85, cw * k, a);
-    }
-    dots(n(8), 0.06, () => {
-      const a = Math.random() * Math.PI * 2, r = Math.random() * cw * 0.5;
-      return [Math.cos(a) * r, h * 0.5 + h * 0.35 + Math.random() * 0.3, Math.sin(a) * r];
-    });
-  } else if (plant.form === 'shrub') {
-    const r = w * 0.34;
-    const lobes = n(6);
-    for (let i = 0; i < lobes; i++) {
-      const a = (i / lobes) * Math.PI * 2;
-      const rad = r * (0.7 + Math.random() * 0.5) * (hi ? 0.85 : 1);
-      blob(ico, leafMat, Math.cos(a) * r * 0.5, r * 0.8 + (Math.random() - 0.3) * r * 0.3, Math.sin(a) * r * 0.5, rad, rad * 0.8, rad, a);
-    }
-    if (hi) blob(ico, leafMat, 0, r * 1.25, 0, r * 0.7, r * 0.6, r * 0.7, 0.3); // a fuller top
-    dots(n(6), 0.08, () => [(Math.random() - 0.5) * r, r * 0.7 + Math.random() * r * 0.5, (Math.random() - 0.5) * r]);
-  } else if (plant.form === 'flower') {
-    // A low rosette of leaves at the base reads as a real plant up close.
-    if (hi) {
-      for (let i = 0; i < 7; i++) {
-        const a = (i / 7) * Math.PI * 2;
-        const lf = new THREE.Mesh(GEO.leafBlade, leafMat);
-        lf.scale.set(w * 0.09, w * 0.42, w * 0.03);
-        lf.position.set(Math.cos(a) * w * 0.14, w * 0.06, Math.sin(a) * w * 0.14);
-        lf.rotation.set(Math.sin(a) * 1.2, 0, -Math.cos(a) * 1.2);
-        add(lf);
-      }
-    }
-    // Several stems of slightly different heights, each with leaves and a bloom.
-    const stems = lo ? 1 : hi ? 3 : 1;
-    for (let k = 0; k < stems; k++) {
-      const a = (k / stems) * Math.PI * 2 + Math.random();
-      const off = stems > 1 ? w * 0.18 : 0;
-      const x = Math.cos(a) * off, z = Math.sin(a) * off;
-      const sh = h * (stems > 1 ? 0.8 + Math.random() * 0.3 : 1);
-      const stem = new THREE.Mesh(GEO.cyl, leafMat); // green stems, not bark
-      stem.scale.set(0.04, sh, 0.04); stem.position.set(x, sh * 0.5, z); stem.rotation.z = (Math.random() - 0.5) * 0.15;
-      add(stem);
-      if (!lo) {
-        for (let i = 0; i < (hi ? 3 : 2); i++) {
-          const lf = new THREE.Mesh(GEO.leafBlade, leafMat);
-          lf.scale.set(0.12, 0.24, 0.04);
-          lf.position.set(x + (i % 2 ? 0.11 : -0.11), sh * (0.25 + i * 0.15), z);
-          lf.rotation.set(0, a, i % 2 ? -0.85 : 0.85);
-          add(lf);
-        }
-      }
-      const bw = w * (stems > 1 ? 0.24 : 0.32);
-      const bloom = new THREE.Mesh(ico, accentMat);
-      // An open, slightly cupped bloom rather than a ball.
-      bloom.scale.set(bw * 0.55, bw * 0.3, bw * 0.55); bloom.position.set(x, sh + bw * 0.12, z);
-      add(bloom);
-      if (!lo) {
-        const petals = hi ? 8 : 6;
-        for (let i = 0; i < petals; i++) {
-          const petal = new THREE.Mesh(GEO.cone, accentMat);
-          const pa = (i / petals) * Math.PI * 2;
-          petal.scale.set(bw * 0.34, bw * 0.75, bw * 0.08);
-          petal.position.set(x + Math.cos(pa) * bw * 0.5, sh + bw * 0.16, z + Math.sin(pa) * bw * 0.5);
-          petal.rotation.z = Math.PI / 2.05; petal.rotation.y = -pa;
-          add(petal);
-        }
-      }
-    }
-  } else if (plant.form === 'groundcover') {
-    const mounds = n(9);
-    for (let i = 0; i < mounds; i++) {
-      const a = (i / mounds) * Math.PI * 2 + Math.random();
-      const r = Math.random() * w * 0.45;
-      const rad = w * 0.22 * (0.7 + Math.random() * 0.5) * (hi ? 0.8 : 1);
-      blob(ico, leafMat, Math.cos(a) * r, rad * 0.5, Math.sin(a) * r, rad, rad * 0.4, rad, a);
-    }
-    dots(n(5), 0.05, () => [(Math.random() - 0.5) * w, 0.15 + Math.random() * 0.15, (Math.random() - 0.5) * w]);
-  } else { // grass
-    const blades = n(12);
-    for (let i = 0; i < blades; i++) {
-      const blade = new THREE.Mesh(hi ? GEO.leafBlade : GEO.cone, leafMat);
-      const a = (i / blades) * Math.PI * 2 + Math.random() * 0.3;
-      const r = Math.random() * w * 0.3;
-      const bh = h * (0.7 + Math.random() * 0.5);
-      blade.scale.set(w * (hi ? 0.035 : 0.05), bh, w * (hi ? 0.02 : 0.05));
-      blade.position.set(Math.cos(a) * r, bh * 0.45, Math.sin(a) * r);
-      // Blades lean outward from the clump, more on the outside.
-      const lean = (hi ? 0.25 : 0.15) + (r / (w * 0.3)) * 0.25;
-      blade.rotation.set(Math.sin(a) * lean, a, -Math.cos(a) * lean);
-      add(blade);
-    }
-    if (hasAccent && !lo) {
-      const plumes = hi ? 3 : 1;
-      for (let i = 0; i < plumes; i++) {
-        const plume = new THREE.Mesh(GEO.cone, accentMat);
-        const a = (i / plumes) * Math.PI * 2;
-        const off = plumes > 1 ? w * 0.08 : 0;
-        plume.scale.set(w * 0.05, h * 0.4, w * 0.05);
-        plume.position.set(Math.cos(a) * off, h * 0.9, Math.sin(a) * off);
-        add(plume);
-      }
-    }
-  }
+  const bloom = new THREE.Color(plant.form === 'tree' || plant.form === 'grass' ? plant.accent || plant.color : plant.color);
+  const g = plantModel(plant.form, foliageColor(plant), bloom, detail, detail !== 'low');
+  g.scale.set(w, h, w);
+  g.rotation.y = Math.random() * Math.PI * 2;
   return g;
 }
 
@@ -910,6 +757,9 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Film-style tone mapping, so bright sun and deep shade both read naturally.
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.95;
     mount.appendChild(renderer.domElement);
     renderer.domElement.style.cursor = 'grab';
     let lastRatio = maxDpr;
@@ -944,12 +794,28 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // Lighting only — no sky or grass background. The canvas is transparent, so the
     // property outline (built in the layout effect) is the whole model.
     const sunPos = new THREE.Vector3(maxDim * 0.6, maxDim * 0.9, maxDim * 0.35);
-    scene.add(new THREE.HemisphereLight(0xcfe2ee, 0x5a6b3a, 0.7));
-    scene.add(new THREE.AmbientLight(0xffffff, 0.22));
-    const dir = new THREE.DirectionalLight(0xfff2d6, 1.15);
+    // Daylight from a physical sky model (same sun direction as the shadows)
+    // lights every surface from all around, like a real afternoon.
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const skyScene = new THREE.Scene();
+    const sky = new Sky();
+    sky.scale.setScalar(1000);
+    Object.assign(sky.material.uniforms.turbidity, { value: 3.5 });
+    Object.assign(sky.material.uniforms.rayleigh, { value: 1.4 });
+    Object.assign(sky.material.uniforms.mieCoefficient, { value: 0.004 });
+    sky.material.uniforms.sunPosition.value.copy(sunPos).normalize();
+    skyScene.add(sky);
+    const envTarget = pmrem.fromScene(skyScene, 0.02);
+    scene.environment = envTarget.texture;
+    scene.environmentIntensity = 0.45;
+    sky.geometry.dispose();
+    sky.material.dispose();
+    pmrem.dispose();
+    scene.add(new THREE.HemisphereLight(0xcfe2ee, 0x5a6b3a, 0.35));
+    const dir = new THREE.DirectionalLight(0xfff2d6, 2.1);
     dir.position.copy(sunPos);
     dir.castShadow = true;
-    dir.shadow.mapSize.set(1024, 1024);
+    dir.shadow.mapSize.set(2048, 2048);
     dir.shadow.camera.near = 0.5;
     dir.shadow.camera.far = maxDim * 4;
     const sd = maxDim * 1.2;
@@ -1081,6 +947,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       surroundingsRef.current = null; // drop a satellite load still in flight
       tilesRef.current?.dispose();
       tilesRef.current = null;
+      envTarget.dispose();
       disposeObject(scene, isShared); // the sky background is cached (shared), so it stays
       renderer.dispose();
       renderer.forceContextLoss();
@@ -1443,7 +1310,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       } else {
         ground = new THREE.Mesh(
           new THREE.ShapeGeometry(shape),
-          new THREE.MeshStandardMaterial({ map: gt, color: 0xd8d4cc, roughness: 1, metalness: 0, side: THREE.DoubleSide }),
+          new THREE.MeshStandardMaterial({ map: gt, color: 0xa39a8a, roughness: 1, metalness: 0, side: THREE.DoubleSide }),
         );
         ground.rotation.x = -Math.PI / 2;
         ground.receiveShadow = true;
@@ -1552,7 +1419,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       // a layer on top of the property base, not a raised mound.
       const bed = new THREE.Mesh(
         new THREE.ShapeGeometry(shape),
-        new THREE.MeshStandardMaterial({ map: mulch, color: 0xffffff, roughness: 1, metalness: 0, side: THREE.DoubleSide }),
+        new THREE.MeshStandardMaterial({ map: mulch, color: 0x8a7562, roughness: 1, metalness: 0, side: THREE.DoubleSide }), // shredded bark mulch
       );
       bed.userData.bed = true;
       bed.userData.bedIndex = bi;
