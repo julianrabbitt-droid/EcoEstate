@@ -21,6 +21,8 @@ services:
         generateValue: true # signs private photo links
       - key: SUPABASE_URL
         value: https://lzstqfqslvaxyaxqelkv.supabase.co
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
       - key: ADMIN_EMAILS
         sync: false
       - key: DATABASE_URL

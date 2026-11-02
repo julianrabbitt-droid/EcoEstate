@@ -235,9 +235,10 @@ function groundTexture() {
   return _ground;
 }
 
-// 3D building: extrudes a roofed structure from its footprint. Wall color and
-// roof type come from a project's saved `building` attributes, which only older
-// scans have; otherwise the walls are gray with a neutral roof. Height is passed
+// 3D building: extrudes a roofed structure from its footprint. Wall color comes
+// from the project's `building.wallColor`: read from a Street View photo of the
+// house when the server has a Google key (Design step, houseColor function), or
+// saved by older scans; otherwise the walls are gray with a neutral roof. Height is passed
 // in (measured per footprint, or estimated from its size — see the caller).
 const WALL_COLORS = {
   white: 0xf2efe9, beige: 0xe8dcc6, tan: 0xcfa978, cream: 0xefe6d4,

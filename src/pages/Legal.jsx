@@ -70,6 +70,7 @@ const PRIVACY = [
       <><b>Stripe</b>: payments and subscriptions.</>,
       <><b>Resend</b>: delivers our subscription confirmation and reminder emails.</>,
       <><b>Google</b>: if you choose “Continue with Google”, Google shares your name, email and profile picture with us. (Our fonts are served from ecoestate.org, not Google.)</>,
+      <><b>Google Street View</b>: when you open a design, we may send the location of the house (not your name or account) to Google to fetch one street photo, used only to match the 3D model’s wall colour. The photo isn’t stored, only the colour.</>,
       <><b>Rebate lookups</b>: to find the rebates that serve a property, we send its map location (not your name or account) to the US EPA’s water-system service-area map and the US Census Bureau’s geocoder, which return the water utility, ZIP code, city, county and state.</>,
       <><b>School-email check</b>: to see whether your email belongs to a school, we look up only the part after the “@” in a public list of school domains (JetBrains “swot”, served by jsDelivr).</>,
       <><b>Address and map data</b>: the addresses and areas you search are sent to geocoding and mapping services (Geocodio, OpenStreetMap/Nominatim, Esri and county parcel maps). Aerial imagery and tree and building data come from public sources (USDA NAIP via Microsoft Planetary Computer, Meta and WRI canopy data, Overture Maps). Your browser loads map tiles from Esri and plant photos from Wikimedia, which see your IP address.</>,

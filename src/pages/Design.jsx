@@ -7,6 +7,7 @@ import PlantCard from '@/components/PlantCard';
 
 import StepNav from '@/components/StepNav';
 import { Button } from '@/components/ui/button';
+import { base44 } from '@/api/base44Client';
 import { GOALS, matchesGoal, plantById } from '@/data/nativePlants';
 import { plantsForProject } from '@/data/regions';
 import NativeSourcePanel from '@/components/NativeSourcePanel';
@@ -38,6 +39,38 @@ export default function Design() {
     setEntries(fitDesignToArea(plan.entries, project.breakdown?.turf || 0));
     setArrangement(plan.arrangement?.id ?? null);
   }, [project]);
+
+  // The house's wall colour from a street photo, looked up once per property
+  // (only when the server has a Google Maps key) and saved on the project.
+  const [wallColor, setWallColor] = useState(null);
+  useEffect(() => {
+    if (!project || project.building?.wallColor || project.wallColorChecked) return undefined;
+    const ring = project.buildings?.[0];
+    let point = Array.isArray(ring) && ring.length
+      ? ring.reduce((acc, p) => [acc[0] + p[0] / ring.length, acc[1] + p[1] / ring.length], [0, 0])
+      : project.center;
+    if (!Array.isArray(point)) return undefined;
+    if (Math.abs(point[0]) > 90) point = [point[1], point[0]]; // stored as [lng, lat]
+    let cancelled = false;
+    base44.functions
+      .invoke('houseColor', { building: point })
+      .then(({ data }) => {
+        if (cancelled || !data?.available) return; // no key on the server: try again later
+        if (data.wallColor) setWallColor(data.wallColor);
+        updateProject(id, {
+          building: { ...(project.building || {}), ...(data.wallColor ? { wallColor: data.wallColor, wallColorSource: 'street-view', wallPhotoDate: data.panoDate || null } : {}) },
+          wallColorChecked: data.reason !== 'daily limit' && data.reason !== 'lookup failed',
+        }).catch(() => {});
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [project, id]);
+  const viewProject = useMemo(
+    () => (project && wallColor ? { ...project, building: { ...(project.building || {}), wallColor } } : project),
+    [project, wallColor]
+  );
 
   const regionPlants = useMemo(() => plantsForProject(project), [project]);
 
@@ -153,7 +186,7 @@ export default function Design() {
         <section className="surface p-4">
           <Garden3DView
             entries={entries}
-            project={project}
+            project={viewProject}
             activeArrangement={arrangement}
             onApplyArrangement={applyArrangement}
           />

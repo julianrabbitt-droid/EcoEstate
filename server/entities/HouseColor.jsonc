@@ -1,0 +1,20 @@
+{
+  "name": "HouseColor",
+  // Wall colour read from one Google Street View photo of a house, cached so
+  // each address is paid for once. Written and read only by the server.
+  "type": "object",
+  "properties": {
+    "key": { "type": "string", "title": "Building location, rounded (lat,lng)" },
+    "wallColor": { "type": "string", "title": "Palette name, or empty when no usable photo" },
+    "hex": { "type": "string" },
+    "panoDate": { "type": "string", "title": "Month the street photo was taken" },
+    "reason": { "type": "string" }
+  },
+  "required": ["key"],
+  "rls": {
+    "read": { "user_condition": { "role": "admin" } },
+    "create": { "user_condition": { "role": "admin" } },
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}
