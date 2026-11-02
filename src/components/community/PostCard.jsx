@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, MapPin, MessageCircle, Send, Trash2 } from 'lucide-react';
+import { ChevronDown, Leaf, Loader2, MapPin, MessageCircle, Send, Trash2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ConfirmProvider';
@@ -11,6 +11,63 @@ function timeOf(d) {
   } catch {
     return '';
   }
+}
+
+const n = (v) => (v == null ? '—' : Number(v).toLocaleString());
+const usd = (v) => (v == null ? '—' : `$${Number(v).toLocaleString()}`);
+
+// A member's project, as shared: a summary only (the server keeps nothing
+// else), with the details one tap away.
+function SharedProject({ p }) {
+  const [open, setOpen] = useState(false);
+  const stats = [
+    ['Lawn converted', p.lawnSqft ? `${n(p.lawnSqft)} sq ft` : null],
+    ['Native plants', p.plantCount ? n(p.plantCount) : p.plants?.length ? `${p.plants.length} species` : null],
+    ['Water saved', p.gallonsSaved ? `${n(p.gallonsSaved)} gal/yr` : null],
+    ['Saved a year', p.annualSavings ? usd(p.annualSavings) : null],
+  ].filter(([, v]) => v);
+  return (
+    <div className="mx-5 mt-3 rounded-xl border border-border bg-secondary/40 p-4">
+      <p className="flex items-center gap-1.5 text-[12px] font-medium text-accent"><Leaf className="h-3.5 w-3.5" aria-hidden /> Shared project{p.city ? ` · ${p.city}` : ''}</p>
+      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+        {stats.map(([k, v]) => (
+          <div key={k}>
+            <dt className="text-[11px] text-muted-foreground">{k}</dt>
+            <dd className="font-display text-[1.1rem] leading-tight">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="mt-3 inline-flex items-center gap-1 text-[12px] font-medium underline-offset-4 hover:underline">
+        {open ? 'Show less' : 'See the project'} <ChevronDown className={`h-3.5 w-3.5 transition ${open ? 'rotate-180' : ''}`} aria-hidden />
+      </button>
+      {open && (
+        <div className="mt-3 space-y-3 text-[12.5px]">
+          {p.arrangement && <p><span className="text-muted-foreground">Arrangement:</span> {p.arrangement}</p>}
+          {p.plants?.length > 0 && (
+            <div>
+              <p className="text-muted-foreground">Plants</p>
+              <ul className="mt-1 flex flex-wrap gap-1.5">
+                {p.plants.map((x) => (
+                  <li key={x.name} className="rounded-full border border-border bg-background px-2.5 py-0.5">{x.name}{x.count ? ` ×${x.count}` : ''}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-4">
+            {[
+              ['Install cost', usd(p.installCost)],
+              ['Rebates', usd(p.rebate)],
+              ['Payback', p.paybackYears ? `${p.paybackYears} yrs` : '—'],
+              ['CO₂ drawn down', p.co2PerYear ? `${n(p.co2PerYear)} lb/yr` : '—'],
+            ].map(([k, v]) => (
+              <div key={k}><dt className="text-[11px] text-muted-foreground">{k}</dt><dd>{v}</dd></div>
+            ))}
+          </dl>
+          <p className="text-[11px] text-muted-foreground">Estimates from the member’s EcoEstate scan. Addresses and exact locations are never shared.</p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function PostCard({ post, me, onDelete }) {
@@ -65,7 +122,8 @@ export default function PostCard({ post, me, onDelete }) {
     if (!draft.trim() || sending) return;
     setSending(true);
     try {
-      const name = me?.full_name || me?.email || 'Member';
+      // First name only: members never see each other's names, and an email is never stored.
+      const name = (me?.full_name || '').trim().split(/\s+/)[0] || 'Member';
       const created = await base44.entities.Comment.create({ post_id: post.id, body: draft.trim(), author_name: name });
       setComments((prev) => [...prev, created]);
       setDraft('');
@@ -115,6 +173,7 @@ export default function PostCard({ post, me, onDelete }) {
       {deleteError && <p role="alert" className="px-5 pt-2 text-[11.5px] text-destructive">{deleteError}</p>}
 
       {post.body && <p className="px-5 pt-2 text-[13px] leading-relaxed text-foreground/90">{post.body}</p>}
+      {post.project && <SharedProject p={post.project} />}
 
       {images.length > 0 && (
         // Whole photos, never cropped: one photo at its own shape, several in a

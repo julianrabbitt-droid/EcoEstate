@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useProject } from '@/hooks/useProjects';
-import { ArrowRight, Bird, Droplets, Leaf, Loader2, Sprout, TrendingUp } from 'lucide-react';
+import { ArrowRight, Bird, Droplets, Leaf, Loader2, Share2, Sprout, TrendingUp } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import {
   Area,
@@ -142,6 +142,31 @@ export default function Impact() {
   }
 
   const series = projection.series.slice(0, horizon + 1);
+  // A summary for a community post: city, size, plants and savings only. The
+  // server keeps nothing else (server/shared/sharedProject.js).
+  const shareProject = () => {
+    const plants = designOrDefault(project)
+      .map((e) => ({ name: plantById(e.speciesId)?.common, count: e.quantity }))
+      .filter((x) => x.name);
+    const city = [project.city, project.state].filter(Boolean).join(', ');
+    navigate('/social', {
+      state: {
+        shareProject: {
+          city,
+          lawnSqft: fin.turfSqft,
+          plantCount: fin.plantCount,
+          plants,
+          arrangement: project.arrangementName || '',
+          gallonsSaved: fin.gallonsSaved,
+          annualSavings: fin.annualSavings,
+          installCost: fin.totalCost,
+          rebate: fin.rebate,
+          co2PerYear: projection.co2PerYear,
+          paybackYears: fin.payback,
+        },
+      },
+    });
+  };
   const net = series[horizon].net;
   const breakEven = projection.series.find((p) => p.year > 0 && p.net >= 0)?.year ?? null;
 
@@ -340,7 +365,11 @@ export default function Impact() {
         </div>
       </section>
 
-      <div className="mt-6 flex justify-end">
+      <div className="mt-6 flex flex-wrap justify-end gap-3">
+        <Button variant="outline" onClick={shareProject} className="rounded-full" size="lg">
+          <Share2 className="mr-2 h-4 w-4" />
+          Share in the community
+        </Button>
         <Button onClick={() => navigate(`/project/${id}/plan`, { state: { project } })} className="rounded-full" size="lg">
           Get the planting plan
           <ArrowRight className="ml-2 h-4 w-4" />

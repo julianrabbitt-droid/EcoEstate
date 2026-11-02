@@ -1,18 +1,20 @@
 import { useEffect, useState } from 'react';
-import { ImagePlus, Loader2, MapPin, Send, X } from 'lucide-react';
+import { ImagePlus, Leaf, Loader2, MapPin, Send, X } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { stripImageMetadata, UnsupportedImageError } from '@/lib/stripImageMetadata';
 import { Button } from '@/components/ui/button';
 
-export default function PostComposer({ onPosted }) {
-  const [title, setTitle] = useState('');
+// `share`: a project summary to attach (from the Payoff step's share button).
+export default function PostComposer({ onPosted, share = null }) {
+  const [title, setTitle] = useState(share ? `My lawn conversion${share.city ? ` in ${share.city.split(',')[0]}` : ''}` : '');
+  const [attached, setAttached] = useState(share);
   const [body, setBody] = useState('');
   const [photos, setPhotos] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   // Optional city: puts the post on the community map at the city's centre.
-  const [cityQuery, setCityQuery] = useState('');
+  const [cityQuery, setCityQuery] = useState(share?.city || '');
   const [cityResults, setCityResults] = useState([]);
   const [city, setCity] = useState(null); // { label, point }
   const [searching, setSearching] = useState(false);
@@ -93,14 +95,17 @@ export default function PostComposer({ onPosted }) {
     try {
       const place = await resolveCity();
       const me = await base44.auth.me();
-      const name = me?.full_name || me?.email || 'Member';
+      // First name only: members never see each other's names, and an email is never stored.
+      const name = (me?.full_name || '').trim().split(/\s+/)[0] || 'Member';
       await base44.entities.Post.create({
         title: title.trim(),
         body: body.trim(),
         image_uris: photos.map((p) => p.uri),
         author_name: name,
+        ...(attached ? { project: attached } : {}),
         ...(place ? { city: place.label, mapPoint: place.point } : {}),
       });
+      setAttached(null);
       setTitle('');
       setBody('');
       setPhotos([]);
@@ -121,6 +126,20 @@ export default function PostComposer({ onPosted }) {
         placeholder="Share your progress, e.g. Front yard, month 6"
         className="field h-11"
       />
+      {attached && (
+        <div className="mt-3 flex items-start justify-between gap-3 rounded-xl border border-border bg-secondary/40 px-4 py-3">
+          <div>
+            <p className="flex items-center gap-1.5 text-[12.5px] font-medium"><Leaf className="h-3.5 w-3.5 text-accent" aria-hidden /> Your project is attached</p>
+            <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+              Shared: {attached.city ? `${attached.city}, ` : ''}lawn size, plants and estimated savings. Never shared: your address,
+              exact location, property outline or name.
+            </p>
+          </div>
+          <button type="button" onClick={() => setAttached(null)} className="text-muted-foreground hover:text-foreground" aria-label="Remove the attached project">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}

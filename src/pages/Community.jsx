@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Loader2, Users } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import PostComposer from '@/components/community/PostComposer';
@@ -6,6 +7,8 @@ import PostCard from '@/components/community/PostCard';
 import TrackedPropertiesMap from '@/components/community/TrackedPropertiesMap';
 
 export default function Community() {
+  // A project summary handed over by the Payoff step's "Share in the community".
+  const share = useLocation().state?.shareProject || null;
   const [me, setMe] = useState(null);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,7 +33,8 @@ export default function Community() {
   return (
     <div>
       <p className="text-[13px] text-muted-foreground">
-        Post your conversion, comment on others, and message members near you. Progress photos are stored privately and only shown in the feed.
+        Share your project, comment on others, and message members. Members appear as “Member”: no names, addresses or exact
+        locations are shown. Photos have their location data removed and are only shown in the feed.
       </p>
 
       <div className="mt-6">
@@ -38,7 +42,7 @@ export default function Community() {
       </div>
 
       <div className="mt-6">
-        <PostComposer onPosted={load} />
+        <PostComposer key={share ? 'share' : 'blank'} onPosted={load} share={share} />
       </div>
 
       <div className="mt-6 space-y-4">

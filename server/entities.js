@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { records } from './db.js';
+import { sanitizeSharedProject } from './shared/sharedProject.js';
 import { applyUpdate, matches, sortRecords } from './query.js';
 
 function parseJsonc(text) {
@@ -112,6 +113,15 @@ async function isProMember(user) {
   return paid.some(purchaseCounts);
 }
 
+// Fields that are cleaned before they're stored, whoever writes them.
+function cleanFields(name, data) {
+  if (name === 'Post' && data && 'project' in data) {
+    const project = sanitizeSharedProject(data.project);
+    return { ...data, project };
+  }
+  return data;
+}
+
 // Returns an entity API for one caller. `service: true` bypasses access rules,
 // which is what backend functions get through base44.asServiceRole.
 export function entityService(name, user, { service = false } = {}) {
@@ -168,6 +178,7 @@ export function entityService(name, user, { service = false } = {}) {
     },
     async create(data = {}) {
       await requirePremium();
+      data = cleanFields(name, data);
       const draft = { ...defaultsFor(schema), ...data, created_by_id: user?.id, created_by: user?.email };
       if (!can('create', draft)) throw new HttpError(user ? 403 : 401, 'You do not have permission to create this record');
       checkRequired(schema, draft);
@@ -183,7 +194,7 @@ export function entityService(name, user, { service = false } = {}) {
       const r = await records.get(name, id);
       if (!r || !can('read', r)) throw new HttpError(404, `${name} not found`);
       if (!can('update', r)) throw new HttpError(403, 'You do not have permission to update this record');
-      return view(await records.update(name, id, limitUpdate(data)));
+      return view(await records.update(name, id, cleanFields(name, limitUpdate(data))));
     },
     async updateMany(query = {}, update = {}) {
       await requirePremium();
