@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { GOALS, matchesGoal, plantById } from '@/data/nativePlants';
 import { plantsForProject } from '@/data/regions';
 import NativeSourcePanel from '@/components/NativeSourcePanel';
-import { autoDesign, clearanceOf, fitDesignToArea, money, mulchPerPlant, mulchTotals, num, plantTotals, quantityForShare, suggestedQuantity } from '@/lib/landscapeMath';
+import { autoPlan, clearanceOf, fitDesignToArea, money, mulchPerPlant, mulchTotals, num, plantTotals, quantityForShare, suggestedQuantity } from '@/lib/landscapeMath';
 import { updateProject } from '@/lib/projectStore';
 import { useProject } from '@/hooks/useProjects';
 import { usePlantPhotos } from '@/hooks/usePlantPhotos';
@@ -29,8 +29,14 @@ export default function Design() {
 
   useEffect(() => {
     if (!project) return;
-    const base = project.design?.length ? project.design : autoDesign(project);
-    setEntries(fitDesignToArea(base, project.breakdown?.turf || 0));
+    if (project.design?.length) {
+      setEntries(fitDesignToArea(project.design, project.breakdown?.turf || 0));
+      return;
+    }
+    // A new design: small lawns start from the fullest planting formation.
+    const plan = autoPlan(project);
+    setEntries(fitDesignToArea(plan.entries, project.breakdown?.turf || 0));
+    setArrangement(plan.arrangement?.id ?? null);
   }, [project]);
 
   const regionPlants = useMemo(() => plantsForProject(project), [project]);

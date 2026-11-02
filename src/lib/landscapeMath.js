@@ -1,5 +1,6 @@
 import { plantById } from '@/data/nativePlants';
-import { defaultMixForProject, plantsForProject } from '@/data/regions';
+import { defaultMixForProject, plantsForProject, regionForProject } from '@/data/regions';
+import { arrangementsFor } from '@/data/arrangements';
 
 export const ASSUMPTIONS = {
   installPerSqFt: 2.4,
@@ -154,9 +155,28 @@ export function quantityForShare(share, speciesId, sqft) {
 // small yard fills with a rich, fine-textured planting; the user can add larger
 // plants and trees from the species list when the site has room for them.
 export function autoDesign(project) {
+  return autoPlan(project).entries;
+}
+
+// Lawns smaller than this start from whichever planting formation fits the most
+// plants, so a small yard renders as a full garden rather than a sparse few.
+export const SMALL_LAWN_SQFT = 1500;
+
+const plantCount = (entries) => entries.reduce((sum, e) => sum + (e.quantity || 0), 0);
+
+/**
+ * The starting design and, for small lawns, the arrangement it came from:
+ * { entries, arrangement } (arrangement is null for the default mix).
+ */
+export function autoPlan(project) {
   const sqft = project?.breakdown?.turf || 1200;
-  const picks = defaultMixForProject(project);
-  return picks.map(({ speciesId, share }) => ({ speciesId, quantity: quantityForShare(share, speciesId, sqft) }));
+  const toEntries = (picks) => picks.map(({ speciesId, share }) => ({ speciesId, quantity: quantityForShare(share, speciesId, sqft) }));
+  const base = { entries: toEntries(defaultMixForProject(project)), arrangement: null };
+  if (!project || sqft >= SMALL_LAWN_SQFT) return base;
+  const options = arrangementsFor(plantsForProject(project), regionForProject(project)?.name)
+    .filter((a) => !a.minArea || sqft >= a.minArea)
+    .map((a) => ({ entries: toEntries(a.species), arrangement: a }));
+  return options.reduce((best, o) => (plantCount(o.entries) > plantCount(best.entries) ? o : best), base);
 }
 
 // The design the later steps (Payoff, Build, Legacy) show: the saved one, or —
