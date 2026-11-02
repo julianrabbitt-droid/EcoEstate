@@ -22,6 +22,7 @@ import WhyNative from '@/pages/WhyNative';
 import Examples from '@/pages/Examples';
 import Plans from '@/pages/Plans';
 import Cities from '@/pages/Cities';
+import Beta from '@/pages/Beta';
 // Add page imports here
 import Scan from '@/pages/Scan';
 // Pages past the first screen load on demand, so the homepage doesn't wait for
@@ -111,6 +112,7 @@ const AuthenticatedApp = () => {
         <Route path="/examples" element={<Examples />} />
         <Route path="/plans" element={<Plans />} />
         <Route path="/cities" element={<Cities />} />
+        <Route path="/beta" element={<Beta />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/cookies" element={<Cookies />} />

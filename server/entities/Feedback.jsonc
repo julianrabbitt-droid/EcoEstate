@@ -1,0 +1,53 @@
+{
+  "name": "Feedback",
+  // Notes from people trying the site (the Feedback button). Written by the
+  // server (functions/sendFeedback); only admins read them.
+  "type": "object",
+  "properties": {
+    "message": {
+      "type": "string",
+      "title": "Message"
+    },
+    "page": {
+      "type": "string",
+      "title": "Page it was sent from"
+    },
+    "email": {
+      "type": "string",
+      "title": "Email to reply to"
+    },
+    "appUserId": {
+      "type": "string",
+      "title": "Signed-in user, if any"
+    },
+    "beta": {
+      "type": "boolean",
+      "title": "From a beta tester"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "rls": {
+    "read": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "create": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "update": {
+      "user_condition": {
+        "role": "admin"
+      }
+    },
+    "delete": {
+      "user_condition": {
+        "role": "admin"
+      }
+    }
+  }
+}

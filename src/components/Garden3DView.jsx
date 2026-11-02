@@ -60,7 +60,6 @@ const GOOGLE_TILES_KEY = import.meta.env.VITE_GOOGLE_MAPS_BROWSER_KEY || '';
 const PHOTO_PREF = 'ecoestate.photoReal';
 const M_TO_FT = 3.28084;
 const PHOTO_SINK_FT = 0.2; // Google's ground just outside the lot sits this far below the model's
-const SURROUND_FT = 110; // how far past the property Google's mesh is shown
 const HOUSE_CUT_MARGIN_FT = 4; // Google's house is cut this far past the footprint (eaves, scan offsets)
 
 // Google's mesh is cut away over the property (everything on and above its
@@ -1479,13 +1478,12 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     houses.forEach((h) => { trace(h); ctx.fill(); ctx.stroke(); });
     ctx.lineWidth = 2 * 1 * ftPx;
     beds.forEach((h) => { trace(h); ctx.fill(); ctx.stroke(); });
-    const scenePts = lotPts || [[minX, minZ], [maxX, maxZ]];
     const tex = new THREE.CanvasTexture(c);
     const previous = clipUniforms.uEcoMask.value;
     clipUniforms.uEcoMask.value = tex;
     clipUniforms.uEcoBox.value.set(minX, minZ, maxX - minX || 1, maxZ - minZ || 1);
     clipUniforms.uEcoCenter.value.set(0, 0);
-    clipUniforms.uEcoRadius.value = Math.max(...scenePts.map(([x, z]) => Math.hypot(x, z))) + SURROUND_FT;
+    clipUniforms.uEcoRadius.value = 1e9; // Google's surroundings are shown as far as they load
     clipUniforms.uEcoSpot.value = lotPts ? 1 : 0;
     if (previous !== tex && previous.image?.width > 1) previous.dispose();
 
@@ -2388,6 +2386,29 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     };
   }, [walkMode]);
 
+  // The person can only be dropped on the scanned area: the lot, or the strip
+  // between it and the street. Dropped elsewhere, they start just inside the
+  // nearest edge of the lot.
+  const walkableSpot = (x, z) => {
+    const lotPts = lot && lot.length >= 3 ? scenePoly(lot) : null;
+    if (!lotPts || insidePoly([x, z], lotPts) || (front && insidePoly([x, z], front))) return { x, z };
+    let best = null;
+    for (let i = 0; i < lotPts.length; i++) {
+      const [ax, az] = lotPts[i];
+      const [bx, bz] = lotPts[(i + 1) % lotPts.length];
+      const [ex, ez] = [bx - ax, bz - az];
+      const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez || 1)));
+      const q = [ax + t * ex, az + t * ez];
+      const d = Math.hypot(x - q[0], z - q[1]);
+      if (!best || d < best.d) best = { q, d };
+    }
+    const mx = lotPts.reduce((a, p) => a + p[0], 0) / lotPts.length;
+    const mz = lotPts.reduce((a, p) => a + p[1], 0) / lotPts.length;
+    const len = Math.hypot(mx - best.q[0], mz - best.q[1]) || 1;
+    const inset = Math.min(3, len * 0.5);
+    return { x: best.q[0] + ((mx - best.q[0]) / len) * inset, z: best.q[1] + ((mz - best.q[1]) / len) * inset };
+  };
+
   // Dropping the dragged Walk through button onto the canvas places the
   // person there and enters first-person at that spot.
   const handleDrop = (e) => {
@@ -2401,7 +2422,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     raycaster.setFromCamera(pointer, camera);
     const hit = new THREE.Vector3();
     if (raycaster.ray.intersectPlane(groundPlane, hit)) {
-      personPosRef.current = { x: hit.x, z: hit.z };
+      personPosRef.current = walkableSpot(hit.x, hit.z);
       setWalkMode(true);
     }
   };

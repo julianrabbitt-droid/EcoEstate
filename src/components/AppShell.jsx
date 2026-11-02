@@ -1,10 +1,13 @@
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import { Loader2, Sprout } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import AccountMenu from '@/components/AccountMenu';
 import AuthModal from '@/components/AuthModal';
 import CookieNotice from '@/components/CookieNotice';
+import FeedbackButton from '@/components/FeedbackButton';
+import { useAuth } from '@/lib/AuthContext';
+import { claimBetaAccess } from '@/lib/beta';
 
 // First-time visitors see four places to go; your own properties and
 // projects live in the account menu.
@@ -16,6 +19,12 @@ const NAV = [
 ];
 
 export default function AppShell() {
+  // A tester link opened before signing in is claimed as soon as they are.
+  const { isAuthenticated } = useAuth();
+  useEffect(() => {
+    // The tester page claims it itself.
+    if (isAuthenticated && window.location.pathname !== '/beta') claimBetaAccess().catch(() => {});
+  }, [isAuthenticated]);
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -71,6 +80,7 @@ export default function AppShell() {
       </main>
 
       <AuthModal />
+      <FeedbackButton />
 
       <footer className="border-t border-border/70 py-8">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-5 text-xs text-muted-foreground sm:flex-row sm:items-start sm:justify-between">
