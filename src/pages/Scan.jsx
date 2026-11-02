@@ -26,6 +26,23 @@ function shortAddress(label) {
 }
 
 const DEFAULT_CENTER = [37.4422168, -122.1189345]; // Greer Park, Palo Alto
+// The scan in progress, kept for this browser tab, so leaving the Scan page and
+// coming back returns to it. Cleared once the scan is saved as a project.
+const SAVED_SCAN = 'ecoestate.scan';
+const readSavedScan = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem(SAVED_SCAN) || 'null') || {};
+  } catch {
+    return {};
+  }
+};
+const clearSavedScan = () => {
+  try {
+    sessionStorage.removeItem(SAVED_SCAN);
+  } catch {
+    /* storage blocked: nothing was kept */
+  }
+};
 const NO_AREA = { lawnSqft: null, impact: null, updating: false, error: '' };
 const US_ONLY = {
   title: 'Automatic lawn measurement is only available in the United States',
@@ -76,16 +93,19 @@ const SOURCE_LABEL = {
 
 export default function Scan() {
   usePageMeta();
-  const [query, setQuery] = useState('');
-  const [center, setCenter] = useState(DEFAULT_CENTER);
-  const [zoom, setZoom] = useState(17);
+  const [saved] = useState(readSavedScan);
+  const [query, setQuery] = useState(saved.query || '');
+  const [center, setCenter] = useState(saved.center || DEFAULT_CENTER);
+  const [zoom, setZoom] = useState(saved.zoom || 17);
   const [loading, setLoading] = useState(false);
-  const [place, setPlace] = useState(null);
+  const [place, setPlace] = useState(saved.place || null);
   const [note, setNote] = useState('');
-  const [unavailable, setUnavailable] = useState(null);
-  const [phase, setPhase] = useState('idle'); // idle | locating | confirm | scanning | lawn | manual
-  const [pending, setPending] = useState(null); // { address, hit } waiting for "is this your property?"
-  const [lawnData, setLawnData] = useState(null);
+  const [unavailable, setUnavailable] = useState(saved.unavailable || null);
+  // A scan that was still running when the person left is started again (see below).
+  const [phase, setPhase] = useState(saved.phase === 'locating' || saved.phase === 'scanning' ? 'idle' : saved.phase || 'idle'); // idle | locating | confirm | scanning | lawn | manual
+  const [pending, setPending] = useState(saved.pending || null); // { address, hit } waiting for "is this your property?"
+  const [lawnData, setLawnData] = useState(saved.lawnData || null);
+  const lastScan = useRef(saved.lastScan || null); // { address, hit } of the scan last started
   const [areaCalc, setAreaCalc] = useState(NO_AREA);
   const areaRequest = useRef(0);
   // The scan of the shown pin starts while the person is still confirming it,
@@ -94,9 +114,9 @@ export default function Scan() {
   const picked = useRef(null); // the suggestion last picked from the address list
   const [hits, setHits] = useState([]); // the list's current suggestions
   const scanKey = (address, hit) => `${address}|${hit?.lat}|${hit?.lng}|${hit?.osm || ''}`;
-  const [editSeed, setEditSeed] = useState(null);
-  const [method, setMethod] = useState('satellite');
-  const [result, setResult] = useState({ area: 0, source: 'satellite', boundary: [], turf: null });
+  const [editSeed, setEditSeed] = useState(saved.editSeed || null);
+  const [method, setMethod] = useState(saved.method || 'satellite');
+  const [result, setResult] = useState(saved.result || { area: 0, source: 'satellite', boundary: [], turf: null });
   const navigate = useNavigate();
   const autoAccess = useAutoScanAccess();
   // An honest range from the app's own model for common lawn sizes, rather
@@ -138,6 +158,7 @@ export default function Scan() {
   // Look the address up with the lawn-to-native API (GET /v1/lawn). On failure
   // its error message is shown and the user can outline the lawn by hand.
   const scanAddress = async (address, knownHit = null) => {
+    lastScan.current = { address, hit: knownHit };
     setLoading(true);
     setNote('');
     setUnavailable(null);
@@ -318,6 +339,7 @@ export default function Scan() {
         source: 'auto',
       },
     });
+    clearSavedScan();
     navigate(`/project/${rec.id}${edit ? '?edit=1' : ''}`, { state: { project: rec } });
   };
 
@@ -385,8 +407,28 @@ export default function Scan() {
       paths: editSeed?.paths || [],
       lawnImpact: merged?.impact || areaCalc.impact || null,
     });
+    clearSavedScan();
     navigate(`/project/${rec.id}`, { state: { project: rec } });
   };
+
+  // Keep the scan in progress for this tab (see SAVED_SCAN).
+  useEffect(() => {
+    if (phase === 'idle' && !query) return;
+    try {
+      sessionStorage.setItem(SAVED_SCAN, JSON.stringify({
+        query, center, zoom, place, unavailable, phase, pending, lawnData, editSeed, method, result, lastScan: lastScan.current,
+      }));
+    } catch {
+      /* storage full or blocked: the page just won't be restored */
+    }
+  }, [query, center, zoom, place, unavailable, phase, pending, lawnData, editSeed, method, result]);
+  // A scan that was still running when the person left starts again on return
+  // (the lawn service has usually kept the result, so it is quick).
+  useEffect(() => {
+    if ((saved.phase === 'scanning' || saved.phase === 'locating') && saved.lastScan?.address) {
+      scanAddress(saved.lastScan.address, saved.lastScan.hit);
+    }
+  }, []); // only on arriving at the page
 
   // The scan in the project's shape, for the 3D check before anything is saved.
   const previewProject = useMemo(() => {
