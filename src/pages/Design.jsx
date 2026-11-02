@@ -191,10 +191,12 @@ export default function Design() {
             onApplyArrangement={applyArrangement}
           />
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-secondary/60 px-4 py-3">
-            <p className="text-[13px] text-foreground">Lawn, house or trees not quite right?</p>
+            <p className="text-[13px] text-foreground">
+              3D model not right? It's built from your 2D plan: fix the lawn, buildings or trees there and it rebuilds.
+            </p>
             <Button asChild variant="outline" size="sm" className="rounded-full">
               <Link to={`/project/${id}?edit=1`} state={{ project }}>
-                Edit the scan
+                Fix the 2D plan
               </Link>
             </Button>
           </div>

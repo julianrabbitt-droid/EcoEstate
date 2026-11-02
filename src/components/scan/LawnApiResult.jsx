@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import L from 'leaflet';
-import { GeoJSON, MapContainer, Marker, Polygon, TileLayer, useMap } from 'react-leaflet';
+import { Circle, GeoJSON, MapContainer, Marker, Polygon, TileLayer, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { AlertTriangle, Check, Loader2, Pencil, RefreshCw, Ruler, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,10 @@ import { geoJsonOuterRings } from '@/lib/geo';
 
 const IMAGERY = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const PARCEL_STYLE = { color: '#f7f3ea', weight: 2, dashArray: '6 5', fillOpacity: 0 };
+// What the 3D model is built from, drawn on the same map as the lawn.
+const BUILDING_STYLE = { color: '#e9e2d4', weight: 1.5, fillColor: '#b9ad99', fillOpacity: 0.45 };
+const TREE_STYLE = { color: '#2f5a2a', weight: 1, fillColor: '#3f6b35', fillOpacity: 0.45 };
+const NEARBY_TREE_STYLE = { ...TREE_STYLE, dashArray: '3 3', fillOpacity: 0.25 };
 const ESTIMATE_STYLE = { color: '#f0a03c', weight: 2.5, dashArray: '6 5', fillColor: '#f0a03c', fillOpacity: 0.08 };
 const LAWN_STYLE = { color: '#f0f4ec', weight: 1.5, fillColor: '#7d8f6e', fillOpacity: 0.45 };
 // Small isolated patches (counted in the total) are drawn faintly so the main
@@ -150,6 +154,10 @@ export default function LawnApiResult({ data, onConfirm, onEdit, onRescan, onRem
                 {lawnCount > 0 && <GeoJSON key={`l-${data.parcel?.id}`} data={data.lawn} style={lawnStyle} />}
                 {data.paths?.features?.length > 0 && <GeoJSON key={`w-${data.parcel?.id}`} data={data.paths} style={pathStyle} />}
                 {data.nearbyRoads?.features?.length > 0 && <GeoJSON key={`r-${data.parcel?.id}`} data={data.nearbyRoads} style={pathStyle} />}
+                {data.buildings?.features?.length > 0 && <GeoJSON key={`b-${data.parcel?.id}`} data={data.buildings} style={BUILDING_STYLE} />}
+                {(data.trees || []).map((t, i) => (
+                  <Circle key={`t-${i}`} center={[t.lat, t.lon]} radius={(t.radiusFt || 6) * 0.3048} pathOptions={t.street ? NEARBY_TREE_STYLE : TREE_STYLE} />
+                ))}
               </>
             )}
             <FitTo geo={data.parcel?.geometry} fallback={center} />
@@ -162,6 +170,8 @@ export default function LawnApiResult({ data, onConfirm, onEdit, onRescan, onRem
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
             <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-dashed border-foreground/60" />{data.parcelSource === 'place' ? 'Property outline (OpenStreetMap)' : `Property line${data.parcelSource === 'user' ? ' (adjusted)' : ''}`}</span>
             <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#7d8f6e]" />Lawn</span>
+            {data.buildings?.features?.length > 0 && <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#b9ad99]" />Buildings</span>}
+            {data.trees?.length > 0 && <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#3f6b35]" />Trees (dashed: next to the property)</span>}
             {data.surveyDate && <span className="ml-auto">Aerial survey {data.surveyDate}</span>}
           </div>
         )}
@@ -191,8 +201,9 @@ export default function LawnApiResult({ data, onConfirm, onEdit, onRescan, onRem
             {scattered ? ` · includes ${scattered.areaSqft.toLocaleString()} sq ft in ${scattered.patches} small scattered patches (shown faintly)` : ''}
           </p>
           <p className="mt-1 px-4 text-[10.5px] leading-relaxed text-muted-foreground">
-            Detected from green vegetation in the aerial survey. Brown or dormant lawn isn’t picked up, so edit the outline if
-            some is missing.
+            This 2D plan is what your 3D model is built from: lawn from green in the aerial survey, minus anything a
+            height map shows is taller than about 3 ft; buildings and trees from public map and canopy data. Brown or
+            dormant lawn isn’t picked up, so edit the plan if something is off.
           </p>
 
           <div className="flex flex-col gap-2 px-4 py-4 sm:flex-row">
@@ -202,7 +213,7 @@ export default function LawnApiResult({ data, onConfirm, onEdit, onRescan, onRem
               </Button>
             )}
             <Button variant={data.lawnSqft > 0 ? 'outline' : 'default'} onClick={onEdit} className="flex-1 rounded-full whitespace-normal text-center leading-tight">
-              <Pencil className="mr-1.5 h-4 w-4 shrink-0" />{data.lawnSqft > 0 ? 'Edit lawn outline' : 'Draw lawn'}
+              <Pencil className="mr-1.5 h-4 w-4 shrink-0" />{data.lawnSqft > 0 ? 'Edit the plan' : 'Draw lawn'}
             </Button>
             {data.parcelSource === 'county' ? (
               <Button variant="outline" onClick={onRescan} className="flex-1 rounded-full whitespace-normal text-center leading-tight">
