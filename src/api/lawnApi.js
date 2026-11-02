@@ -11,12 +11,27 @@ export class LawnApiError extends Error {
   }
 }
 
+const JOB_POLL_MS = 3000;
+const JOB_MAX_MS = 11 * 60_000;
+
 async function call(path, init) {
+  const sid = sessionId();
+  const headers = { ...(init?.headers || {}), ...(sid ? { 'X-Session-Id': sid } : {}) };
   let res;
   try {
-    const sid = sessionId();
-    res = await fetch(`/api/lawn${path}`, { ...init, headers: { ...(init?.headers || {}), ...(sid ? { 'X-Session-Id': sid } : {}) } });
-  } catch {
+    res = await fetch(`/api/lawn${path}`, { ...init, headers });
+    // Big properties are measured in the background: wait for the job.
+    if (res.status === 202) {
+      const { job } = await res.clone().json();
+      const started = Date.now();
+      while (res.status === 202 && job && Date.now() - started < JOB_MAX_MS) {
+        await new Promise((done) => setTimeout(done, JOB_POLL_MS));
+        res = await fetch(`/api/lawn/jobs/${encodeURIComponent(job)}`, { headers });
+      }
+      if (res.status === 202) throw new LawnApiError('This property is taking too long to measure. Try again, or outline the lawn by hand.', 504, 'scan_timeout');
+    }
+  } catch (err) {
+    if (err instanceof LawnApiError) throw err;
     throw new LawnApiError('Couldn’t reach the lawn measurement service. Check your connection and try again.', 0, 'network_error');
   }
   const data = await res.json().catch(() => null);

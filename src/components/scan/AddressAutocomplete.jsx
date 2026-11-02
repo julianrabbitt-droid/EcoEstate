@@ -11,6 +11,9 @@ export default function AddressAutocomplete({ value, onChange, onSelect, placeho
   const [active, setActive] = useState(-1);
   const boxRef = useRef(null);
   const lastQuery = useRef('');
+  // The query the person already submitted or dismissed: suggestions that
+  // arrive for it afterwards stay closed instead of covering the page.
+  const dismissed = useRef('');
 
   useEffect(() => {
     const q = (value || '').trim();
@@ -27,15 +30,20 @@ export default function AddressAutocomplete({ value, onChange, onSelect, placeho
       const hits = await autocompleteAddresses(q);
       setSuggestions(hits);
       setFetching(false);
-      setOpen(hits.length > 0);
+      setOpen(hits.length > 0 && dismissed.current !== q);
       setActive(-1);
     }, 300);
     return () => clearTimeout(handle);
   }, [value]);
 
+  const valueRef = useRef(value);
+  valueRef.current = value;
   useEffect(() => {
     const onClick = (e) => {
-      if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false);
+      if (boxRef.current && !boxRef.current.contains(e.target)) {
+        dismissed.current = (valueRef.current || '').trim(); // e.g. the Scan button: don't reopen for this text
+        setOpen(false);
+      }
     };
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
@@ -52,6 +60,12 @@ export default function AddressAutocomplete({ value, onChange, onSelect, placeho
   };
 
   const onKeyDown = (e) => {
+    if ((e.key === 'Enter' && !(open && active >= 0)) || e.key === 'Escape') {
+      // Submitting the typed text (the form handles it) or closing the list.
+      dismissed.current = (value || '').trim();
+      setOpen(false);
+      return;
+    }
     if (!open || !suggestions.length) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -59,11 +73,9 @@ export default function AddressAutocomplete({ value, onChange, onSelect, placeho
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActive((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter' && active >= 0) {
+    } else if (e.key === 'Enter') {
       e.preventDefault();
       pick(suggestions[active]);
-    } else if (e.key === 'Escape') {
-      setOpen(false);
     }
   };
 
@@ -74,7 +86,7 @@ export default function AddressAutocomplete({ value, onChange, onSelect, placeho
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
-        onFocus={() => suggestions.length && setOpen(true)}
+        onFocus={() => suggestions.length && dismissed.current !== (value || '').trim() && setOpen(true)}
         placeholder={placeholder}
         className="h-12 w-full rounded-full border border-border bg-card pl-11 pr-10 text-[15px] shadow-sm outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/40"
       />

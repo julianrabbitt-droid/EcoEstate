@@ -1,6 +1,7 @@
 // Forwards /api/lawn/* to the lawn-to-native API in lawn-api/. The browser never
 // talks to it directly, so its x-api-key (APP_API_KEY in lawn-api/.env) stays
 // on the server.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import dotenv from 'dotenv';
@@ -55,6 +56,69 @@ function overLimit(req) {
   return times.length > max;
 }
 
+// Scans of big properties (campuses, parks) can run for minutes on a small
+// server, longer than the host's or Cloudflare's request limits. A scan that
+// hasn't finished after JOB_AFTER_MS answers 202 with a job id instead; the
+// app then asks GET /api/lawn/jobs/<id> until the result is ready. Jobs are
+// kept in memory for JOB_KEEP_MS after they finish.
+const JOB_AFTER_MS = 25_000;
+const JOB_LIMIT_MS = 10 * 60_000;
+const JOB_KEEP_MS = 10 * 60_000;
+const jobs = new Map(); // id -> { owner, done, status, type, body, finishedAt }
+
+function sweepJobs() {
+  const cutoff = Date.now() - JOB_KEEP_MS;
+  for (const [id, j] of jobs) if (j.done && j.finishedAt < cutoff) jobs.delete(id);
+}
+
+const visitor = (req) => req.user?.id || `ip:${clientIp(req)}`;
+
+// The upstream call, with the paid calls it reports recorded for this session.
+async function forward(req, target, timeoutMs) {
+  const env = lawnEnv();
+  const query = new URLSearchParams(req.query).toString();
+  const headers = { Accept: 'application/json' };
+  const key = env.APP_API_KEY || process.env.APP_API_KEY; // file locally, env var on the host
+  if (key) headers['x-api-key'] = key;
+  if (req.method === 'POST') headers['Content-Type'] = 'application/json';
+  try {
+    const upstream = await fetch(`${baseUrl(env)}${target}${query ? `?${query}` : ''}`, {
+      method: req.method,
+      headers,
+      body: req.method === 'POST' ? JSON.stringify(req.body ?? {}) : undefined,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const body = Buffer.from(await upstream.arrayBuffer());
+    // The lawn API reports its paid calls (e.g. "geocodio=1") for this session.
+    for (const part of (upstream.headers.get('x-usage') || '').split(',')) {
+      const [service, units] = part.split('=');
+      if (service && Number(units) > 0) recordUsage(service.trim(), Number(units), 'lawn-api');
+    }
+    return { status: upstream.status, type: upstream.headers.get('content-type') || 'application/json', body };
+  } catch (err) {
+    const timedOut = err?.name === 'TimeoutError';
+    if (!timedOut) console.warn(`[lawn] lawn API unreachable at ${baseUrl(env)} — is it running? (npm run dev starts it)`);
+    return {
+      status: timedOut ? 504 : 503,
+      type: 'application/json',
+      body: Buffer.from(JSON.stringify({
+        error: timedOut
+          ? { code: 'scan_timeout', message: 'This property took too long to measure. Try again, or outline the lawn by hand.' }
+          : { code: 'lawn_api_unreachable', message: 'Our lawn measurement service is temporarily unavailable. Please try again in a few minutes.' },
+      })),
+    };
+  }
+}
+
+const send = (res, r) => res.status(r.status).type(r.type).send(r.body);
+
+lawnRouter.get('/jobs/:id', (req, res) => {
+  const job = jobs.get(req.params.id);
+  if (!job || job.owner !== visitor(req)) return res.status(404).json({ error: { code: 'job_not_found', message: 'That scan has expired. Please scan again.' } });
+  if (!job.done) return res.status(202).json({ job: req.params.id, status: 'running' });
+  return send(res, job);
+});
+
 lawnRouter.use(async (req, res) => {
   const target = ROUTES[`${req.method} ${req.path}`];
   if (!target) return res.status(404).json({ error: { code: 'not_found', message: 'Not found.' } });
@@ -64,35 +128,16 @@ lawnRouter.use(async (req, res) => {
     return res.status(429).json({ error: { code: 'rate_limited', message: 'Too many scans in a short time. Please wait a few minutes and try again.' } });
   }
 
-  const env = lawnEnv();
-  const query = new URLSearchParams(req.query).toString();
-  const headers = { Accept: 'application/json' };
-  const key = env.APP_API_KEY || process.env.APP_API_KEY; // file locally, env var on the host
-  if (key) headers['x-api-key'] = key;
-  if (req.method === 'POST') headers['Content-Type'] = 'application/json';
+  if (req.path !== '/lawn') return send(res, await forward(req, target, 120_000));
 
-  let upstream;
-  let body;
-  try {
-    upstream = await fetch(`${baseUrl(env)}${target}${query ? `?${query}` : ''}`, {
-      method: req.method,
-      headers,
-      body: req.method === 'POST' ? JSON.stringify(req.body ?? {}) : undefined,
-      signal: AbortSignal.timeout(120_000),
-    });
-    body = Buffer.from(await upstream.arrayBuffer());
-  } catch {
-    console.warn(`[lawn] lawn API unreachable at ${baseUrl(env)} — is it running? (npm run dev starts it)`);
-    return res.status(503).json({
-      error: { code: 'lawn_api_unreachable', message: 'Our lawn measurement service is temporarily unavailable. Please try again in a few minutes.' },
-    });
-  }
-  // The lawn API reports its paid calls (e.g. "geocodio=1") for this session.
-  for (const part of (upstream.headers.get('x-usage') || '').split(',')) {
-    const [service, units] = part.split('=');
-    if (service && Number(units) > 0) recordUsage(service.trim(), Number(units), 'lawn-api');
-  }
-  res.status(upstream.status);
-  res.type(upstream.headers.get('content-type') || 'application/json');
-  res.send(body);
+  // Scans: answer directly when quick, else hand back a job to poll.
+  const work = forward(req, target, JOB_LIMIT_MS);
+  const quick = await Promise.race([work, new Promise((done) => setTimeout(() => done(null), JOB_AFTER_MS))]);
+  if (quick) return send(res, quick);
+  sweepJobs();
+  const id = crypto.randomUUID();
+  const job = { owner: visitor(req), done: false };
+  jobs.set(id, job);
+  work.then((r) => Object.assign(job, r, { done: true, finishedAt: Date.now() }));
+  return res.status(202).json({ job: id, status: 'running' });
 });

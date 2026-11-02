@@ -438,7 +438,7 @@ export default function Scan() {
                 </div>
                 <p className="mt-4 font-display text-lg tracking-tight">Scanning the property…</p>
                 <p className="mt-1 max-w-xs text-[12px] leading-relaxed text-muted-foreground">
-                  Separating the building from the property, then checking its front, back and side grounds for lawn without crossing the estimated boundary. For larger properties this can take up to a minute.
+                  Separating the building from the property, then checking its front, back and side grounds for lawn without crossing the estimated boundary. Homes take a few seconds; campuses and parks can take a few minutes.
                 </p>
                 <div className="mt-5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
