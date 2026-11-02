@@ -862,7 +862,11 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
 
     // Bird's-eye overview: an oblique aerial angle (~50° off vertical) so the mulch
     // beds and plant models read as a real 3D landscape, not a flat plan looking down.
+    // Looks from the south until the street is known, then from the street
+    // (setFront): the open side, so neighbours' roofs and trees in Real 3D
+    // don't stand between the camera and the property.
     const viewDir = new THREE.Vector3(0, 1, 1.25).normalize();
+    let userMoved = false;
     const camFor = (tx, ty, tz, radius, factor = 3.4) => {
       const dist = Math.max(radius * factor, maxDim * 0.18);
       return new THREE.Vector3(tx, ty, tz).addScaledVector(viewDir, dist);
@@ -1029,6 +1033,20 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     };
     animate();
     controls.addEventListener('change', markDirty);
+    controls.addEventListener('start', () => { userMoved = true; });
+    // Turn the default view to face the property from (dx, dz) (scene feet,
+    // horizontal); the camera moves there too unless the person has already moved it.
+    threeRef.current.setFront = (dx, dz) => {
+      const len = Math.hypot(dx, dz);
+      if (!len) return;
+      // Only follow when the camera still sits at the default view (not dragged, focused or walking).
+      const atDefault = !tweenRef.current && camera.position.distanceTo(overview().pos) < 1;
+      viewDir.set((dx / len) * 1.25, 1, (dz / len) * 1.25).normalize();
+      if (userMoved || !atDefault || walkRef.current?.active) return;
+      const next = overview();
+      tweenRef.current = { fromPos: camera.position.clone(), toPos: next.pos, fromTgt: controls.target.clone(), toTgt: next.tgt, start: performance.now(), dur: 500 };
+      markDirty();
+    };
 
     const ro = new ResizeObserver(() => {
       if (!mount.clientWidth || !mount.clientHeight) return;
@@ -1614,6 +1632,9 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // available (Overture height or floors, or the canopy height model).
     const bAttr = project?.building || {};
     const roadPts = paths.filter((p) => ROAD_KINDS.has(p.kind)).flat().map((p) => [p[0] - cx, p[1] - cy]);
+    // View the property from its street (the nearest road point; plan y is north, scene z south).
+    const street = roadPts.reduce((best, p) => (!best || Math.hypot(...p) < Math.hypot(...best) ? p : best), null);
+    if (street) three.setFront?.(street[0], -street[1]);
     buildings.forEach((poly) => {
       if (!poly || poly.length < 3) return;
       const pts = poly.map((p) => [p[0] - cx, p[1] - cy]);
