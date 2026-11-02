@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, ChevronDown, Loader2 } from 'lucide-react';
+import { ArrowRight, ChevronDown, Crosshair, Loader2 } from 'lucide-react';
 import L from 'leaflet';
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { getLawn, getLawnForParcel, locateAddress, measureArea, mergeLawnOutlines } from '@/api/lawnApi';
@@ -536,7 +536,7 @@ export default function Scan() {
         placeholder="Enter your address"
       />
       <Button type="submit" disabled={loading || !chosen} className={`h-12 rounded-full px-6 text-[15px] ${dark ? 'disabled:opacity-80' : ''}`}>
-        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Scan my lawn'}
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Crosshair className="mr-1.5 h-4 w-4" aria-hidden />Locate property</>}
       </Button>
     </form>
   );
@@ -585,7 +585,7 @@ export default function Scan() {
         )}
 
         {phase === 'idle' && (
-          <div className="pointer-events-auto mx-auto flex min-h-[100svh] w-full max-w-3xl flex-col items-center justify-center px-5 pb-20 pt-10 text-center text-white">
+          <div className="pointer-events-auto mx-auto flex min-h-[100svh] w-full max-w-3xl flex-col items-center justify-center px-5 pb-20 pt-10 text-center text-white duration-500 animate-in fade-in">
             <h1 className="font-display text-[2.7rem] font-normal leading-[1.02] tracking-[-0.015em] drop-shadow sm:text-[4.2rem]">
               Your lawn could be doing more.
             </h1>
@@ -616,7 +616,7 @@ export default function Scan() {
         )}
 
         {phase === 'locating' && (
-          <div className="flex min-h-[100svh] items-center justify-center">
+          <div className="flex min-h-[100svh] items-center justify-center duration-500 animate-in fade-in">
             <p className="pointer-events-auto flex items-center gap-2 rounded-full bg-black/55 px-5 py-2.5 text-[14px] text-white backdrop-blur">
               <Loader2 className="h-4 w-4 animate-spin" /> Finding {pending?.address || query || 'the address'}…
             </p>
@@ -625,7 +625,7 @@ export default function Scan() {
 
         {phase === 'confirm' && pending && pin && (
           // The pin sits on the aerial view itself; this panel just asks.
-          <div className="flex min-h-[100svh] items-end justify-center px-4 pb-8">
+          <div className="flex min-h-[100svh] items-end justify-center px-4 pb-8 duration-700 animate-in fade-in slide-in-from-bottom-6">
             <div className="pointer-events-auto w-full max-w-xl rounded-3xl border border-white/20 bg-black/55 p-5 text-white shadow-2xl backdrop-blur-md">
               <p className="font-display text-[1.6rem] leading-tight tracking-tight">Is this your property?</p>
               <p className="mt-1 text-[13px] leading-relaxed text-white/80">
@@ -652,7 +652,7 @@ export default function Scan() {
         )}
 
         {phase === 'scanning' && (
-          <div className="flex min-h-[100svh] flex-col items-center justify-center px-5 text-center text-white">
+          <div className="flex min-h-[100svh] flex-col items-center justify-center px-5 text-center text-white duration-700 animate-in fade-in zoom-in-95">
             <div className="relative h-40 w-40" aria-hidden>
               <span className="absolute inset-0 animate-ping rounded-full border-2 border-white/60" />
               <span className="absolute inset-6 rounded-full border border-white/40" />
@@ -667,7 +667,7 @@ export default function Scan() {
 
         {phase === 'lawn' && previewProject && (
           // Over the 3D model: the question and the numbers, at the side (below on phones).
-          <div className="flex min-h-[100svh] items-end justify-end p-3 sm:p-6 lg:items-center">
+          <div className="flex min-h-[100svh] items-end justify-end p-3 duration-700 animate-in fade-in slide-in-from-right-8 sm:p-6 lg:items-center">
             <div className="pointer-events-auto max-h-[78svh] w-full overflow-y-auto rounded-3xl border border-border/60 bg-card/92 shadow-2xl backdrop-blur-md sm:max-w-md">
               <LawnApiResult
                 data={lawnData}
