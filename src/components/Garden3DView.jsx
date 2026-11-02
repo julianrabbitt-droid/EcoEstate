@@ -195,6 +195,27 @@ function mulchTexture() {
   });
   return _mulch;
 }
+// Lawn as it is today (the scan check shows it before anything is designed):
+// mown turf, short blade strokes in a few greens.
+let _turf;
+function turfTexture() {
+  if (_turf) return _turf;
+  _turf = canvasTexture(256, (ctx, s) => {
+    ctx.fillStyle = '#5f8f3e';
+    ctx.fillRect(0, 0, s, s);
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < 5000; i++) {
+      const x = Math.random() * s, y = Math.random() * s;
+      const shade = Math.random();
+      ctx.strokeStyle = shade > 0.66 ? '#79a852' : shade < 0.33 ? '#4b7731' : '#628f41';
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + (Math.random() - 0.5) * 2, y - 2 - Math.random() * 3);
+      ctx.stroke();
+    }
+  });
+  return _turf;
+}
 // Roads and paths: speckled asphalt and light pavers, laid in world feet so
 // the texture scale matches however big the slab is.
 const insidePoly = ([x, y], pts) => {
@@ -822,7 +843,10 @@ function buildPlant(plant, mature, detail = 'normal', { scanned = false, variant
   return g;
 }
 
-export default function Garden3DView({ entries = [], project, activeArrangement, onApplyArrangement }) {
+// mode 'check': the scan as it is (lawn shown as lawn, no plants or design
+// tools), for the person to confirm before designing.
+export default function Garden3DView({ entries = [], project, activeArrangement, onApplyArrangement, mode = 'design' }) {
+  const checking = mode === 'check';
   const mountRef = useRef(null);
   const threeRef = useRef(null);
   const plantMeshesRef = useRef([]);
@@ -1746,14 +1770,17 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         else shape.lineTo(x, y);
       });
       const span = Math.max(boundsAll.maxX - boundsAll.minX, boundsAll.maxY - boundsAll.minY, 10);
-      const mulch = mulchTexture();
-      mulch.repeat.set(span / 4, span / 4);
+      const mulch = checking ? turfTexture() : mulchTexture();
+      if (checking) mulch.repeat.set(1 / 4, 1 / 4); // shape UVs are in feet: one patch per 4 ft
+      else mulch.repeat.set(span / 4, span / 4);
       // Mulch is a flat 2D area lifted just above the ground (MULCH_Y) so it reads as
       // a layer on top of the property base, not a raised mound.
       const bed = new THREE.Mesh(
         new THREE.ShapeGeometry(shape),
         // Photographed wood-chip mulch (CC0, Poly Haven); shape UVs are in feet.
-        new THREE.MeshStandardMaterial({ map: photo('aerial_wood_snips', 'diffuse'), normalMap: photo('aerial_wood_snips', 'nor_gl'), color: 0xc9b8a6, roughness: 1, metalness: 0, side: THREE.DoubleSide }),
+        checking
+          ? new THREE.MeshStandardMaterial({ map: mulch, roughness: 1, metalness: 0, side: THREE.DoubleSide })
+          : new THREE.MeshStandardMaterial({ map: photo('aerial_wood_snips', 'diffuse'), normalMap: photo('aerial_wood_snips', 'nor_gl'), color: 0xc9b8a6, roughness: 1, metalness: 0, side: THREE.DoubleSide }),
       );
       bed.userData.bed = true;
       bed.userData.bedIndex = bi;
@@ -1904,7 +1931,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     });
 
     three.markDirty?.();
-  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, groundFix, assetsVersion]);
+  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, groundFix, assetsVersion, checking]);
 
   useEffect(() => {
     moveModeRef.current = moveMode;
@@ -2180,7 +2207,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex rounded-full border border-border p-0.5">
+        <div className={`inline-flex rounded-full border border-border p-0.5 ${checking ? 'hidden' : ''}`}>
           {[{ v: true, l: 'At maturity' }, { v: false, l: 'Newly planted' }].map((o) => (
             <button
               key={o.l}
@@ -2212,11 +2239,13 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
               Reset view
             </Button>
           )}
-          <Button variant={moveMode ? 'default' : 'outline'} onClick={() => setMoveMode((m) => !m)} className="rounded-full" size="sm">
-            <Move className="mr-1.5 h-4 w-4" />
-            {moveMode ? 'Done moving' : 'Move plants'}
-          </Button>
-          {walkMode ? (
+          {!checking && (
+            <Button variant={moveMode ? 'default' : 'outline'} onClick={() => setMoveMode((m) => !m)} className="rounded-full" size="sm">
+              <Move className="mr-1.5 h-4 w-4" />
+              {moveMode ? 'Done moving' : 'Move plants'}
+            </Button>
+          )}
+          {checking ? null : walkMode ? (
             <Button variant="default" onClick={() => setWalkMode(false)} className="rounded-full" size="sm">
               Exit walk
             </Button>
@@ -2279,13 +2308,17 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
 
       <p className="mt-2 flex items-center gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
         <Sun className="h-3.5 w-3.5 text-accent" />
-        {walkMode
+        {checking
+          ? 'Drag to rotate · scroll to zoom. Green is the lawn we found; the dashed line is the property line.'
+          : walkMode
           ? 'You are standing in the garden. WASD or the on-screen arrows to move, drag to look around, Exit walk to return to the plan.'
           : moveMode
             ? 'Click a plant and drag it to a new spot on the mulch. Hit Done moving to focus again.'
             : 'Drag to rotate · click a lawn to focus · scroll to zoom · tap the person, or drag it onto the property, to walk it.'}
       </p>
 
+      {!checking && (
+      <>
       <div className="mt-4 border-t border-border/70 pt-3">
         <div className="flex items-center gap-2">
         <Leaf className="h-3.5 w-3.5 text-accent" />
@@ -2350,6 +2383,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           </span>
         ))}
       </div>
+      </>
+      )}
     </div>
   );
 }

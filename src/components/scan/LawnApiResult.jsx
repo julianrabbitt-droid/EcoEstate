@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import L from 'leaflet';
 import { Circle, GeoJSON, MapContainer, Marker, Polygon, TileLayer, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { AlertTriangle, Check, Loader2, Pencil, RefreshCw, Ruler, Undo2 } from 'lucide-react';
+import { AlertTriangle, Box, Check, Loader2, Pencil, RefreshCw, Ruler, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import LawnImpact from '@/components/scan/LawnImpact';
 import { geoJsonOuterRings } from '@/lib/geo';
+
+// The 3D view (three.js) loads only when a scan result is shown.
+const Garden3DView = lazy(() => import('@/components/Garden3DView'));
 
 const IMAGERY = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 // The property line is white over a dark halo, and the lawn a clear green with
@@ -93,23 +96,27 @@ function EditableLine({ corners, onChange }) {
   );
 }
 
-// Result of GET /v1/lawn: the parcel outline and detected lawn drawn on a
-// satellite map, with the lawn size and conversion impact. When the property
-// line is only estimated, the user adjusts it first and the lawn is then
-// measured inside their line (POST /v1/lawn via onRemeasure).
-export default function LawnApiResult({ data, onConfirm, onEdit, onRescan, onRemeasure }) {
+// Result of GET /v1/lawn. First the property in 3D as scanned (the house,
+// trees and the lawn found), with one question: is this right? Only if it
+// isn't does the 2D satellite plan open, to edit the lawn, adjust an estimated
+// property line (the lawn is then measured inside it, POST /v1/lawn via
+// onRemeasure) or re-scan. `preview` is the scan in the project's shape, for
+// the 3D view; without it (no lawn found) the 2D plan shows straight away.
+export default function LawnApiResult({ data, preview, onConfirm, onEdit, onRescan, onRemeasure }) {
   const center = useMemo(() => [data.location?.lat, data.location?.lon], [data.location]);
   const estimated = data.parcelSource === 'estimated';
   const initialCorners = useMemo(() => geoJsonOuterRings(data.parcel?.geometry)[0] || [], [data.parcel]);
   const [corners, setCorners] = useState(initialCorners);
-  const [adjusting, setAdjusting] = useState(estimated);
+  const [view, setView] = useState(preview ? '3d' : '2d');
+  const [adjusting, setAdjusting] = useState(estimated && !preview);
   const [measuring, setMeasuring] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
     setCorners(initialCorners);
-    setAdjusting(estimated);
+    setView(preview ? '3d' : '2d');
+    setAdjusting(estimated && !preview);
     setError('');
-  }, [initialCorners, estimated]);
+  }, [initialCorners, estimated, preview]);
 
   const moved = JSON.stringify(corners) !== JSON.stringify(initialCorners);
   const measure = async () => {
@@ -131,6 +138,56 @@ export default function LawnApiResult({ data, onConfirm, onEdit, onRescan, onRem
   const lawnCount = data.lawn?.features?.length || 0;
   const regionCount = data.lawn?.features?.filter((f) => f.properties?.kind !== 'scattered').length || 0;
   const scattered = data.lawn?.features?.find((f) => f.properties?.kind === 'scattered')?.properties;
+  const details = (
+    <p className="mt-2 px-4 text-[11px] leading-relaxed text-muted-foreground">
+      {data.address}
+      {data.parcel?.areaSqft ? ` · lot ${data.parcel.areaSqft.toLocaleString()} sq ft` : ''}
+      {lawnCount === 0 ? ' · No green lawn was detected on this property.' : ''}
+      {scattered ? ` · includes ${scattered.areaSqft.toLocaleString()} sq ft in ${scattered.patches} small scattered patches (shown faintly)` : ''}
+      {data.dormant?.sqft >= 50 ? ` · includes ${data.dormant.sqft.toLocaleString()} sq ft of lawn that was dry when the survey was flown` : ''}
+    </p>
+  );
+
+  if (view === '3d') {
+    return (
+      <div>
+        <div className="p-4">
+          <p className="font-display text-[1.5rem] leading-tight tracking-tight">Is this scan right?</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+            Your property in 3D as we scanned it: the lawn we found in green, and the house and trees from public map
+            and lidar data.
+            {estimated ? ' There’s no public parcel map here, so the dashed property line is estimated.' : ''}
+          </p>
+          <div className="mt-3">
+            <Suspense
+              fallback={(
+                <div className="flex h-[360px] items-center justify-center rounded-2xl border border-border bg-secondary sm:h-[460px]">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              )}
+            >
+              <Garden3DView project={preview} mode="check" />
+            </Suspense>
+          </div>
+        </div>
+        <LawnImpact lawnSqft={data.lawnSqft} impact={data.impact} />
+        {details}
+        <div className="flex flex-col gap-2 px-4 py-4 sm:flex-row">
+          <Button onClick={onConfirm} className="flex-1 rounded-full whitespace-normal text-center leading-tight">
+            <Check className="mr-1.5 h-4 w-4 shrink-0" />Yes, looks right
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => { setView('2d'); if (estimated) setAdjusting(true); }}
+            className="flex-1 rounded-full whitespace-normal text-center leading-tight"
+          >
+            <Pencil className="mr-1.5 h-4 w-4 shrink-0" />No, fix it
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       {adjusting && (
@@ -198,13 +255,7 @@ export default function LawnApiResult({ data, onConfirm, onEdit, onRescan, onRem
       ) : (
         <>
           <LawnImpact lawnSqft={data.lawnSqft} impact={data.impact} />
-          <p className="mt-2 px-4 text-[11px] leading-relaxed text-muted-foreground">
-            {data.address}
-            {data.parcel?.areaSqft ? ` · lot ${data.parcel.areaSqft.toLocaleString()} sq ft` : ''}
-            {lawnCount === 0 ? ' · No green lawn was detected on this property.' : ''}
-            {scattered ? ` · includes ${scattered.areaSqft.toLocaleString()} sq ft in ${scattered.patches} small scattered patches (shown faintly)` : ''}
-            {data.dormant?.sqft >= 50 ? ` · includes ${data.dormant.sqft.toLocaleString()} sq ft of lawn that was dry when the survey was flown` : ''}
-          </p>
+          {details}
           <p className="mt-1 px-4 text-[10.5px] leading-relaxed text-muted-foreground">
             This 2D plan is what your 3D model is built from: lawn from green in the aerial survey, minus anything a
             height map or USGS lidar shows is taller than about 2 ft; lawn that was dry when the survey was flown is
@@ -213,12 +264,17 @@ export default function LawnApiResult({ data, onConfirm, onEdit, onRescan, onRem
           </p>
 
           <div className="flex flex-col gap-2 px-4 py-4 sm:flex-row">
-            {data.lawnSqft > 0 && (
+            {data.lawnSqft > 0 && !preview && (
               <Button onClick={onConfirm} className="flex-1 rounded-full whitespace-normal text-center leading-tight">
                 <Check className="mr-1.5 h-4 w-4 shrink-0" />Looks right, analyze
               </Button>
             )}
-            <Button variant={data.lawnSqft > 0 ? 'outline' : 'default'} onClick={onEdit} className="flex-1 rounded-full whitespace-normal text-center leading-tight">
+            {preview && (
+              <Button variant="outline" onClick={() => setView('3d')} className="flex-1 rounded-full whitespace-normal text-center leading-tight">
+                <Box className="mr-1.5 h-4 w-4 shrink-0" />Back to 3D
+              </Button>
+            )}
+            <Button variant={data.lawnSqft > 0 && !preview ? 'outline' : 'default'} onClick={onEdit} className="flex-1 rounded-full whitespace-normal text-center leading-tight">
               <Pencil className="mr-1.5 h-4 w-4 shrink-0" />{data.lawnSqft > 0 ? 'Edit the plan' : 'Draw lawn'}
             </Button>
             {data.parcelSource === 'county' ? (

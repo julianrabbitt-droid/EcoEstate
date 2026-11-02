@@ -88,6 +88,10 @@ export default function Scan() {
   const [lawnData, setLawnData] = useState(null);
   const [areaCalc, setAreaCalc] = useState(NO_AREA);
   const areaRequest = useRef(0);
+  // The scan of the shown pin starts while the person is still confirming it,
+  // so it is usually done by the time they click; a moved pin scans afresh.
+  const earlyScan = useRef(null); // { key, promise }
+  const scanKey = (address, hit) => `${address}|${hit?.lat}|${hit?.lng}|${hit?.osm || ''}`;
   const [editSeed, setEditSeed] = useState(null);
   const [method, setMethod] = useState('satellite');
   const [result, setResult] = useState({ area: 0, source: 'satellite', boundary: [], turf: null });
@@ -153,7 +157,9 @@ export default function Scan() {
     setPhase('scanning');
     let found = false;
     try {
-      const data = await getLawn(address, knownHit);
+      const early = earlyScan.current;
+      earlyScan.current = null;
+      const data = await (early && early.key === scanKey(address, knownHit) ? early.promise : getLawn(address, knownHit));
       found = true;
       setLawnData(data);
       setCenter([data.location.lat, data.location.lon]);
@@ -230,6 +236,11 @@ export default function Scan() {
     setPlace(hit);
     setCenter([hit.lat, hit.lng]);
     setPending({ address, hit });
+    if (!isOutsideUS(hit) && !autoAccess.needsSignIn) {
+      const promise = getLawn(address, hit);
+      promise.catch(() => {}); // reported when the scan is shown
+      earlyScan.current = { key: scanKey(address, hit), promise };
+    }
     setPhase('confirm');
   };
 
@@ -366,6 +377,31 @@ export default function Scan() {
     navigate(`/project/${rec.id}`, { state: { project: rec } });
   };
 
+  // The scan in the project's shape, for the 3D check before anything is saved.
+  const previewProject = useMemo(() => {
+    const d = lawnData;
+    const boundary = d?.lawnSqft > 0 ? geoJsonOuterRings(d.lawn) : [];
+    if (!d?.location || !boundary.length) return null;
+    return {
+      address: d.address,
+      city: place?.city || '',
+      state: place?.state || '',
+      zip: place?.zip || '',
+      countryCode: 'US',
+      center: [d.location.lat, d.location.lon],
+      boundary,
+      totalSqft: d.lawnSqft,
+      breakdown: { turf: d.lawnSqft, beds: 0, bare: 0 },
+      lotOutline: geoJsonOuterRings(d.parcel?.geometry)[0] || null,
+      lotSizeSqft: d.parcel?.areaSqft || 0,
+      ...scannedStructures(d),
+    };
+  }, [lawnData, place]);
+  // Fetch the 3D view's code while the scan runs, so the check opens at once.
+  useEffect(() => {
+    if (phase === 'scanning' || phase === 'confirm') import('@/components/Garden3DView').catch(() => {});
+  }, [phase]);
+
   const searchKey = `${center[0]},${center[1]}`;
   const showAuto = phase === 'scanning' || phase === 'lawn' || phase === 'confirm' || phase === 'locating';
   const measured = result.source === 'satellite' && areaCalc.lawnSqft !== null ? areaCalc.lawnSqft : result.area;
@@ -449,6 +485,7 @@ export default function Scan() {
             ) : (
               <LawnApiResult
                 data={lawnData}
+                preview={previewProject}
                 onConfirm={confirmLawn}
                 onEdit={editLawn}
                 onRescan={() => scanAddress(lawnData?.address || query, place)}

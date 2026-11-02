@@ -25,6 +25,7 @@ import { COUNTIES, findCountyParcel } from './lib/parcels.js';
 import { estimateParcel } from './lib/estimate.js';
 import { placeById, placeByName } from './lib/places.js';
 import { detectLawn } from './lib/lawn.js';
+import { buildingsInBox, segmentsInBox } from './lib/buildings.js';
 import { mergeLawns } from './lib/merge.js';
 import { LRU } from './lib/lru.js';
 
@@ -300,6 +301,9 @@ function handleError(res, err) {
 
 app.listen(PORT, () => {
   console.log(`Lawn-to-native API on http://localhost:${PORT}`);
-  // Load Overture's address index now, so the first address check isn't slow.
+  // Load Overture's address, building and road indexes now, so the first scan
+  // after a restart doesn't wait for them (a tiny box in the ocean reads no rows).
   addressPoint('1 Warm Up St', { lat: 0, lon: 0 }).catch(() => {});
+  buildingsInBox([-140, 0, -139.999, 0.001]).catch(() => {});
+  segmentsInBox([-140, 0, -139.999, 0.001]).catch(() => {});
 });

@@ -12,6 +12,7 @@ const STAC_ROOT = 'https://stac.overturemaps.org/catalog.json';
 const INDEX_TTL = 24 * 3600 * 1000;
 const RETRY_MS = 10 * 60 * 1000; // after a failed refresh, keep the old index this long before trying again
 const READ_TIMEOUT_MS = 30000;
+const READ_AT_ONCE = 4; // row groups read in parallel (each is a few MB in memory)
 
 const BUILDINGS = 'buildings/building';
 const SEGMENTS = 'transportation/segment';
@@ -155,15 +156,22 @@ async function rowsInBox(collectionPath, box, columns) {
   const { files } = await loadIndex(collectionPath);
   const [w, s, e, n] = box;
   const candidates = files.filter(({ bbox: [fw, fs, fe, fn] }) => fw <= e && fe >= w && fs <= n && fn >= s);
-  const out = [];
-  for (const { url } of candidates) {
-    const { file, metadata, starts } = await footer(url);
+  // Files' footers, then the matching row groups, a few at a time rather than
+  // one after another (each is a round trip to S3).
+  const footersRead = await Promise.all(candidates.map(({ url }) => footer(url)));
+  const reads = [];
+  for (const { file, metadata, starts } of footersRead) {
     const cols = metadata.row_groups[0].columns.map((c) => c.meta_data.path_in_schema.join('.'));
     const ix = ['bbox.xmin', 'bbox.xmax', 'bbox.ymin', 'bbox.ymax'].map((name) => cols.indexOf(name));
     for (const [i, rg] of metadata.row_groups.entries()) {
       const [xmin, xmax, ymin, ymax] = ix.map((j, k) => Number(rg.columns[j].meta_data.statistics[k % 2 ? 'max_value' : 'min_value']));
       if (!overlaps({ xmin, xmax, ymin, ymax }, box)) continue;
-      const rows = await parquetReadObjects({ file, metadata, columns, rowStart: starts[i], rowEnd: starts[i] + Number(rg.num_rows), compressors });
+      reads.push(() => parquetReadObjects({ file, metadata, columns, rowStart: starts[i], rowEnd: starts[i] + Number(rg.num_rows), compressors }));
+    }
+  }
+  const out = [];
+  for (let k = 0; k < reads.length; k += READ_AT_ONCE) {
+    for (const rows of await Promise.all(reads.slice(k, k + READ_AT_ONCE).map((read) => read()))) {
       for (const row of rows) if (row.bbox && overlaps(row.bbox, box)) out.push(row);
     }
   }
