@@ -523,6 +523,92 @@ function drape(mesh, at) {
   mesh.geometry.computeBoundingSphere();
 }
 
+// Where Google's real ground is, as an offset (ft) from the terrain heights, so
+// in Real 3D the model's beds, plants, house and trees stand on it instead of
+// floating above it or sinking into it. Cast down onto Google's mesh on a grid
+// over the property and its surroundings (scene box [x0, x1, z0, z1]). Canopy,
+// roofs and cars stand well above the open ground and are dropped; each point
+// takes the median of what's left around it (pools and hedges are a minority),
+// and points with no open ground nearby (under a big canopy or a roof) take
+// their neighbours' value. Used only to place the model in this view.
+const GROUND_NEAR_FT = 14; // neighbourhood radius
+const GROUND_TALL_FT = 4; // this far above the typical open ground is canopy, a roof or a car
+async function googleGround(group, rawAt, [x0, x1, z0, z1], alive) {
+  const step = Math.max(6, Math.max(x1 - x0, z1 - z0) / 32);
+  const nx = Math.ceil((x1 - x0) / step) + 1;
+  const nz = Math.ceil((z1 - z0) / step) + 1;
+  const raw = new Float32Array(nx * nz).fill(NaN);
+  const ray = new THREE.Raycaster();
+  const down = new THREE.Vector3(0, -1, 0);
+  const from = new THREE.Vector3();
+  group.updateMatrixWorld(true);
+  for (let k = 0; k < raw.length; k++) {
+    if (k % 60 === 59) {
+      await new Promise((r) => setTimeout(r)); // about a millisecond a ray: keep the page responsive
+      if (!alive()) return null;
+    }
+    const x = x0 + (k % nx) * step;
+    const z = z0 + Math.floor(k / nx) * step;
+    ray.set(from.set(x, 1e5, z), down);
+    const hit = ray.intersectObject(group, true)[0];
+    if (hit) raw[k] = hit.point.y - rawAt(x, z);
+  }
+  const all = [...raw].filter(Number.isFinite).sort((a, b) => a - b);
+  if (all.length < 12) return null;
+  const open = all[Math.floor(all.length * 0.25)];
+  const r = Math.max(1, Math.round(GROUND_NEAR_FT / step));
+  let fix = new Float32Array(raw.length).fill(NaN);
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const near = [];
+      for (let dj = -r; dj <= r; dj++) {
+        for (let di = -r; di <= r; di++) {
+          const [ii, jj] = [i + di, j + dj];
+          if (ii < 0 || jj < 0 || ii >= nx || jj >= nz || di * di + dj * dj > r * r) continue;
+          const v = raw[jj * nx + ii];
+          if (Number.isFinite(v) && v < open + GROUND_TALL_FT) near.push(v);
+        }
+      }
+      if (near.length >= 3) fix[j * nx + i] = near.sort((a, b) => a - b)[Math.floor(near.length / 2)];
+    }
+  }
+  // Fill the gaps from their neighbours, ring by ring, then smooth once.
+  for (let pass = 0; pass < nx + nz; pass++) {
+    const next = fix.slice();
+    let missing = false;
+    for (let k = 0; k < fix.length; k++) {
+      if (Number.isFinite(fix[k])) continue;
+      const [i, j] = [k % nx, Math.floor(k / nx)];
+      const vals = [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]].filter(([a, b]) => a >= 0 && b >= 0 && a < nx && b < nz).map(([a, b]) => fix[b * nx + a]).filter(Number.isFinite);
+      if (vals.length) next[k] = vals.reduce((s, v) => s + v, 0) / vals.length;
+      else missing = true;
+    }
+    fix = next;
+    if (!missing) break;
+  }
+  const smooth = new Float32Array(fix.length);
+  for (let k = 0; k < fix.length; k++) {
+    const [i, j] = [k % nx, Math.floor(k / nx)];
+    let [sum, n] = [0, 0];
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        const v = fix[(j + dj) * nx + i + di];
+        if (i + di >= 0 && j + dj >= 0 && i + di < nx && j + dj < nz && Number.isFinite(v)) { sum += v; n++; }
+      }
+    }
+    smooth[k] = Math.max(-6, Math.min(6, n ? sum / n : open));
+  }
+  return (x, z) => {
+    const fx = Math.min(nx - 1, Math.max(0, (x - x0) / step));
+    const fz = Math.min(nz - 1, Math.max(0, (z - z0) / step));
+    const [i0, j0] = [Math.min(nx - 2, Math.floor(fx)), Math.min(nz - 2, Math.floor(fz))];
+    if (nx < 2 || nz < 2) return smooth[0];
+    const [tx, tz] = [fx - i0, fz - j0];
+    const v = (i, j) => smooth[j * nx + i];
+    return (v(i0, j0) * (1 - tx) + v(i0 + 1, j0) * tx) * (1 - tz) + (v(i0, j0 + 1) * (1 - tx) + v(i0 + 1, j0 + 1) * tx) * tz;
+  };
+}
+
 // Centre, direction and size of a road/path outline (principal axis of its points).
 function slabAxis(poly) {
   const n = poly.length;
@@ -756,25 +842,43 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       if (kind === 'model') setAssetsVersion((v) => v + 1); // plants rebuild to use the scanned shrub
     });
   }, []);
+  // The ground everything stands on, in scene feet: the terrain, plus in Real 3D
+  // the offset to Google's real ground (googleGround). The raw terrain alone is
+  // what Google's mesh is levelled against.
   const groundAtRef = useRef(() => 0);
+  const terrainAtRef = useRef(() => 0);
+  const terrainRef = useRef(null);
+  const groundBoxRef = useRef([-60, 60, -60, 60]); // scene box [x0, x1, z0, z1] Google's ground is measured over
+  const [realGround, setRealGround] = useState(null); // { terrain, fix(x, z) } measured on Google's mesh
   const [photoReal, setPhotoReal] = useState(() => Boolean(GOOGLE_TILES_KEY) && readPhotoPref());
   // Once Google 3D has loaded it stays loaded; the toggle only shows or hides
-  // it (no reload, no new paid session).
+  // it (no reload, no new paid session). It loads hidden, behind the model, and
+  // only shows once its tiles are in and the model stands on its ground.
   const [tilesWanted, setTilesWanted] = useState(photoReal);
   const photoRealRef = useRef(photoReal);
+  const [photoStatus, setPhotoStatus] = useState('off'); // off | loading | ready | failed
+  const showReal = photoReal && photoStatus === 'ready';
   useEffect(() => {
     photoRealRef.current = photoReal;
     if (photoReal) setTilesWanted(true);
     const t = tilesRef.current;
     if (t) {
-      t.active = photoReal;
-      t.holder.visible = photoReal;
+      t.active = showReal;
+      t.holder.visible = showReal;
       t.wantUpdate = true;
     }
-    applyLiftRef.current();
     threeRef.current?.markDirty?.();
-  }, [photoReal]);
-  const [photoStatus, setPhotoStatus] = useState('off'); // off | loading | ready | failed
+  }, [photoReal, showReal]);
+  useEffect(() => {
+    terrainRef.current = terrain;
+    tilesRef.current?.refit?.();
+  }, [terrain]);
+  const groundFix = showReal && realGround && realGround.terrain === terrain ? realGround.fix : null;
+  const groundAt = useMemo(() => {
+    const base = terrain ? terrain.at : () => 0;
+    return groundFix ? (x, z) => base(x, z) + groundFix(x, z) : base;
+  }, [terrain, groundFix]);
+  useEffect(() => { groundAtRef.current = groundAt; }, [groundAt]);
   const [photoCredit, setPhotoCredit] = useState('');
   const [custom, setCustom] = useState(null);
   const [prompt, setPrompt] = useState('');
@@ -1004,10 +1108,12 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         controls.update();
       }
       const t3 = tilesRef.current?.active ? tilesRef.current : null;
-      if (t3 && (dirty || t3.wantUpdate)) {
-        t3.wantUpdate = false;
+      // Tiles also load while hidden, behind the model, until Real 3D is ready.
+      const tl = t3 || (tilesRef.current?.loading ? tilesRef.current : null);
+      if (tl && (dirty || tl.wantUpdate)) {
+        tl.wantUpdate = false;
         camera.updateMatrixWorld();
-        t3.tiles.update();
+        tl.tiles.update();
       }
       if (dirty) {
         // In Real 3D, Google shows the surroundings (streets, neighbours, street
@@ -1077,22 +1183,18 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   // Ground points (scene feet) for lining the Google mesh up with the model:
   // lawn outline corners first (always open ground), then the property line.
   const groundSamplesRef = useRef([]);
-  // In Real 3D the planting sits on Google's real lawn, which can be a little
-  // above the model's ground; the beds and plants are lifted by this much (ft).
-  const plantLiftRef = useRef(0);
-  const applyLiftRef = useRef(() => {});
-  const bedSamplesRef = useRef([]);
   // Streets and sidewalks off the lot: open, bare ground, the best reference
   // for where Google's ground really is (yards are often under canopy or roofs).
   const roadSamplesRef = useRef([]);
   useEffect(() => {
     const pts = [...polys.flat(), ...(lot || [])].map(([x, y]) => [x - cx, -(y - cy)]);
     groundSamplesRef.current = pts.length > 40 ? pts.filter((_, i) => i % Math.ceil(pts.length / 40) === 0) : pts;
-    const bedPts = polys.filter((q) => q && q.length >= 3).flatMap((q) => [
-      [q.reduce((a, p) => a + p[0], 0) / q.length - cx, -(q.reduce((a, p) => a + p[1], 0) / q.length - cy)],
-      ...q.map(([x, y]) => [x - cx, -(y - cy)]),
-    ]);
-    bedSamplesRef.current = bedPts.length > 60 ? bedPts.filter((_, i) => i % Math.ceil(bedPts.length / 60) === 0) : bedPts;
+    // Google's ground is measured over the property and as far as the skirt reaches past it.
+    const box = [...pts, ...buildings.flat().map(([x, y]) => [x - cx, -(y - cy)])];
+    if (box.length) {
+      const m = SKIRT_FT + 8;
+      groundBoxRef.current = [Math.min(...box.map((p) => p[0])) - m, Math.max(...box.map((p) => p[0])) + m, Math.min(...box.map((p) => p[1])) - m, Math.max(...box.map((p) => p[1])) + m];
+    }
     const road = [];
     for (const q of paths) {
       if (!q || q.length < 3) continue;
@@ -1102,12 +1204,12 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       road.push([mx - cx, -(my - cy)], ...q.map(([x, y]) => [x - cx, -(y - cy)]));
     }
     roadSamplesRef.current = road.length > 60 ? road.filter((_, i) => i % Math.ceil(road.length / 60) === 0) : road;
-  }, [polys, lot, paths, cx, cy]);
+  }, [polys, lot, paths, buildings, cx, cy]);
 
   // Real ground heights for the property and a margin around it (USGS 3DEP).
   useEffect(() => {
     setTerrain(null);
-    groundAtRef.current = () => 0;
+    terrainAtRef.current = () => 0;
     const all = lot && lot.length >= 3 ? lot : [...polys.flat(), ...buildings.flat()];
     if (!origin || !all.length) return undefined;
     const xs = all.map((p) => p[0]);
@@ -1117,7 +1219,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     loadTerrain({ minX: Math.min(...xs) - m, maxX: Math.max(...xs) + m, minY: Math.min(...ys) - m, maxY: Math.max(...ys) + m }, origin, cx, cy)
       .then((t) => {
         if (stale || !t) return;
-        groundAtRef.current = t.at;
+        terrainAtRef.current = t.at;
         setTerrain(t);
       })
       .catch(() => {}); // stays flat
@@ -1198,7 +1300,6 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     const treeTex = new THREE.CanvasTexture(tc);
     const G = 64;
     const heights = new Float32Array(G * G);
-    const groundAt = terrain ? terrain.at : () => 0;
     for (let j = 0; j < G; j++) {
       for (let i = 0; i < G; i++) heights[j * G + i] = groundAt(nx0 + ((nx1 - nx0) * (i + 0.5)) / G, nz0 + ((nz1 - nz0) * (j + 0.5)) / G);
     }
@@ -1215,7 +1316,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     if (oldGround.image?.width > 1) oldGround.dispose();
     threeRef.current?.markDirty?.();
     return undefined;
-  }, [lot, polys, buildings, trees, paths, terrain, cx, cy]);
+  }, [lot, polys, buildings, trees, paths, groundAt, cx, cy]);
 
   // Google Photorealistic 3D Tiles around the garden, while the toggle is on.
   // The tileset is placed so the scene origin is the property's centre, east
@@ -1255,8 +1356,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       holder.add(tiles.group);
       scene.add(holder);
 
-      holder.visible = photoRealRef.current;
-      state = { tiles, holder, active: photoRealRef.current, wantUpdate: true, dispose: null };
+      // Hidden until ready: the tiles load (and the model is fitted to them)
+      // behind the model, which stays on screen meanwhile.
+      holder.visible = false;
+      state = { tiles, holder, active: false, loading: true, leveledAt: null, wantUpdate: true, dispose: null };
       if (window.__ecoThree) window.__ecoTiles = state;
       const ray = new THREE.Raycaster();
       ray.firstHitOnly = true;
@@ -1273,33 +1376,47 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           for (const [x, z] of pts) {
             ray.set(new THREE.Vector3(x, top, z), down);
             const hit = ray.intersectObject(tiles.group, true)[0];
-            if (hit) out.push(hit.point.y - holder.position.y - groundAtRef.current(x, z));
+            if (hit) out.push(hit.point.y - holder.position.y - terrainAtRef.current(x, z));
           }
           return out.sort((a, b) => a - b);
         };
         // Streets and sidewalks first; the yard (lawn and lot corners) when there are none.
         let heights = offsets(roadSamplesRef.current);
         if (heights.length < 4) heights = offsets(groundSamplesRef.current);
-        if (heights.length < 3) return;
+        if (heights.length < 3) return false;
         // The lower quartile: pavement and lawn, not street trees, roofs or cars.
         const ground = heights[Math.floor(heights.length / 4)];
         const median = heights[Math.floor(heights.length / 2)];
         // Coarse globe tiles load first and can be far off; wait for detailed ones that agree.
         const [lo, hi] = knownHeight ? [-400, 400] : [-1000, 15000];
-        if (ground < lo || ground > hi || median - ground > 60) return;
+        if (ground < lo || ground > hi || median - ground > 60) return false;
         holder.position.y = -ground - PHOTO_SINK_FT;
-        // How high Google's real lawn stands where the beds go (raycasts see the
-        // mesh even where it is cut away): the lower quartile, so canopy above
-        // a bed doesn't count.
         holder.updateMatrixWorld(true);
-        // offsets() = Google's surface minus the model's ground before the
-        // holder's shift; adding the shift gives its height in the scene.
-        const lawn = offsets(bedSamplesRef.current);
-        if (lawn.length >= 3) {
-          plantLiftRef.current = Math.min(2.5, Math.max(0, lawn[Math.floor(lawn.length / 4)] + holder.position.y + 0.15));
-          applyLiftRef.current();
-        }
         markDirty();
+        return true;
+      };
+      // Then where Google's ground really is across the property (googleGround),
+      // so the model stands on it. Measured once the tiles have settled, and
+      // again only if the levelling moves; the first one reveals Real 3D.
+      let measureTimer = null;
+      let measureRun = 0;
+      const reveal = () => {
+        if (!state.loading || state.disposed) return;
+        state.loading = false;
+        clearTimeout(state.giveUp);
+        setPhotoStatus('ready');
+      };
+      const measureGround = () => {
+        clearTimeout(measureTimer);
+        measureTimer = setTimeout(async () => {
+          const run = ++measureRun;
+          const terrainNow = terrainRef.current;
+          const fix = await googleGround(tiles.group, terrainAtRef.current, groundBoxRef.current, () => !state.disposed && run === measureRun);
+          if (state.disposed || run !== measureRun) return;
+          if (fix) setRealGround({ terrain: terrainNow, fix });
+          const st = tiles.stats;
+          if (fix && !st.downloading && !st.parsing && !st.queued) reveal();
+        }, 600);
       };
       const credit = () => {
         const text = tiles.getAttributions().filter((a) => a.type === 'string').map((a) => a.value).join(' ').trim();
@@ -1316,7 +1433,36 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         model.traverse((o) => { if (o.material) clipTileMaterial(o.material); });
         onNeedsUpdate();
       };
-      const onLoadEnd = () => { levelGround(); credit(); setPhotoStatus('ready'); markDirty(); };
+      // When the terrain arrives (or changes) after the tiles, line up and measure again.
+      state.refit = () => {
+        if (levelGround()) {
+          state.leveledAt = holder.position.y;
+          measureGround();
+        }
+      };
+      const onLoadEnd = () => {
+        const before = holder.position.y;
+        if (levelGround() && (state.loading || state.leveledAt === null || Math.abs(holder.position.y - before) > 0.3)) {
+          state.leveledAt = holder.position.y;
+          measureGround();
+        }
+        credit();
+        markDirty();
+      };
+      // Never leave Real 3D spinning: after a while, show what has loaded if it
+      // lined up with the model, otherwise say it isn't available.
+      state.giveUp = setTimeout(() => {
+        if (!state.loading || state.disposed) return;
+        if (state.leveledAt !== null) {
+          reveal();
+          return;
+        }
+        state.loading = false;
+        setPhotoStatus('failed');
+        if (tilesRef.current === state) tilesRef.current = null;
+        state.dispose();
+        markDirty();
+      }, 40000);
       const onRoot = () => {
         // One root tileset request is one billed session; count it on the owner dashboard.
         base44.functions.invoke('tilesSession', {}).catch(() => {});
@@ -1324,6 +1470,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const onError = (e) => {
         if (!tiles.root) {
           // Nothing loaded (bad key, quota, network): drop it so the modelled surroundings come back.
+          state.loading = false;
           setPhotoStatus('failed');
           if (tilesRef.current === state) tilesRef.current = null;
           state.dispose();
@@ -1341,6 +1488,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       state.dispose = () => {
         if (state.disposed) return; // the scene teardown may already have done it
         state.disposed = true;
+        clearTimeout(state.giveUp);
+        clearTimeout(measureTimer);
         scene.remove(holder);
         tiles.dispose();
         draco.dispose();
@@ -1353,15 +1502,17 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // USGS ground elevation (orthometric, metres) plus the geoid, which sits
     // about 30 m below it across the contiguous US.
     const GEOID_M = -30;
-    // When USGS doesn't answer, the AWS terrain tiles; without any height the
-    // camera would start underground and Google would send nothing to show.
-    const usable = (elev) => (Number.isFinite(elev) && elev > -500 ? [elev + GEOID_M, true] : null);
-    fetch(`https://epqs.nationalmap.gov/v1/json?x=${lon0}&y=${lat0}&units=Meters&wkid=4326`, { signal: AbortSignal.timeout(6000) })
-      .then((r) => r.json())
-      .then((d) => usable(Number(d?.value)))
-      .catch(() => null)
-      .then((found) => found || terrainElevations([[lon0, lat0]]).then(([elev]) => usable(elev)).catch(() => null))
-      .then((found) => found || [0, false])
+    // USGS or the AWS terrain tiles, whichever answers first (only a rough
+    // start: the mesh is levelled against the model as it loads); without any
+    // height the camera would start underground and Google would send nothing.
+    const usable = (elev) => (Number.isFinite(elev) && elev > -500 ? [elev + GEOID_M, true] : Promise.reject());
+    Promise.any([
+      fetch(`https://epqs.nationalmap.gov/v1/json?x=${lon0}&y=${lat0}&units=Meters&wkid=4326`, { signal: AbortSignal.timeout(6000) })
+        .then((r) => r.json())
+        .then((d) => usable(Number(d?.value))),
+      terrainElevations([[lon0, lat0]]).then(([elev]) => usable(elev)),
+    ])
+      .catch(() => [0, false])
       .then(([heightM, known]) => {
         if (!stopped) start(heightM, known);
       });
@@ -1374,20 +1525,6 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       markDirty();
     };
   }, [tilesWanted, locked, origin, cx, cy, maxDim]);
-
-  // Beds, their outlines and plants rise by the lift while Real 3D is showing.
-  applyLiftRef.current = () => {
-    const three = threeRef.current;
-    if (!three) return;
-    const y = photoRealRef.current && tilesRef.current?.active ? plantLiftRef.current : 0;
-    three.plantGroup.position.y = y;
-    for (const c of three.scene.children) {
-      if (!c.userData?.bed) continue;
-      if (c.userData.baseY === undefined) c.userData.baseY = c.position.y;
-      c.position.y = c.userData.baseY + y;
-    }
-    three.markDirty?.();
-  };
 
   const togglePhotoReal = () => {
     if (locked) {
@@ -1425,7 +1562,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // out as holes so the mulch beds are the converted areas, not a slab under
     // them. The outer boundary is the lot when available, else a padded
     // bounding box around the lawns.
-    const at = terrain ? terrain.at : () => 0; // ground height (ft) at scene (x, z)
+    const at = groundAt; // ground height (ft) at scene (x, z)
+    const sloped = Boolean(terrain || groundFix);
     const outerPoly = (lot && lot.length >= 3)
       ? lot
       : (() => {
@@ -1465,7 +1603,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const gt = groundTexture();
       gt.repeat.set(span / 6, span / 6);
       let ground;
-      if (terrain) {
+      if (sloped) {
         const toScene = (poly) => poly.map((p) => [p[0] - cx, -(p[1] - cy)]);
         // Same circles as the tree cut-outs in Google's mesh (TREE_CUT_PAD_FT past each crown).
         const circles = trees.map((t) => [t.x - cx, -(t.y - cy), (t.radiusFt || 6) + TREE_CUT_PAD_FT]);
@@ -1606,7 +1744,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       bed.rotation.x = -Math.PI / 2;
       bed.position.y = MULCH_Y;
       bed.receiveShadow = true;
-      if (terrain) drape(bed, at);
+      if (sloped) drape(bed, at);
       scene.add(bed);
       bedMeshesRef.current.push(bed);
 
@@ -1684,7 +1822,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       slab.rotation.x = -Math.PI / 2;
       slab.position.y = MULCH_Y; // sits on the mulch, so a path crossing a converted lawn stays visible
       slab.receiveShadow = true;
-      if (terrain) drape(slab, at);
+      if (sloped) drape(slab, at);
       scene.add(slab);
       const edge = new THREE.LineLoop(
         new THREE.BufferGeometry().setFromPoints(poly.map((p) => new THREE.Vector3(p[0] - cx, at(p[0] - cx, -(p[1] - cy)) + MULCH_Y + depth + 0.02, -(p[1] - cy)))),
@@ -1710,9 +1848,14 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     });
 
     // Existing mature trees kept from the scan, sized to their scanned canopy.
+    // Each stands on the lowest ground under its crown (never on a roof, wall or
+    // lump in Google's mesh) and keeps its scanned height above that ground.
     trees.forEach((t) => {
       const mesh = buildExistingTree(t.radiusFt, t.heightFt);
-      mesh.position.set(t.x - cx, at(t.x - cx, -(t.y - cy)) + MULCH_Y, -(t.y - cy));
+      const [tx, tz] = [t.x - cx, -(t.y - cy)];
+      const reach = Math.max(2, (t.radiusFt || 6) * 0.5);
+      const base = Math.min(at(tx, tz), ...Array.from({ length: 8 }, (_, k) => at(tx + reach * Math.cos((k * Math.PI) / 4), tz + reach * Math.sin((k * Math.PI) / 4))));
+      mesh.position.set(tx, base + MULCH_Y, tz);
       mesh.userData.existingTree = true;
       mesh.userData.offLot = !onLot(t.x, t.y);
       scene.add(mesh);
@@ -1744,9 +1887,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       });
     });
 
-    applyLiftRef.current(); // a rebuilt planting keeps its Real 3D lift
     three.markDirty?.();
-  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, assetsVersion]);
+  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, groundFix, assetsVersion]);
 
   useEffect(() => {
     moveModeRef.current = moveMode;
@@ -2044,8 +2186,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
               aria-pressed={photoReal}
               title={locked ? 'Real 3D is part of Pro and the free student unlock' : 'Show the real house, trees and street in 3D from Google'}
             >
-              {photoStatus === 'loading' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : locked ? <Lock className="mr-1.5 h-4 w-4" /> : <Box className="mr-1.5 h-4 w-4" />}
-              Real 3D
+              {photoReal && photoStatus === 'loading' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : locked ? <Lock className="mr-1.5 h-4 w-4" /> : <Box className="mr-1.5 h-4 w-4" />}
+              {photoReal && photoStatus === 'loading' ? 'Setting up Real 3D…' : 'Real 3D'}
             </Button>
           )}
           {interactive && (
@@ -2069,7 +2211,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       </div>
 
       <div className="relative mt-3">
-        {photoReal && photoStatus !== 'off' ? (
+        {showReal ? (
           <span className="pointer-events-none absolute bottom-1.5 right-2 z-10 flex max-w-[85%] items-center gap-1.5 rounded bg-black/55 px-1.5 py-0.5 text-[9.5px] text-white">
             <span className="text-[11px] font-medium tracking-tight">Google</span>
             <span className="truncate">{photoCredit || 'Map data ©Google'}</span>
@@ -2079,9 +2221,15 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
             Imagery © Esri, Maxar, Earthstar Geographics
           </span>
         )}
-        {photoReal && photoStatus === 'ready' && (
+        {showReal && (
           <p className="pointer-events-none absolute left-3 top-3 z-10 max-w-[80%] rounded-lg bg-background/75 px-3 py-1.5 text-[11px] text-muted-foreground shadow backdrop-blur">
             Surroundings from Google 3D. Your property is our model of it, so the plan is never hidden.
+          </p>
+        )}
+        {photoReal && photoStatus === 'loading' && (
+          <p role="status" className="pointer-events-none absolute left-3 top-3 z-10 flex max-w-[85%] items-center gap-1.5 rounded-full bg-background/80 px-3 py-1 text-[11px] text-muted-foreground shadow backdrop-blur">
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+            Setting up Real 3D in the background. It appears here once it’s ready.
           </p>
         )}
         {photoReal && photoStatus === 'failed' && (
