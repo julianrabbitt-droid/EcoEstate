@@ -1632,8 +1632,20 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // available (Overture height or floors, or the canopy height model).
     const bAttr = project?.building || {};
     const roadPts = paths.filter((p) => ROAD_KINDS.has(p.kind)).flat().map((p) => [p[0] - cx, p[1] - cy]);
-    // View the property from its street (the nearest road point; plan y is north, scene z south).
-    const street = roadPts.reduce((best, p) => (!best || Math.hypot(...p) < Math.hypot(...best) ? p : best), null);
+    // View the property from its street: the nearest point on any road line
+    // (not just its vertices, which can be far down the block). Plan y is north, scene z south.
+    let street = null;
+    for (const road of paths.filter((p) => ROAD_KINDS.has(p.kind))) {
+      for (let i = 1; i < road.length; i++) {
+        const [ax, ay] = [road[i - 1][0] - cx, road[i - 1][1] - cy];
+        const [bx, by] = [road[i][0] - cx, road[i][1] - cy];
+        const ex = bx - ax;
+        const ey = by - ay;
+        const t = Math.max(0, Math.min(1, -(ax * ex + ay * ey) / (ex * ex + ey * ey || 1)));
+        const p = [ax + t * ex, ay + t * ey];
+        if (!street || Math.hypot(...p) < Math.hypot(...street)) street = p;
+      }
+    }
     if (street) three.setFront?.(street[0], -street[1]);
     buildings.forEach((poly) => {
       if (!poly || poly.length < 3) return;
