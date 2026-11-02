@@ -5,8 +5,11 @@ import * as THREE from 'three';
 // songbirds hopping through the beds and perching on shrubs. Only animals the
 // chosen plants feed (each plant's `wildlife` list) appear, and more of them as
 // the biodiversity score rises. Low-poly and drawn a little larger than life so
-// they read at garden scale. Plan feet; the 3D view's frame (z = -north).
+// they read at garden scale (SIZE). Plan feet; the 3D view's frame (z = -north).
 
+// How much larger than life each is drawn, so it can be spotted from the
+// overview of a whole yard.
+const SIZE = { butterfly: 2.6, bee: 3, hummingbird: 2.4, songbird: 1.8 };
 const KINDS = {
   butterfly: { tag: 'Butterflies', max: 10 },
   bee: { tag: 'Native bees', max: 12 },
@@ -154,6 +157,7 @@ export function createWildlife(spots, score, groundAt) {
   const animals = [];
   const add = (kind, model, targets, opts) => {
     if (!targets.length) return;
+    model.scale.setScalar(SIZE[kind]);
     group.add(model);
     const start = targets[Math.floor(random() * targets.length)];
     const pos = new THREE.Vector3(start.x, groundAt(start.x, start.z) + start.top + (kind === 'songbird' ? 0 : 0.3), start.z);
