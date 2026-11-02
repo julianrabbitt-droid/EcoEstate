@@ -41,6 +41,21 @@ export default function AppShell() {
     <div className="relative isolate flex min-h-screen flex-col">
       {/* The whole site sits on the same soft sage as the scan's backdrop. */}
       <div className="pointer-events-none fixed inset-0 -z-20" style={{ background: 'radial-gradient(120% 80% at 50% 0%, #dde4cf 0%, #e7eadd 55%, #f0f1e8 100%)' }} aria-hidden />
+      {/* Every other page opens under the same neighbourhood from above, washed
+          out and fading into the page (project pages show their own property). */}
+      {pathname !== '/' && !pathname.startsWith('/project/') && (
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[70vh] bg-cover bg-center opacity-50"
+          style={{
+            backgroundImage: 'url(/aerial-neighbourhood.jpg)',
+            maskImage: 'linear-gradient(180deg, #000 0%, rgba(0,0,0,.5) 45%, transparent 100%)',
+            WebkitMaskImage: 'linear-gradient(180deg, #000 0%, rgba(0,0,0,.5) 45%, transparent 100%)',
+          }}
+          aria-hidden
+        >
+          <div className="absolute inset-0 bg-[#e4e8da]/50" />
+        </div>
+      )}
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-full focus:bg-primary focus:px-4 focus:py-2 focus:text-[13px] focus:text-primary-foreground"
