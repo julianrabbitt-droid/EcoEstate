@@ -2,13 +2,20 @@
 // Planetary Computer: STAC search for the newest survey, a free anonymous SAS
 // token for the blob storage, and windowed reads of the Cloud-Optimized
 // GeoTIFFs with geotiff.js so only the pixels around the property are fetched.
-import { fromUrl } from 'geotiff';
+import { fromArrayBuffer, fromUrl } from 'geotiff';
 import { affineTo, crsForEpsg } from './grid.js';
 import { ApiError, UpstreamError, withTimeout } from './errors.js';
 import { LRU } from './lru.js';
 
 const STAC_SEARCH = 'https://planetarycomputer.microsoft.com/api/stac/v1/search';
 const SAS_URL = 'https://planetarycomputer.microsoft.com/api/sas/v1/token/naip';
+
+// The same NAIP surveys as published by USGS (The National Map), for when
+// Planetary Computer is down: a 4-band (red, green, blue, near-infrared) image
+// cut to the grid. Only the newest survey, without its date.
+const USGS_NAIP = 'https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPPlus/ImageServer/exportImage';
+const USGS_MAX_PX = 4000;
+const USGS_DATE = 'NAIP (USGS)';
 
 const OPEN_TIMEOUT_MS = 30000;
 const READ_TIMEOUT_MS = 120000;
@@ -85,9 +92,9 @@ export async function findNaip(box) {
       return res;
     }));
   } catch {
-    throw new UpstreamError('imagery', 'network');
+    return usgsItems(box); // Planetary Computer is down
   }
-  if (!r.ok) throw new UpstreamError('imagery', r.status);
+  if (!r.ok) return usgsItems(box);
   const items = (await r.json()).features ?? [];
   if (!items.length) throw new ApiError(404, 'imagery_not_found', 'No aerial imagery is available for this location.');
   const [year, previous] = [...new Set(items.map(yearOf))].sort((a, b) => b - a);
@@ -95,6 +102,48 @@ export async function findNaip(box) {
     .filter((it) => yearOf(it) === year || yearOf(it) === previous)
     .sort((a, b) => yearOf(b) - yearOf(a))
     .map((it) => ({ href: it.assets.image.href, epsg: epsgOf(it), gsd: it.properties.gsd, date: it.properties.datetime.slice(0, 10), year: yearOf(it) }));
+}
+
+// The USGS copy stands in as one survey, in NAD83 / UTM for the box.
+function usgsItems([w, , e]) {
+  const zone = Math.floor(((w + e) / 2 + 180) / 6) + 1;
+  return [{ source: 'usgs', href: USGS_NAIP, epsg: 26900 + zone, gsd: 0.6, date: USGS_DATE, year: 0 }];
+}
+
+async function readUsgs(grid) {
+  if (grid.w > USGS_MAX_PX || grid.h > USGS_MAX_PX) throw new UpstreamError('imagery', 'too large');
+  const params = new URLSearchParams({
+    bbox: [grid.x0, grid.y0 - grid.h * grid.res, grid.x0 + grid.w * grid.res, grid.y0].join(','),
+    bboxSR: String(grid.epsg),
+    imageSR: String(grid.epsg),
+    size: `${grid.w},${grid.h}`,
+    format: 'tiff',
+    pixelType: 'U8',
+    bandIds: '0,1,2,3',
+    interpolation: 'RSP_NearestNeighbor',
+    f: 'image',
+  });
+  let buf;
+  try {
+    buf = await retry(async () => {
+      const res = await fetch(`${USGS_NAIP}?${params}`, { signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
+      if (!res.ok || !/tiff/.test(res.headers.get('content-type') || '')) throw new Error(`USGS NAIP ${res.status}`);
+      return res.arrayBuffer();
+    });
+  } catch {
+    throw new UpstreamError('imagery', 'usgs');
+  }
+  const image = await (await fromArrayBuffer(buf)).getImage(0);
+  const data = await image.readRasters({ interleave: false });
+  const n = grid.w * grid.h;
+  const bands = [new Uint8Array(n), new Uint8Array(n), new Uint8Array(n), new Uint8Array(n)];
+  const filled = new Uint8Array(n);
+  for (let k = 0; k < n; k++) {
+    if (!data[0][k] && !data[1][k] && !data[2][k] && !data[3][k]) continue;
+    for (let b = 0; b < 4; b++) bands[b][k] = data[b][k];
+    filled[k] = 1;
+  }
+  return { red: bands[0], green: bands[1], blue: bands[2], nir: bands[3], filled, dates: filled.some(Boolean) ? [USGS_DATE] : [] };
 }
 
 // Cloud-Optimized GeoTIFFs carry reduced-resolution copies (overviews). For a
@@ -120,6 +169,7 @@ async function pickLevel(tiff, targetRes) {
  * are Uint8 per pixel (0 = no data) and rgb is interleaved for previews.
  */
 export async function readNaip(grid, items) {
+  if (items[0]?.source === 'usgs') return readUsgs(grid);
   const n = grid.w * grid.h;
   const bands = [new Uint8Array(n), new Uint8Array(n), new Uint8Array(n), new Uint8Array(n)];
   const filled = new Uint8Array(n);
