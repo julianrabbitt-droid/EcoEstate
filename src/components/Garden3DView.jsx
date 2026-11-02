@@ -5,7 +5,7 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { TilesRenderer } from '3d-tiles-renderer';
 import { GLTFExtensionsPlugin, GoogleCloudAuthPlugin, ReorientationPlugin, TileCompressionPlugin } from '3d-tiles-renderer/plugins';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Leaf, Loader2, Move, ScanEye, Sun, Wand2 } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Leaf, Loader2, Lock, Move, ScanEye, Sun, Wand2 } from 'lucide-react';
 import WalkThroughHandle from '@/components/WalkThroughHandle';
 import WalkSpeedControl from '@/components/WalkSpeedControl';
 import WalkMiniMap from '@/components/WalkMiniMap';
@@ -15,6 +15,8 @@ import { plantsForProject, regionForProject } from '@/data/regions';
 import { base44 } from '@/api/base44Client';
 import { arrangementsFor } from '@/data/arrangements';
 import { buildHouse, HOUSE_SHARED } from '@/lib/houseModel';
+import { usePremiumAccess } from '@/hooks/usePremiumAccess';
+import { useNavigate } from 'react-router-dom';
 import { plantModel, setSharedMarker } from '@/lib/plantModels';
 import { disposeObject } from '@/lib/disposeThree';
 import { arrangePlants, prepareBuildings, prepareLot, preparePolys, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
@@ -689,6 +691,11 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const [custom, setCustom] = useState(null);
   const [prompt, setPrompt] = useState('');
   const [designing, setDesigning] = useState(false);
+  // Real 3D and design-from-a-sentence are in the paid plans (Pro, student
+  // unlock, city partners); free accounts see them locked with a link to Plans.
+  const { member, loading: accessLoading } = usePremiumAccess();
+  const navigateTo = useNavigate();
+  const locked = !accessLoading && !member;
   const [designError, setDesignError] = useState('');
 
   const regionPlants = useMemo(() => plantsForProject(project), [project]);
@@ -1090,7 +1097,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   // below the beds (measured by casting down onto the mesh as tiles load).
   useEffect(() => {
     const three = threeRef.current;
-    if (!photoReal || !three || !origin || !GOOGLE_TILES_KEY) {
+    if (!photoReal || locked || !three || !origin || !GOOGLE_TILES_KEY) {
       setPhotoStatus('off');
       setPhotoCredit('');
       return undefined;
@@ -1220,9 +1227,13 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       }
       markDirty();
     };
-  }, [photoReal, origin, cx, cy, maxDim]);
+  }, [photoReal, locked, origin, cx, cy, maxDim]);
 
   const togglePhotoReal = () => {
+    if (locked) {
+      navigateTo('/plans');
+      return;
+    }
     setPhotoReal((on) => {
       try {
         localStorage.setItem(PHOTO_PREF, on ? '0' : '1');
@@ -1842,9 +1853,9 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
               className="rounded-full"
               size="sm"
               aria-pressed={photoReal}
-              title="Show the real house, trees and street in 3D from Google"
+              title={locked ? 'Real 3D is part of Pro and the free student unlock' : 'Show the real house, trees and street in 3D from Google'}
             >
-              {photoStatus === 'loading' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Box className="mr-1.5 h-4 w-4" />}
+              {photoStatus === 'loading' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : locked ? <Lock className="mr-1.5 h-4 w-4" /> : <Box className="mr-1.5 h-4 w-4" />}
               Real 3D
             </Button>
           )}
@@ -1963,10 +1974,16 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
             className="field h-9 flex-1 text-[12.5px]"
             onKeyDown={(e) => { if (e.key === 'Enter' && !designing) runTypeDesign(); }}
           />
-          <Button type="button" onClick={runTypeDesign} disabled={designing || !regionPlantIds.size || prompt.trim().length < 3} className="rounded-full" size="sm">
-            {designing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Wand2 className="mr-1.5 h-4 w-4" />}
-            {designing ? 'Designing…' : 'Design from text'}
-          </Button>
+          {locked ? (
+            <Button type="button" variant="outline" onClick={() => navigateTo('/plans')} className="rounded-full" size="sm">
+              <Lock className="mr-1.5 h-4 w-4" /> Design from text: Pro or student
+            </Button>
+          ) : (
+            <Button type="button" onClick={runTypeDesign} disabled={designing || !regionPlantIds.size || prompt.trim().length < 3} className="rounded-full" size="sm">
+              {designing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Wand2 className="mr-1.5 h-4 w-4" />}
+              {designing ? 'Designing…' : 'Design from text'}
+            </Button>
+          )}
         </div>
         {designError && <p className="mt-1.5 text-[11px] leading-relaxed text-destructive">{designError}</p>}
       </div>

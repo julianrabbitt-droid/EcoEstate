@@ -1,4 +1,4 @@
-// Server-side entitlement checks for EcoEstate. Scanning and the 3D Garden View
+// Server-side entitlement checks for EcoEstate (the Plans page shows them). Scanning and the 3D Garden View
 // are free for everyone signed in. EcoEstate Pro ($10/month) unlocks the
 // community (Social) and project tracking (My projects); a verified school
 // email unlocks the same features for free (the '3d_view' grant, kept under its

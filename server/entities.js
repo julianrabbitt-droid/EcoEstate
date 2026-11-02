@@ -102,6 +102,16 @@ export async function isPremiumMember(user) {
   return paid.some((p) => MEMBER_PRODUCTS.has(p.productId) && purchaseCounts(p));
 }
 
+// Pro (or admin): unlimited saved properties. The student/educator unlock
+// browses its most recent STUDENT_SAVED_LIMIT.
+export const STUDENT_SAVED_LIMIT = 10;
+async function isProMember(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const paid = await records.find('Base44Purchase', { appUserId: user.id, status: 'paid', productId: 'premium' });
+  return paid.some(purchaseCounts);
+}
+
 // Returns an entity API for one caller. `service: true` bypasses access rules,
 // which is what backend functions get through base44.asServiceRole.
 export function entityService(name, user, { service = false } = {}) {
@@ -142,7 +152,11 @@ export function entityService(name, user, { service = false } = {}) {
         const start = Number(skip) || 0;
         return sorted.slice(start, limit ? start + Number(limit) : undefined);
       }
-      const visible = (await records.find(name, query, { sort })).filter((r) => can('read', r));
+      let visible = (await records.find(name, query, { sort })).filter((r) => can('read', r));
+      if (schema.premiumList && !service && !(await isProMember(user))) {
+        // Student plan: the most recent saved properties only.
+        visible = visible.sort((a, b) => String(b.created_date).localeCompare(String(a.created_date))).slice(0, STUDENT_SAVED_LIMIT);
+      }
       const start = Number(skip) || 0;
       return visible.slice(start, limit ? start + Number(limit) : undefined).map(view);
     },

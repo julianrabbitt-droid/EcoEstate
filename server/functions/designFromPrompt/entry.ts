@@ -1,4 +1,8 @@
-// Deterministic garden designer.
+import { createClientFromRequest } from '../../sdk.js';
+import { hasPremiumFeatures } from '../../shared/entitlements.ts';
+
+// Deterministic garden designer. Part of the paid plans (Pro, the
+// student/educator unlock, city partners): checked here, not just in the page.
 //
 // Replaces the previous LLM call. Scores every plant in the supplied catalog
 // against the user's free-text description and the site's sun exposure, picks
@@ -76,6 +80,11 @@ function scorePlant(plant, promptLower, tokens, siteSun) {
 
 export default async function (req) {
   try {
+    const base44 = createClientFromRequest(req);
+    const user = await base44.auth.me().catch(() => null);
+    if (!user || !(await hasPremiumFeatures(base44, user.id))) {
+      return Response.json({ error: 'Designing from a sentence is part of EcoEstate Pro and the free student unlock. See Plans.' }, { status: 402 });
+    }
     const { prompt, catalog, sun } = await req.json().catch(() => ({}));
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length < 3)
       return Response.json({ error: 'Describe the garden you want.' }, { status: 400 });
