@@ -13,6 +13,7 @@ import TrackingSettings from '@/components/tracking/TrackingSettings';
 import TrackingUpsell from '@/components/tracking/TrackingUpsell';
 import { convertedSqft, sortEntries } from '@/lib/trackingMath';
 import { useConfirm } from '@/components/ConfirmProvider';
+import { cleanAddress } from '@/lib/geo';
 
 // One tracked project: connected property, progress form, impact dashboard,
 // settings and the update timeline.
@@ -140,7 +141,7 @@ export default function TrackedProject() {
       <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="label-xs">Tracking since {tracked.startDate ? new Date(`${tracked.startDate}T00:00`).toLocaleDateString() : '—'}</p>
-          <h1 className="mt-2 font-display text-3xl tracking-tight sm:text-[2.4rem]">{tracked.name || tracked.address}</h1>
+          <h1 className="mt-2 font-display text-3xl tracking-tight sm:text-[2.4rem]">{tracked.name || cleanAddress(tracked.address)}</h1>
           <Link to={`/project/${tracked.projectId}`} className="mt-1.5 inline-flex items-center gap-1 text-[12.5px] text-muted-foreground underline underline-offset-2 hover:text-foreground">
             View scanned property <ExternalLink className="h-3 w-3" />
           </Link>
@@ -154,10 +155,10 @@ export default function TrackedProject() {
               onChange={(e) => reconnect(e.target.value)}
               className="field mt-1.5 h-10 max-w-xs"
             >
-              {!scanned.some((p) => p.id === tracked.projectId) && <option value={tracked.projectId}>{tracked.address}</option>}
+              {!scanned.some((p) => p.id === tracked.projectId) && <option value={tracked.projectId}>{cleanAddress(tracked.address)}</option>}
               {scanned.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.address}
+                  {cleanAddress(p.address)}
                   {scanned.filter((o) => o.address === p.address).length > 1 && (p.createdAt || p.created_date)
                     ? ` · scanned ${new Date(p.createdAt || p.created_date).toLocaleDateString()}`
                     : ''}

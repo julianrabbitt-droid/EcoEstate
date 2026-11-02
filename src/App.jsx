@@ -1,3 +1,4 @@
+import { lazy } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
@@ -20,17 +21,20 @@ import { Cookies, Privacy, Refunds, Terms } from '@/pages/Legal';
 import WhyNative from '@/pages/WhyNative';
 import Examples from '@/pages/Examples';
 import Plans from '@/pages/Plans';
-import Admin from '@/pages/Admin';
+import Cities from '@/pages/Cities';
 // Add page imports here
 import Scan from '@/pages/Scan';
-import Analysis from '@/pages/Analysis';
-import Design from '@/pages/Design';
-import Impact from '@/pages/Impact';
-import Plan from '@/pages/Plan';
-import Projects from '@/pages/Projects';
-import Social from '@/pages/Social';
-import MyProjects from '@/pages/MyProjects';
-import TrackedProject from '@/pages/TrackedProject';
+// Pages past the first screen load on demand, so the homepage doesn't wait for
+// the 3D engine, charts or the community (AppShell shows a loader meanwhile).
+const Admin = lazy(() => import('@/pages/Admin'));
+const Analysis = lazy(() => import('@/pages/Analysis'));
+const Design = lazy(() => import('@/pages/Design'));
+const Impact = lazy(() => import('@/pages/Impact'));
+const Plan = lazy(() => import('@/pages/Plan'));
+const Projects = lazy(() => import('@/pages/Projects'));
+const Social = lazy(() => import('@/pages/Social'));
+const MyProjects = lazy(() => import('@/pages/MyProjects'));
+const TrackedProject = lazy(() => import('@/pages/TrackedProject'));
 
 // Community and Messages now live under Social; old links keep working.
 // The old Legacy step now lives in Payoff.
@@ -106,6 +110,7 @@ const AuthenticatedApp = () => {
         <Route path="/why-native" element={<WhyNative />} />
         <Route path="/examples" element={<Examples />} />
         <Route path="/plans" element={<Plans />} />
+        <Route path="/cities" element={<Cities />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/cookies" element={<Cookies />} />

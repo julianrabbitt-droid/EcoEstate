@@ -8,16 +8,19 @@ import LawnImpact from '@/components/scan/LawnImpact';
 import { geoJsonOuterRings } from '@/lib/geo';
 
 const IMAGERY = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-const PARCEL_STYLE = { color: '#f7f3ea', weight: 2, dashArray: '6 5', fillOpacity: 0 };
+// The property line is white over a dark halo, and the lawn a clear green with
+// a bright edge drawn above trees and buildings, so both read on any imagery.
+const PARCEL_HALO_STYLE = { color: '#14211a', weight: 5, opacity: 0.45, fillOpacity: 0 };
+const PARCEL_STYLE = { color: '#ffffff', weight: 2.5, dashArray: '7 5', fillOpacity: 0 };
 // What the 3D model is built from, drawn on the same map as the lawn.
 const BUILDING_STYLE = { color: '#e9e2d4', weight: 1.5, fillColor: '#b9ad99', fillOpacity: 0.45 };
-const TREE_STYLE = { color: '#2f5a2a', weight: 1, fillColor: '#3f6b35', fillOpacity: 0.45 };
-const NEARBY_TREE_STYLE = { ...TREE_STYLE, dashArray: '3 3', fillOpacity: 0.25 };
+const TREE_STYLE = { color: '#2f5a2a', weight: 1, fillColor: '#3f6b35', fillOpacity: 0.3 };
+const NEARBY_TREE_STYLE = { ...TREE_STYLE, dashArray: '3 3', fillOpacity: 0.18 };
 const ESTIMATE_STYLE = { color: '#f0a03c', weight: 2.5, dashArray: '6 5', fillColor: '#f0a03c', fillOpacity: 0.08 };
-const LAWN_STYLE = { color: '#f0f4ec', weight: 1.5, fillColor: '#7d8f6e', fillOpacity: 0.45 };
+const LAWN_STYLE = { color: '#d9ffb8', weight: 2.5, fillColor: '#4fbf3f', fillOpacity: 0.5 };
 // Small isolated patches (counted in the total) are drawn faintly so the main
 // lawn regions stand out.
-const SCATTERED_STYLE = { color: '#7d8f6e', weight: 0, fillColor: '#7d8f6e', fillOpacity: 0.25 };
+const SCATTERED_STYLE = { color: '#d9ffb8', weight: 1, fillColor: '#4fbf3f', fillOpacity: 0.35 };
 // Roads dark with a pale curb line, paths light with darker edging, so both
 // stand out against lawn and imagery.
 const ROAD_KINDS = new Set(['service', 'living_street', 'residential', 'unclassified', 'tertiary', 'secondary', 'primary']);
@@ -150,14 +153,15 @@ export default function LawnApiResult({ data, onConfirm, onEdit, onRescan, onRem
               <EditableLine corners={corners} onChange={setCorners} />
             ) : (
               <>
-                {data.parcel?.geometry && <GeoJSON key={`p-${data.parcel.id}`} data={data.parcel.geometry} style={PARCEL_STYLE} />}
-                {lawnCount > 0 && <GeoJSON key={`l-${data.parcel?.id}`} data={data.lawn} style={lawnStyle} />}
                 {data.paths?.features?.length > 0 && <GeoJSON key={`w-${data.parcel?.id}`} data={data.paths} style={pathStyle} />}
                 {data.nearbyRoads?.features?.length > 0 && <GeoJSON key={`r-${data.parcel?.id}`} data={data.nearbyRoads} style={pathStyle} />}
                 {data.buildings?.features?.length > 0 && <GeoJSON key={`b-${data.parcel?.id}`} data={data.buildings} style={BUILDING_STYLE} />}
                 {(data.trees || []).map((t, i) => (
                   <Circle key={`t-${i}`} center={[t.lat, t.lon]} radius={(t.radiusFt || 6) * 0.3048} pathOptions={t.street ? NEARBY_TREE_STYLE : TREE_STYLE} />
                 ))}
+                {lawnCount > 0 && <GeoJSON key={`l-${data.parcel?.id}`} data={data.lawn} style={lawnStyle} />}
+                {data.parcel?.geometry && <GeoJSON key={`ph-${data.parcel.id}`} data={data.parcel.geometry} style={PARCEL_HALO_STYLE} interactive={false} />}
+                {data.parcel?.geometry && <GeoJSON key={`p-${data.parcel.id}`} data={data.parcel.geometry} style={PARCEL_STYLE} interactive={false} />}
               </>
             )}
             <FitTo geo={data.parcel?.geometry} fallback={center} />
@@ -169,7 +173,7 @@ export default function LawnApiResult({ data, onConfirm, onEdit, onRescan, onRem
         {!adjusting && (
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
             <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-dashed border-foreground/60" />{data.parcelSource === 'place' ? 'Property outline (OpenStreetMap)' : `Property line${data.parcelSource === 'user' ? ' (adjusted)' : ''}`}</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#7d8f6e]" />Lawn</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-[#2f7a25] bg-[#4fbf3f]" />Lawn</span>
             {data.buildings?.features?.length > 0 && <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#b9ad99]" />Buildings</span>}
             {data.trees?.length > 0 && <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#3f6b35]" />Trees (dashed: next to the property)</span>}
             {data.surveyDate && <span className="ml-auto">Aerial survey {data.surveyDate}</span>}
@@ -199,11 +203,13 @@ export default function LawnApiResult({ data, onConfirm, onEdit, onRescan, onRem
             {data.parcel?.areaSqft ? ` · lot ${data.parcel.areaSqft.toLocaleString()} sq ft` : ''}
             {lawnCount === 0 ? ' · No green lawn was detected on this property.' : ''}
             {scattered ? ` · includes ${scattered.areaSqft.toLocaleString()} sq ft in ${scattered.patches} small scattered patches (shown faintly)` : ''}
+            {data.dormant?.sqft >= 50 ? ` · includes ${data.dormant.sqft.toLocaleString()} sq ft of lawn that was dry when the survey was flown` : ''}
           </p>
           <p className="mt-1 px-4 text-[10.5px] leading-relaxed text-muted-foreground">
             This 2D plan is what your 3D model is built from: lawn from green in the aerial survey, minus anything a
-            height map shows is taller than about 3 ft; buildings and trees from public map and canopy data. Brown or
-            dormant lawn isn’t picked up, so edit the plan if something is off.
+            height map or USGS lidar shows is taller than about 2 ft; lawn that was dry when the survey was flown is
+            found from the survey before. Buildings and trees come from public map, canopy and lidar data. If something
+            is off, edit the plan.
           </p>
 
           <div className="flex flex-col gap-2 px-4 py-4 sm:flex-row">

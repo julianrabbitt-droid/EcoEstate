@@ -1,6 +1,7 @@
-// Building footprints and road/path segments from Overture Maps (which merges
-// Microsoft, Google and OpenStreetMap data). The latest release is found
-// through Overture's STAC catalog; each GeoParquet file and row group carries
+// Building footprints, road/path segments and address points from Overture
+// Maps (which merges Microsoft, Google and OpenStreetMap buildings, and
+// county and city address lists). The latest release is found through
+// Overture's STAC catalog; each GeoParquet file and row group carries
 // bounding-box statistics, so only the few MB of rows near the address are
 // downloaded.
 import { asyncBufferFromUrl, parquetMetadataAsync, parquetReadObjects } from 'hyparquet';
@@ -14,14 +15,23 @@ const READ_TIMEOUT_MS = 30000;
 
 const BUILDINGS = 'buildings/building';
 const SEGMENTS = 'transportation/segment';
+const ADDRESSES = 'addresses/address';
 const indexes = new Map(); // collection -> { release, files: [{ bbox, url }], loadedAt }
 const indexLoads = new Map(); // collection -> Promise<index> while (re)loading, shared by concurrent callers
 const footers = new LRU(64); // url -> { file, metadata, starts }
 
-// fetch for hyparquet's range requests, with a timeout on each one.
-function timedFetch(url, init = {}) {
-  const timeout = AbortSignal.timeout(READ_TIMEOUT_MS);
-  return fetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
+// fetch for hyparquet's range requests, with a timeout on each one. A dropped
+// connection (S3 closes some under load) is retried twice before giving up.
+async function timedFetch(url, init = {}) {
+  for (let attempt = 0; ; attempt++) {
+    const timeout = AbortSignal.timeout(READ_TIMEOUT_MS);
+    try {
+      return await fetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
+    } catch (err) {
+      if (attempt >= 2 || init.signal?.aborted || err.name === 'TimeoutError') throw err;
+      await new Promise((done) => setTimeout(done, 500 * (attempt + 1)));
+    }
+  }
 }
 
 async function json(url) {
@@ -124,6 +134,21 @@ export async function segmentsInBox(box) {
     out.set(row.id, { kind, name: row.names?.primary || null, widthM: null, line: row.geometry.coordinates.map(([x, y]) => [x, y]) });
   }
   return [...out.values()];
+}
+
+/**
+ * Address points (house number and street, placed on the property by the
+ * county or city that publishes them) inside [west, south, east, north].
+ * Returns [{ number, street, unit, postcode, lon, lat }].
+ */
+export async function addressesInBox(box) {
+  const out = [];
+  for (const row of await rowsInBox(ADDRESSES, box, ['bbox', 'geometry', 'number', 'street', 'unit', 'postcode'])) {
+    if (row.geometry?.type !== 'Point' || !row.number || !row.street) continue;
+    const [lon, lat] = row.geometry.coordinates;
+    out.push({ number: String(row.number), street: String(row.street), unit: row.unit ?? null, postcode: row.postcode ?? null, lon, lat });
+  }
+  return out;
 }
 
 async function rowsInBox(collectionPath, box, columns) {

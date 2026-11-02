@@ -9,6 +9,7 @@
 // Endpoints
 //   GET  /health
 //   GET  /v1/lawn?address=...     full lookup (main endpoint); optional osm=W123 (a picked place) or lat/lon (a picked point)
+//   GET  /v1/locate?address=...   where an address is, for the app to confirm before scanning
 //   POST /v1/lawn                 same, for a property line the user adjusted
 //   POST /v1/area                 square footage + impact for a polygon your app supplies (e.g. user-drawn or edited)
 
@@ -19,6 +20,7 @@ import cors from 'cors';
 import turfArea from '@turf/area';
 import { ApiError, ConfigError, UpstreamError } from './lib/errors.js';
 import { geocode } from './lib/geocode.js';
+import { addressPoint, refineLocation } from './lib/addressPoint.js';
 import { COUNTIES, findCountyParcel } from './lib/parcels.js';
 import { estimateParcel } from './lib/estimate.js';
 import { placeById, placeByName } from './lib/places.js';
@@ -101,6 +103,7 @@ app.get('/v1/lawn', async (req, res) => {
         }
         throw err;
       });
+      if (location) location = await refineLocation(address, location);
       if (!location) {
         place = await placeByName(address).catch(() => null);
         if (place && place.countryCode && place.countryCode !== 'US') place = null;
@@ -128,6 +131,30 @@ app.get('/v1/lawn', async (req, res) => {
 
 // ---------- Re-measure inside a property line the user adjusted ----------
 // Body: { "parcel": <GeoJSON Polygon | MultiPolygon | Feature>, "address"?: string, "location"?: { lat, lon }, "assumptions"?: {...} }
+// Where an address is, before scanning: the app shows this point for the
+// person to confirm. With lat/lon (the app's own lookup) only the published
+// address point is checked, quickly; without, the address is geocoded too.
+//   GET /v1/locate?address=...[&lat=..&lon=..]
+app.get('/v1/locate', async (req, res) => {
+  const address = String(req.query.address || '').trim();
+  if (!address) return fail(res, 400, 'missing_address', 'Pass an address.');
+  const lat = Number(req.query.lat);
+  const lon = Number(req.query.lon);
+  try {
+    if (req.query.lat !== undefined && Number.isFinite(lat) && Number.isFinite(lon)) {
+      const point = await Promise.race([addressPoint(address, { lat, lon }), new Promise((done) => setTimeout(() => done(null), 4000))]).catch(() => null);
+      return res.json(point ? { lat: point.lat, lon: point.lon, accuracy: 'address_point', movedM: point.movedM } : { lat, lon, accuracy: 'unchanged', movedM: 0 });
+    }
+    res.set('x-usage', 'geocodio=1');
+    const found = await geocode(address);
+    if (!found) return fail(res, 404, 'address_not_found', 'That address wasn’t found. Add the city and state, or check the spelling.');
+    const location = await refineLocation(address, found);
+    res.json({ lat: location.lat, lon: location.lon, label: location.label, accuracy: location.accuracy, movedM: location.movedM ?? 0, city: location.city, state: location.state, zip: location.zip });
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
 app.post('/v1/lawn', async (req, res) => {
   const { address = null, location = null, assumptions = {} } = req.body ?? {};
   const geometry = req.body?.parcel?.type === 'Feature' ? req.body.parcel.geometry : req.body?.parcel;
@@ -190,6 +217,7 @@ async function lawnResponse({ address, location, parcel, parcelSource, query }) 
     buildings: detection.buildings,
     trees: detection.trees,
     lidar: detection.lidar,
+    dormant: detection.dormant,
     paths: detection.paths,
     nearbyRoads: detection.nearbyRoads,
     impact: impact(detection.totalSqft, query),
@@ -270,4 +298,8 @@ function handleError(res, err) {
   fail(res, 500, 'internal_error', 'Something went wrong processing this property.');
 }
 
-app.listen(PORT, () => console.log(`Lawn-to-native API on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Lawn-to-native API on http://localhost:${PORT}`);
+  // Load Overture's address index now, so the first address check isn't slow.
+  addressPoint('1 Warm Up St', { lat: 0, lon: 0 }).catch(() => {});
+});

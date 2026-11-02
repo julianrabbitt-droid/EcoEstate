@@ -11,6 +11,7 @@ import { designOrDefault, financials, money, num } from '@/lib/landscapeMath';
 import { buildSchedule } from '@/lib/buildSchedule';
 import ProjectExports from '@/components/ProjectExports';
 import { useRebates } from '@/hooks/useRebates';
+import { cleanAddress } from '@/lib/geo';
 
 const STEPS = [
   ['Mark the beds', 'Spray the outline of the new beds with marking paint, then strip turf or sheet-mulch it with cardboard.'],
@@ -88,7 +89,7 @@ export default function Plan() {
   const materialsTotal = rows.reduce((sum, row) => sum + row.cost, 0);
 
   const brief = [
-    `Property: ${project.address}`,
+    `Property: ${cleanAddress(project.address)}`,
     `Convertible turf: ${num(fin.turfSqft)} sq ft`,
     `Species: ${design.map((entry) => `${plantById(entry.speciesId)?.common} × ${entry.quantity}`).join(', ')}`,
     `Estimated water saved: ${num(fin.gallonsSaved)} gallons/year`,
@@ -117,7 +118,7 @@ export default function Plan() {
             Make this garden real
           </h1>
           <p className="mt-1.5 text-[13px] text-muted-foreground">
-            {project.address} · {design.length} species · {money(materialsTotal)} in materials and labor
+            {cleanAddress(project.address)} · {design.length} species · {money(materialsTotal)} in materials and labor
           </p>
         </div>
         <div className="flex gap-2">
@@ -253,7 +254,7 @@ export default function Plan() {
         <section className="surface p-5">
           <h2 className="text-[15px] font-medium tracking-tight">Local organizations</h2>
           <p className="mt-0.5 text-[11.5px] text-muted-foreground">
-            Groups that run planting projects {project.city ? <>in <span className="text-foreground">{project.city}</span> and nearby</> : `near ${project.address}`}. Showing matches {RANGE_LABEL}.
+            Groups that run planting projects {project.city ? <>in <span className="text-foreground">{project.city}</span> and nearby</> : `near ${cleanAddress(project.address)}`}. Showing matches {RANGE_LABEL}.
           </p>
           <ul className="mt-4 space-y-4">
             {shownOrgs.map((org) => (

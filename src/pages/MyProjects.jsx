@@ -10,6 +10,7 @@ import SignedImage from '@/components/tracking/SignedImage';
 import TrackingUpsell from '@/components/tracking/TrackingUpsell';
 import { estimatedWaterSavedPerYear, fmtNum, fmtUsd, percentConverted } from '@/lib/trackingMath';
 import { useConfirm } from '@/components/ConfirmProvider';
+import { cleanAddress } from '@/lib/geo';
 
 // Paid feature: tracked real-world conversions of the user's scanned properties.
 // `?project=<scanned property id>` (from Build / Legacy / My properties) starts
@@ -31,7 +32,7 @@ export default function MyProjects() {
   // Stops tracking a property: deletes the tracked project with its progress
   // updates. The scanned property itself is kept.
   const removeTracked = async (t) => {
-    if (!(await confirm({ title: `Remove “${t.name || t.address}” from My projects?`, description: 'Its progress updates will be deleted. The scanned property stays in My properties.', confirmLabel: 'Remove' }))) return;
+    if (!(await confirm({ title: `Remove “${t.name || cleanAddress(t.address)}” from My projects?`, description: 'Its progress updates will be deleted. The scanned property stays in My properties.', confirmLabel: 'Remove' }))) return;
     setRemoving(t.id);
     setError('');
     try {
@@ -139,7 +140,7 @@ export default function MyProjects() {
                       {t.coverPhotoUri && <SignedImage uri={t.coverPhotoUri} className="h-36 w-full object-cover" />}
                       <div className="p-5">
                         <div className="flex items-start justify-between gap-2">
-                          <p className="font-display text-[19px] leading-snug tracking-tight">{t.name || t.address}</p>
+                          <p className="font-display text-[19px] leading-snug tracking-tight">{t.name || cleanAddress(t.address)}</p>
                           <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                         </div>
                         <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-secondary">
@@ -166,7 +167,7 @@ export default function MyProjects() {
                       type="button"
                       onClick={() => removeTracked(t)}
                       disabled={removing === t.id}
-                      aria-label={`Remove ${t.name || t.address} from My projects`}
+                      aria-label={`Remove ${t.name || cleanAddress(t.address)} from My projects`}
                       title="Remove from My projects"
                       className="absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card/90 text-muted-foreground transition hover:border-destructive/40 hover:text-destructive disabled:opacity-50"
                     >
@@ -193,7 +194,7 @@ export default function MyProjects() {
                 {available.map((p) => (
                   <li key={p.id} className={`flex flex-wrap items-center justify-between gap-3 py-3 ${p.id === wanted ? 'rounded-lg bg-accent/5 px-3' : ''}`}>
                     <div>
-                      <p className="text-[13.5px] font-medium">{p.address}</p>
+                      <p className="text-[13.5px] font-medium">{cleanAddress(p.address)}</p>
                       <p className="text-[11.5px] text-muted-foreground">{fmtNum(p.breakdown?.turf || 0)} sq ft of lawn</p>
                     </div>
                     <Button size="sm" onClick={() => start(p.id)} disabled={!!starting} className="rounded-full">

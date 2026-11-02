@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Leaf, Loader2 } from 'lucide-react';
-import { getLawn, getLawnForParcel, measureArea, mergeLawnOutlines } from '@/api/lawnApi';
+import { getLawn, getLawnForParcel, locateAddress, measureArea, mergeLawnOutlines } from '@/api/lawnApi';
 import LocationConfirm from '@/components/scan/LocationConfirm';
 import { Button } from '@/components/ui/button';
 import MethodPicker from '@/components/scan/MethodPicker';
@@ -112,7 +112,7 @@ export default function Scan() {
 
   const buildProject = async (over) =>
     createProject({
-      address: shortAddress(place?.label) || query.trim() || 'Your property',
+      address: place?.short || shortAddress(place?.label) || query.trim() || 'Your property',
       zip: place?.zip || '',
       city: place?.city || '',
       state: place?.state || '',
@@ -202,8 +202,28 @@ export default function Scan() {
         setLoading(false);
       }
     }
+    const hasPoint = hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng);
+    // A street address (not a named site with its own outline) is moved onto the
+    // county's published address point when there is one. If our quick lookup
+    // missed the address entirely, the lawn service looks it up instead.
+    if (!hasPoint || (hit.outlineKind !== 'site' && /^\s*\d/.test(address))) {
+      setLoading(true);
+      setPhase('locating');
+      try {
+        const found = await locateAddress(address, hasPoint ? hit : null);
+        if (hasPoint) {
+          if (found.accuracy === 'address_point' && found.movedM > 3) hit = { ...hit, lat: found.lat, lng: found.lon, osm: undefined, accuracy: 'address_point' };
+        } else {
+          hit = { lat: found.lat, lng: found.lon, label: found.label || address, zip: found.zip || '', city: found.city || '', state: found.state || '', countryCode: 'US', country: 'United States', outline: null, outlineKind: 'unknown', accuracy: found.accuracy };
+        }
+      } catch {
+        /* keep the quick lookup's point; the person can still move the pin */
+      } finally {
+        setLoading(false);
+      }
+    }
     if (!hit || !Number.isFinite(hit.lat) || !Number.isFinite(hit.lng)) {
-      // Our quick lookup missed it; the lawn service has its own geocoder, so scan directly.
+      // Nothing found anywhere: scan directly so the lawn service's message is shown.
       scanAddress(address);
       return;
     }
@@ -257,7 +277,7 @@ export default function Scan() {
     if (!d || d.lawnSqft < 1) return;
     const confidences = (d.lawn?.features || []).map((f) => f.properties?.confidence).filter((c) => typeof c === 'number');
     const rec = await buildProject({
-      address: (place?.label || d.address || '').split(',').slice(0, 3).join(', '),
+      address: place?.short || shortAddress(place?.label || d.address),
       center: [d.location.lat, d.location.lon],
       boundary: geoJsonOuterRings(d.lawn),
       totalSqft: d.lawnSqft,
@@ -376,7 +396,7 @@ export default function Scan() {
           </form>
           {note && <p className="mt-3 max-w-md text-[13px] leading-relaxed text-muted-foreground">{note}</p>}
           <p className="mt-4 max-w-md text-[13px] leading-relaxed text-muted-foreground">
-            Free, no account needed. US addresses scan automatically; elsewhere you can outline your lawn by hand.{' '}
+            Free. Sign in with a free account and US addresses scan automatically; without one, or outside the US, you can outline your lawn by hand.{' '}
             <Link to="/examples" className="font-medium text-foreground underline underline-offset-4">See real examples</Link>
           </p>
 
@@ -405,8 +425,9 @@ export default function Scan() {
             ) : phase === 'confirm' && pending ? (
               <LocationConfirm
                 key={`${pending.hit.lat},${pending.hit.lng}`}
-                label={shortAddress(pending.hit.label) || pending.address}
+                label={pending.hit.short || shortAddress(pending.hit.label) || pending.address}
                 point={[pending.hit.lat, pending.hit.lng]}
+                estimated={['range_interpolation', 'nearest_rooftop_match', 'point'].includes(pending.hit.accuracy)}
                 onConfirm={confirmLocation}
                 onCancel={() => { setPending(null); setPhase('idle'); }}
               />
@@ -574,8 +595,10 @@ export default function Scan() {
           </Button>
         </div>
         <p className="mx-auto mt-12 w-full max-w-6xl px-5 text-[13px] leading-relaxed text-muted-foreground">
-          Scanning, design and the 3D view are free. Pro ($10/month) adds tracking, exports and the community, and is
-          free with a school email. Questions?{' '}
+          Scanning, design and the 3D model are free with an account. Pro ($10/month) adds Real 3D, design from a
+          sentence, project tracking, exports and the community; students and educators get all of it except exports
+          free with a school email.{' '}
+          <Link to="/plans" className="text-foreground underline underline-offset-4">Compare plans</Link>. Questions?{' '}
           <a href="mailto:support@ecoestate.org" className="text-foreground underline underline-offset-4">support@ecoestate.org</a>
         </p>
       </section>

@@ -1,5 +1,6 @@
+import { Suspense } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
-import { Sprout } from 'lucide-react';
+import { Loader2, Sprout } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import AccountMenu from '@/components/AccountMenu';
 import AuthModal from '@/components/AuthModal';
@@ -58,7 +59,15 @@ export default function AppShell() {
       </header>
 
       <main id="main" tabIndex={-1} className="flex-1 focus:outline-none">
-        <Outlet />
+        <Suspense
+          fallback={
+            <div className="flex min-h-[50vh] items-center justify-center" role="status" aria-label="Loading">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          }
+        >
+          <Outlet />
+        </Suspense>
       </main>
 
       <AuthModal />
@@ -75,6 +84,7 @@ export default function AppShell() {
           </div>
           <nav aria-label="Legal" className="flex flex-wrap gap-x-4 gap-y-1">
             <Link to="/plans" className="underline-offset-2 hover:underline">Plans</Link>
+            <Link to="/cities" className="underline-offset-2 hover:underline">For cities</Link>
             <Link to="/privacy" className="underline-offset-2 hover:underline">Privacy</Link>
             <Link to="/terms" className="underline-offset-2 hover:underline">Terms</Link>
             <Link to="/refunds" className="underline-offset-2 hover:underline">Refunds</Link>

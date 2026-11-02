@@ -3,6 +3,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { Line2 } from 'three/examples/jsm/lines/Line2.js';
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { TilesRenderer } from '3d-tiles-renderer';
 import { GLTFExtensionsPlugin, GoogleCloudAuthPlugin, ReorientationPlugin, TileCompressionPlugin } from '3d-tiles-renderer/plugins';
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Leaf, Loader2, Lock, Move, ScanEye, Sun, Wand2 } from 'lucide-react';
@@ -72,6 +75,9 @@ const clipUniforms = {
   uEcoTrees: { value: new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1) },
   uEcoGround: { value: new THREE.DataTexture(new Float32Array([0]), 1, 1, THREE.RedFormat, THREE.FloatType) },
   uEcoNearBox: { value: new THREE.Vector4(0, 0, 1, 1) },
+  // 1 when the mask's green channel holds the lot: Google's mesh outside it is
+  // muted a little, so the property stands out in its real colours.
+  uEcoSpot: { value: 0 },
 };
 clipUniforms.uEcoMask.value.needsUpdate = true;
 clipUniforms.uEcoTrees.value.needsUpdate = true;
@@ -82,6 +88,35 @@ clipUniforms.uEcoGround.value.needsUpdate = true;
 const TREE_CUT_CORE_FT = 2.5; // Google's ground can sit a foot or two off the USGS terrain; pools and decks must survive
 const TREE_CUT_ABOVE_FT = 4;
 const TREE_CUT_PAD_FT = 2; // and this far past its scanned crown
+// Real 3D keeps the property in Google's own colours and mutes what's around it
+// (this much of its colour, this bright) so the property is always easy to find.
+const SURROUND_SATURATION = 0.6;
+const LAWN_OUTLINE = 0x9fe870;
+const SURROUND_BRIGHTNESS = 0.84;
+
+// Outlines that must always read (the property line, each lawn): screen-space
+// lines a few pixels wide, drawn over everything, with a dark halo so they show
+// on bright roofs and dark trees alike. One shared resolution for all of them.
+const LINE_RESOLUTION = new THREE.Vector2(1, 1);
+function screenLine(points, { color, width, opacity = 1, dashed = false, order = 10 }) {
+  const geometry = new LineGeometry();
+  geometry.setPositions(points.flatMap((p) => [p.x, p.y, p.z]));
+  const material = new LineMaterial({ color, linewidth: width, transparent: true, opacity, depthTest: false, depthWrite: false, dashed, dashSize: 3, gapSize: 2 });
+  material.uniforms.resolution.value = LINE_RESOLUTION;
+  const line = new Line2(geometry, material);
+  if (dashed) line.computeLineDistances();
+  line.renderOrder = order;
+  line.raycast = () => {}; // never picked or clicked
+  return line;
+}
+/** A closed outline with its halo, as one group. */
+function haloOutline(points, color, width, { dashed = false, order = 10 } = {}) {
+  const ring = [...points, points[0]];
+  const group = new THREE.Group();
+  group.add(screenLine(ring, { color: 0x10231c, width: width + 3, opacity: 0.4, order }));
+  group.add(screenLine(ring, { color, width, opacity: 0.95, dashed, order: order + 1 }));
+  return group;
+}
 function clipTileMaterial(m) {
   if (!m || m.userData.ecoClip) return;
   m.userData.ecoClip = true;
@@ -101,7 +136,15 @@ function clipTileMaterial(m) {
       'uniform sampler2D uEcoTrees;',
       'uniform sampler2D uEcoGround;',
       'uniform vec4 uEcoNearBox;',
-      sh.fragmentShader.replace('void main() {', `void main() {
+      'uniform float uEcoSpot;',
+      sh.fragmentShader.replace('#include <dithering_fragment>', `{
+    vec2 ecoLotUv = (vEcoWorld.xz - uEcoBox.xy) / uEcoBox.zw;
+    float ecoInLot = ecoLotUv.x > 0.0 && ecoLotUv.x < 1.0 && ecoLotUv.y > 0.0 && ecoLotUv.y < 1.0 ? texture2D(uEcoMask, ecoLotUv).g : 0.0;
+    float ecoGrey = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
+    vec3 ecoMuted = mix(vec3(ecoGrey), gl_FragColor.rgb, ${SURROUND_SATURATION.toFixed(2)}) * ${SURROUND_BRIGHTNESS.toFixed(2)};
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, ecoMuted, uEcoSpot * (1.0 - ecoInLot));
+  }
+  #include <dithering_fragment>`).replace('void main() {', `void main() {
   vec2 ecoUv = (vEcoWorld.xz - uEcoBox.xy) / uEcoBox.zw;
   if (ecoUv.x > 0.0 && ecoUv.x < 1.0 && ecoUv.y > 0.0 && ecoUv.y < 1.0 && texture2D(uEcoMask, ecoUv).r > 0.5) discard;
   if (length(vEcoWorld.xz - uEcoCenter) > uEcoRadius) discard;
@@ -337,13 +380,16 @@ async function loadTerrain(planBounds, origin, cx, cy) {
 
 // A ground surface over the lot that follows the terrain: a grid draped on the
 // heights, trimmed to the lot with holes where the beds are, via an alpha mask.
-// Google's mesh has no ground under tree canopies, so cutting the property (and
-// trees) out of it can leave gaps to the sky; a skirt runs SKIRT_FT past the
-// lot line and under every cut-out tree circle ([[x, z, r]]), set slightly
-// below the real ground there so Google's ground wins wherever it exists.
+// Google's mesh has no ground under tree canopies or houses, so cutting them out
+// of it (or a gap in its mesh) can leave holes to the sky; a skirt runs SKIRT_FT
+// past the lot line and under every cut-out tree circle ([[x, z, r]]). Under
+// the cuts (the circles and the house and bed shapes in `fills`, [[points,
+// marginFt]]) it sits just below the real ground so Google's ground wins
+// wherever it exists; elsewhere it sits deep, only filling gaps.
 const SKIRT_FT = 45; // reaches neighbours' yards, where Google often has canopy but no ground
 const SKIRT_DROP_FT = 0.6; // just past the lot line…
 const SKIRT_DROP_MAX_FT = 2.5; // …sinking to this much lower further out
+const SKIRT_DEEP_FT = 8; // away from the cuts: below any pool or sunken patio Google draws
 const distToOutline = ([x, z], pts) => {
   let d = Infinity;
   for (let i = 0; i < pts.length; i++) {
@@ -356,12 +402,15 @@ const distToOutline = ([x, z], pts) => {
   }
   return d;
 };
-function drapedGround(outline, holes, at, texture, circles = [], skirt = false, exclude = []) {
+function drapedGround(outline, holes, at, texture, circles = [], skirt = false, exclude = [], fills = []) {
   const xs = [...outline.map((p) => p[0]), ...circles.flatMap(([x, , r]) => [x - r, x + r])];
   const zs = [...outline.map((p) => p[1]), ...circles.flatMap(([, z, r]) => [z - r, z + r])];
   const pad = SKIRT_FT + 1;
   const [x0, x1, z0, z1] = [Math.min(...xs) - pad, Math.max(...xs) + pad, Math.min(...zs) - pad, Math.max(...zs) + pad];
   const step = Math.max(1.5, Math.max(x1 - x0, z1 - z0) / 120);
+  const nearCut = (x, z) =>
+    circles.some(([cx0, cz0, r]) => Math.hypot(x - cx0, z - cz0) <= r + step) ||
+    fills.some(([pts, padFt]) => insidePoly([x, z], pts) || distToOutline([x, z], pts) <= padFt + step);
   const nx = Math.ceil((x1 - x0) / step) + 1;
   const nz = Math.ceil((z1 - z0) / step) + 1;
   const pos = new Float32Array(nx * nz * 3);
@@ -374,7 +423,11 @@ function drapedGround(outline, holes, at, texture, circles = [], skirt = false, 
       const z = z0 + ((z1 - z0) * j) / (nz - 1);
       const inside = insidePoly([x, z], outline);
       // Inside the lot the fill sits well under Google's real yard (it only shows where the house was cut away).
-      const drop = inside ? (skirt ? 1 : 0) : Math.min(SKIRT_DROP_MAX_FT, SKIRT_DROP_FT + distToOutline([x, z], outline) * 0.3);
+      let drop = inside ? (skirt ? 1 : 0) : Math.min(SKIRT_DROP_MAX_FT, SKIRT_DROP_FT + distToOutline([x, z], outline) * 0.3);
+      // Away from every cut the skirt only has to cover gaps in Google's mesh,
+      // so it sinks deep: a pool or sunken patio Google draws lower than the
+      // terrain then shows as it is, never painted over.
+      if (skirt && !nearCut(x, z)) drop = SKIRT_DEEP_FT;
       pos.set([x, at(x, z) - drop, z], k * 3);
       // Off the lot the skirt mostly shows under canopies: shaded, earthy green.
       // The fill mostly shows under cut-away canopies: shaded, earthy green (the lot slab itself stays plain).
@@ -410,8 +463,9 @@ function drapedGround(outline, holes, at, texture, circles = [], skirt = false, 
   ctx.strokeStyle = '#fff';
   ctx.lineJoin = 'round';
   if (skirt) {
-    // The lot plus a ring around it and the tree circles; inside the lot it
-    // sits just under the lot's own ground, so only the outside shows.
+    // The lot plus a ring around it and the tree circles. Just under Google's
+    // ground where its mesh is cut (houses, beds, trees), deep below it
+    // everywhere else (see nearCut above).
     ctx.lineWidth = (2 * SKIRT_FT * W) / Math.max(x1 - x0, z1 - z0);
     trace(outline);
     ctx.fill();
@@ -785,6 +839,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(maxDpr);
     renderer.setSize(mount.clientWidth, mount.clientHeight);
+    LINE_RESOLUTION.set(mount.clientWidth, mount.clientHeight);
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true;
@@ -803,7 +858,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const dist = Math.max(radius * factor, maxDim * 0.18);
       return new THREE.Vector3(tx, ty, tz).addScaledVector(viewDir, dist);
     };
-    const overview = () => ({ pos: camFor(0, 0, 0, maxDim / 2, 3.8), tgt: new THREE.Vector3(0, 0, 0) });
+    // Close enough that the property fills most of the view, with a little of the street around it.
+    const overview = () => ({ pos: camFor(0, 0, 0, maxDim / 2, 3.2), tgt: new THREE.Vector3(0, 0, 0) });
     // A near plane of 0.5 ft (not 0.1) keeps depth precise enough that close surfaces don't shimmer.
     const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.5, 2e5);
     const ov = overview();
@@ -881,6 +937,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     const markDirty = () => { dirty = true; };
 
     threeRef.current = { scene, camera, renderer, controls, plantGroup, ring, raycaster, pointer, groundPlane, cx, cy, maxDim, overview, camFor, markDirty };
+    if (import.meta.env.DEV) window.__ecoThree = threeRef; // inspect the scene from the console while developing
 
     let frame;
     const ease = (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
@@ -968,6 +1025,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       camera.aspect = mount.clientWidth / mount.clientHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(mount.clientWidth, mount.clientHeight);
+      LINE_RESOLUTION.set(mount.clientWidth, mount.clientHeight);
       markDirty();
     });
     ro.observe(mount);
@@ -1070,6 +1128,12 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       });
       ctx.closePath();
     };
+    // Green: the lot (kept in full colour; the surroundings are muted). Red: cut away.
+    if (lotPts) {
+      ctx.fillStyle = '#00ff00';
+      trace(lotPts);
+      ctx.fill();
+    }
     ctx.fillStyle = '#fff';
     ctx.strokeStyle = '#fff';
     ctx.lineJoin = 'round';
@@ -1084,6 +1148,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     clipUniforms.uEcoBox.value.set(minX, minZ, maxX - minX || 1, maxZ - minZ || 1);
     clipUniforms.uEcoCenter.value.set(0, 0);
     clipUniforms.uEcoRadius.value = Math.max(...scenePts.map(([x, z]) => Math.hypot(x, z))) + SURROUND_FT;
+    clipUniforms.uEcoSpot.value = lotPts ? 1 : 0;
     if (previous !== tex && previous.image?.width > 1) previous.dispose();
 
     // Tree cut-outs and the ground under them, over the lot plus a margin.
@@ -1377,7 +1442,12 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         ground = drapedGround(toScene(outerPoly), polys.filter((q) => q && q.length >= 3).map(toScene), at, gt, [], false, publicWays);
         const skirtTex = gt.clone();
         skirtTex.needsUpdate = true;
-        const skirt = drapedGround(toScene(outerPoly), [], at, skirtTex, circles, true, publicWays);
+        // Under what's cut from Google's mesh: houses (footprint plus the cut margin) and beds.
+        const cutFills = [
+          ...buildings.filter((q) => q && q.length >= 3).map((q) => [toScene(q), HOUSE_CUT_MARGIN_FT + 1]),
+          ...polys.filter((q) => q && q.length >= 3).map((q) => [toScene(q), 2]),
+        ];
+        const skirt = drapedGround(toScene(outerPoly), [], at, skirtTex, circles, true, publicWays, cutFills);
         skirt.userData.ground = true;
         skirt.userData.skirt = true; // Real 3D only
         skirt.visible = false;
@@ -1393,18 +1463,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       ground.userData.ground = true;
       ground.userData.lotGround = true; // Real 3D shows Google's real yard instead
       scene.add(ground);
-      const gpts = outerPoly.map((p) => new THREE.Vector3(p[0] - cx, at(p[0] - cx, -(p[1] - cy)) + 0.05, -(p[1] - cy)));
-      gpts.push(gpts[0].clone());
-      // The property line: a soft dashed white line just above the ground, so the
-      // property reads as yours without a hard edge against the real surroundings.
-      gpts.forEach((p) => { p.y += 0.6; });
-      const gline = new THREE.LineLoop(
-        new THREE.BufferGeometry().setFromPoints(gpts),
-        // Drawn over everything (like a selection outline) so real grass and fences never hide it.
-        new THREE.LineDashedMaterial({ color: 0xffffff, dashSize: 3, gapSize: 2, transparent: true, opacity: 0.6, depthTest: false }),
-      );
-      gline.renderOrder = 10;
-      gline.computeLineDistances();
+      const gpts = outerPoly.map((p) => new THREE.Vector3(p[0] - cx, at(p[0] - cx, -(p[1] - cy)) + 0.65, -(p[1] - cy)));
+      // The property line: white dashes over a dark halo, drawn over everything
+      // (like a selection outline) so trees, fences and roofs never hide it.
+      const gline = haloOutline(gpts, 0xffffff, 2.5, { dashed: true, order: 10 });
       gline.userData.ground = true;
       gline.userData.propertyLine = true;
       scene.add(gline);
@@ -1525,9 +1587,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const radius = Math.max(...lxs.map((x, i) => Math.hypot(x - bx, lzs[i] - bz)), 3);
       bedsRef.current.push({ x: bx, z: bz, radius });
 
-      const outlinePts = poly.map((p) => new THREE.Vector3(p[0] - cx, at(p[0] - cx, -(p[1] - cy)) + MULCH_Y + 0.02, -(p[1] - cy)));
-      outlinePts.push(outlinePts[0].clone());
-      const outline = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(outlinePts), new THREE.LineBasicMaterial({ color: 0x4a3322 }));
+      // The lawn being converted, outlined in green over everything, so it's
+      // found at a glance even under trees or on a big property.
+      const outlinePts = poly.map((p) => new THREE.Vector3(p[0] - cx, at(p[0] - cx, -(p[1] - cy)) + MULCH_Y + 0.1, -(p[1] - cy)));
+      const outline = haloOutline(outlinePts, LAWN_OUTLINE, 2.5, { order: 12 });
       outline.userData.bed = true;
       scene.add(outline);
     });

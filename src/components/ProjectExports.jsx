@@ -10,6 +10,7 @@ import { financials, money, num } from '@/lib/landscapeMath';
 import { savedReferral, startCheckout } from '@/lib/checkout';
 import RenewalTerms from '@/components/RenewalTerms';
 import { useRebates } from '@/hooks/useRebates';
+import { cleanAddress } from '@/lib/geo';
 
 // Pro project export: a printable PDF brief and a materials spreadsheet,
 // plus a share action. Gated behind EcoEstate Pro ($10/month) — not the free
@@ -40,7 +41,7 @@ export default function ProjectExports({ projectId, project, design }) {
   const brief = [
     'EcoEstate — Native Conversion Brief',
     '',
-    `Property: ${project.address}`,
+    `Property: ${cleanAddress(project.address)}`,
     `Convertible turf: ${num(turfSqft)} sq ft`,
     `Species: ${(design || []).map((e) => `${plantById(e.speciesId)?.common} × ${e.quantity}`).join(', ')}`,
     `Estimated water saved: ${num(fin.gallonsSaved)} gallons/year`,
@@ -73,7 +74,7 @@ export default function ProjectExports({ projectId, project, design }) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(120);
-    doc.text(`EcoEstate · ${project.address}`, left, y);
+    doc.text(`EcoEstate · ${cleanAddress(project.address)}`, left, y);
     y += 26;
     doc.setTextColor(40);
     brief.split('\n').slice(2).forEach((line) => {

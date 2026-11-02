@@ -41,6 +41,20 @@ export function getLawn(address, picked = null) {
   return call(`/lawn?${params}`);
 }
 
+/**
+ * GET /v1/locate — where an address is, before scanning. With the app's own
+ * lookup (`hit`) the lawn service only moves it onto the published address
+ * point; without, it looks the address up itself. Returns { lat, lon, accuracy, … }.
+ */
+export function locateAddress(address, hit = null) {
+  const params = new URLSearchParams({ address });
+  if (Number.isFinite(hit?.lat) && Number.isFinite(hit?.lng)) {
+    params.set('lat', String(hit.lat));
+    params.set('lon', String(hit.lng));
+  }
+  return call(`/locate?${params}`);
+}
+
 /** POST /v1/lawn — re-detect the lawn inside a property line the user adjusted. */
 export function getLawnForParcel({ parcel, address, location }) {
   return call('/lawn', {

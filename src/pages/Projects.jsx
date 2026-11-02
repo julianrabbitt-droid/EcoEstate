@@ -8,6 +8,7 @@ import { useProjects } from '@/hooks/useProjects';
 import { usePremiumAccess } from '@/hooks/usePremiumAccess';
 import TrackingUpsell from '@/components/tracking/TrackingUpsell';
 import { useConfirm } from '@/components/ConfirmProvider';
+import { cleanAddress } from '@/lib/geo';
 
 // My properties is a Pro feature (or free with a school email); scanning
 // and the 3D view stay free, and a scan's own pages open from its link.
@@ -41,7 +42,7 @@ function PropertyList() {
   const [deleteError, setDeleteError] = useState('');
 
   const remove = async (project) => {
-    if (!(await confirm({ title: `Delete ${project.address || 'this property'}?`, description: 'Its design and numbers will be removed. This can’t be undone.', confirmLabel: 'Delete property' }))) return;
+    if (!(await confirm({ title: `Delete ${cleanAddress(project.address) || 'this property'}?`, description: 'Its design and numbers will be removed. This can’t be undone.', confirmLabel: 'Delete property' }))) return;
     setDeleteError('');
     try {
       await deleteProject(project.id);
@@ -91,7 +92,7 @@ function PropertyList() {
                   <p className="text-[12px] text-muted-foreground">
                     {project.city || 'Property'} · {new Date(project.createdAt || Date.now()).toLocaleDateString()}
                   </p>
-                  <p className="mt-1.5 pr-8 font-display text-[19px] leading-snug tracking-tight">{project.address}</p>
+                  <p className="mt-1.5 pr-8 font-display text-[19px] leading-snug tracking-tight">{cleanAddress(project.address)}</p>
                   <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-[11.5px] text-muted-foreground">
                     <span>
                       <span className="font-medium text-foreground">{num(fin.turfSqft)}</span> sq ft turf
@@ -115,7 +116,7 @@ function PropertyList() {
                     type="button"
                     onClick={() => remove(project)}
                     className="rounded-full p-1.5 text-muted-foreground opacity-100 transition hover:text-destructive md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
-                    aria-label={`Delete ${project.address}`}
+                    aria-label={`Delete ${cleanAddress(project.address)}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>

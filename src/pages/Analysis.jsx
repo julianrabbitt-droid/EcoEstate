@@ -10,6 +10,7 @@ import { useProject } from '@/hooks/useProjects';
 import { useAutosave } from '@/hooks/useAutosave';
 import { num } from '@/lib/landscapeMath';
 import FullAutoScanUpsell from '@/components/FullAutoScanUpsell';
+import { cleanAddress } from '@/lib/geo';
 
 const TURF_WATER = {
   'Tall fescue': 46,
@@ -109,7 +110,7 @@ export default function Analysis() {
         <div>
           <p className="label-xs">Existing landscape</p>
           <h1 className="mt-2 max-w-xl font-display text-3xl leading-tight tracking-tight sm:text-[2.4rem]">
-            {project.address}
+            {cleanAddress(project.address)}
           </h1>
           <p className="mt-1.5 text-[13px] text-muted-foreground">
             {project.scanSource === 'auto'

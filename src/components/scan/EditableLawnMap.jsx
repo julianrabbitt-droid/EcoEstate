@@ -9,7 +9,7 @@ import { polygonAreaSqFt } from '@/lib/geo';
 const IMAGERY = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
 const STYLES = {
-  lawn: { color: '#7d8f6e', stroke: '#f0f4ec' },
+  lawn: { color: '#4fbf3f', stroke: '#d9ffb8' },
   building: { color: '#9a8c7a', stroke: '#3a3128' },
 };
 const featureStyle = (type) => STYLES[type] || STYLES.lawn;
@@ -337,7 +337,11 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
             </Tooltip>
           </Marker>
           {lotDisplay && (
-            <Polygon positions={lotDisplay} pathOptions={{ color: '#10231c', weight: editingLot ? 2 : 1.5, dashArray: '6 5', fillColor: '#10231c', fillOpacity: 0.05 }} />
+            <>
+              {/* White over a dark halo, so the property line reads on light and dark imagery alike. */}
+              <Polygon positions={lotDisplay} interactive={false} pathOptions={{ color: '#14211a', weight: editingLot ? 5.5 : 5, opacity: 0.45, fillOpacity: 0 }} />
+              <Polygon positions={lotDisplay} pathOptions={{ color: '#ffffff', weight: editingLot ? 3 : 2.5, dashArray: '7 5', fillColor: '#ffffff', fillOpacity: 0.04 }} />
+            </>
           )}
           {editingLot && lot && lot.map((pt, j) => (
             <Marker
@@ -378,9 +382,9 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
                 positions={shape.points}
                 pathOptions={{
                   color: st.stroke,
-                  weight: isActive ? 2.5 : 1.5,
+                  weight: isActive ? 3 : 2.5,
                   fillColor: st.color,
-                  fillOpacity: isActive ? 0.42 : 0.3,
+                  fillOpacity: isActive ? 0.55 : 0.45,
                 }}
                 eventHandlers={{ click: () => selectShape(shape.id) }}
               />

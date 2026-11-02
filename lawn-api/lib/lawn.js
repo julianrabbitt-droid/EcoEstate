@@ -41,6 +41,29 @@ export const SETTINGS = {
   understoryShare: 0.25, // …when they're at least this share of the returns around a cell
   grassCalibrationMinPx: 10, // open lawn and bare pixels needed to calibrate grass brightness
   grassContrast: 1.4, // open lawn must be at least this much brighter than bare ground
+  underCanopyReachM: 10, // grass under trees counts when within this of open lawn…
+  underCanopyAloneM2: 15, // …or in a patch at least this big (~160 sq ft) on its own
+  groundcoverMinM: 0.2, // returns between this and understoryMinM above ground…
+  groundcoverShare: 0.12, // …at more than this share of a spot's returns mean groundcover or beds, not grass
+  // Dormant lawn. California's 2022 survey was flown in a drought, and many
+  // lawns that were watered less show only faintly green. A spot that was green,
+  // smooth lawn in the survey before, and is still faintly green, flat and no
+  // brighter than dry grass now, is a dormant lawn, not bare ground.
+  dormantNdviMin: 0.1, // still at least this green in the newest survey…
+  dormantPrevNdviMin: 0.22, // …and at least this green in the one before
+  dormantMaxBrightness: 165, // brighter than this (mean of red, green, blue) is paving or bare soil
+  dormantMaxYears: 4, // the previous survey must be this recent
+  // Lawn brown in both surveys (a dry year after a dry year): the laser still
+  // tells grass from bare soil by how brightly the ground reflects it. Open,
+  // flat ground as bright as the calibrated grass, faintly green and no
+  // brighter than dry grass in the photo, counts in patches at least this big.
+  lidarDormantNdviMin: 0.05,
+  lidarDormantMinM2: 25, // ~270 sq ft
+  // Lidar older than the photo can describe a yard that has since changed (a
+  // rebuild, a new lawn, a tree taken down). Where the newer photo shows smooth
+  // turf (tree crowns and shrubs are never this smooth), the photo decides.
+  staleTurfNdviMin: 0.25,
+  staleTurfMaxTexturePct: 3,
   canopyGrowM: 0.6, // extend the canopy mask ~1 pixel: the map sits slightly off NAIP in places
   minLawnSqft: 50, // drop fragments smaller than this…
   minLawnPx: 12, // …or than this many pixels, whichever is larger (matters on coarse grids)
@@ -215,6 +238,7 @@ export function lidarHeights(grid, pts) {
   }
   const low = new Uint16Array(n);
   const high = new Uint16Array(n);
+  const nearGround = new Uint16Array(n); // returns just above the ground: groundcover and bed plantings, not mown grass
   const all = new Uint16Array(n);
   const any = new Uint8Array(n);
   // Buildings are handled by their footprints; their walls and eaves would
@@ -229,15 +253,18 @@ export function lidarHeights(grid, pts) {
     const above = pts.z[k] - ground[c];
     if (above >= SETTINGS.canopyMinM) high[c]++;
     else if (above > SETTINGS.understoryMinM) low[c]++;
+    else if (above > SETTINGS.groundcoverMinM) nearGround[c]++;
   }
   const obstacle = new Uint8Array(n);
   const canopy = new Uint8Array(n);
+  const flat = new Uint8Array(n);
   const known = new Uint8Array(n);
   for (let j = 0; j < h; j++) {
     for (let i = 0; i < w; i++) {
       let lo = 0;
       let hi = 0;
       let tot = 0;
+      let near = 0;
       let seen = 0;
       for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
         const x = i + di;
@@ -247,16 +274,19 @@ export function lidarHeights(grid, pts) {
         lo += low[q];
         hi += high[q];
         tot += all[q];
+        near += nearGround[q];
         seen |= any[q];
       }
       const c = j * w + i;
       // Dense low returns: a shrub or hedge, not a few low branches over open ground.
       obstacle[c] = low[c] && lo >= 3 && lo >= SETTINGS.understoryShare * tot ? 1 : 0;
       canopy[c] = hi >= 2 ? 1 : 0;
+      // Mown grass leaves almost nothing between ~8 in and 2 ft; groundcover, ivy and beds do.
+      flat[c] = tot && near <= SETTINGS.groundcoverShare * tot ? 1 : 0;
       known[c] = seen;
     }
   }
-  return { known, obstacle, canopy, groundInt };
+  return { known, obstacle, canopy, flat, groundInt };
 }
 
 // Grass under a canopy: ground returns at least about as bright as the
@@ -318,6 +348,14 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
         return null;
       })
     : Promise.resolve(null);
+  // The survey before the newest, for lawns that were dormant when it was flown.
+  const prevItems = items.filter((it) => it.year !== items[0].year && it.year >= items[0].year - SETTINGS.dormantMaxYears);
+  const prevLoad = prevItems.length
+    ? readNaip(grid, prevItems).catch((err) => {
+        console.warn(`previous survey unavailable: ${err.message}`);
+        return null;
+      })
+    : Promise.resolve(null);
   const [naip, canopy, nearbyBuildings] = await Promise.all([
     readNaip(grid, items).then((r) => ((r.ms = Date.now() - t0), r)),
     readCanopy(grid).then((r) => ((r.ms = Date.now() - t0), r)),
@@ -339,10 +377,11 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     // Overture adds driveways and service roads OpenStreetMap's live copy may
     // lack (and stands in while its servers are down); use the fuller set.
     const overture = segments.map((p) => ({ ...p, widthM: PATH_WIDTH_M[p.kind] ?? 2 }));
-    mappedPaths = (osm?.paths?.length ?? 0) >= overture.length ? osm.paths : overture;
+    mappedPaths = osm?.paths && osm.paths.length >= overture.length ? osm.paths : overture;
     return [a, b, c];
   });
   lidar = await lidarLoad;
+  const prevNaip = await prevLoad;
   // A survey much older than the aerial photo describes a different yard.
   const naipYear = Number(String(naip.dates.at(-1) || '').slice(0, 4)) || 0;
   if (lidar && naipYear && lidar.year && lidar.year < naipYear - SETTINGS.lidarMaxAgeYears) lidar = null;
@@ -380,10 +419,22 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     for (let k = 0; k < n; k++) if (nearRoof[k]) { measured.canopy[k] = 0; measured.obstacle[k] = 0; }
   }
   const grassInt = measured ? grassBrightness(measured, ndvi, inView) : null;
+  // Smooth turf in a photo newer than the lidar (see staleTurf* above).
+  let newerTurf = null;
+  if (measured && lidar.year && naipYear > lidar.year) {
+    const turfLike = Uint8Array.from(ndvi, (v, k) => (usable[k] && v >= SETTINGS.staleTurfNdviMin ? 1 : 0));
+    const tex = localStats(naip.nir, turfLike, w, h, SETTINGS.textureRadiusPx);
+    const win = (2 * SETTINGS.textureRadiusPx + 1) ** 2;
+    newerTurf = Uint8Array.from(turfLike, (v, k) =>
+      v && tex.count[k] >= SETTINGS.textureMinCover * win && (100 * tex.std[k]) / tex.mean[k] <= SETTINGS.staleTurfMaxTexturePct ? 1 : 0);
+  }
   const underCanopy = new Uint8Array(n);
+  const underGrass = new Uint8Array(n); // grass-bright ground under a canopy: a candidate, confirmed below
   let underCanopyPx = 0;
   for (let k = 0; k < n; k++) {
-    if (measured?.known[k]) {
+    if (newerTurf?.[k]) {
+      tall[k] = 0; // the newer photo shows open turf: whatever the old survey saw is gone
+    } else if (measured?.known[k]) {
       tall[k] = measured.obstacle[k];
       // Without a brightness calibration lidar can't judge grass under a canopy;
       // fall back to the photo and the canopy map there, as without lidar.
@@ -393,8 +444,8 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
         // The photo only sees leaves here; the ground's laser brightness decides.
         underCanopy[k] = 1;
         const g = measured.groundInt[k];
-        vegetation[k] = usable[k] && grassInt && g >= grassInt.min && g <= grassInt.max ? 1 : 0;
-        underCanopyPx += vegetation[k];
+        underGrass[k] = usable[k] && grassInt && measured.flat[k] && g >= grassInt.min && g <= grassInt.max ? 1 : 0;
+        vegetation[k] = 0;
         continue;
       }
     } else {
@@ -441,6 +492,78 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
       }
     }
     if (!added) break;
+  }
+  // Dormant lawn: green and smooth in the previous survey, still faintly green
+  // and no brighter than dry grass in the newest, never on trees, shrubs,
+  // roofs or paths. Its edges are pulled in a pixel, since two surveys never
+  // line up exactly and a lawn's edge could otherwise spill onto a driveway.
+  let dormantPx = 0;
+  if (prevNaip) {
+    const prevGreen = new Uint8Array(n);
+    for (let k = 0; k < n; k++) {
+      const pr = prevNaip.red[k];
+      const pn = prevNaip.nir[k];
+      prevGreen[k] = prevNaip.filled[k] && pr + pn && (pn - pr) / (pn + pr) >= SETTINGS.dormantPrevNdviMin ? 1 : 0;
+    }
+    const prevTexture = localStats(prevNaip.nir, prevGreen, w, h, SETTINGS.textureRadiusPx);
+    const prevSmooth = Uint8Array.from(prevGreen, (v, k) =>
+      v && !(prevTexture.count[k] >= SETTINGS.textureMinCover * windowPx && (100 * prevTexture.std[k]) / prevTexture.mean[k] > SETTINGS.maxTexturePct) ? 1 : 0);
+    const wasLawn = erode(prevSmooth, w, h, 1);
+    for (let k = 0; k < n; k++) {
+      if (green[k] || !wasLawn[k] || !usable[k] || trees[k] || rough[k] || underCanopy[k]) continue;
+      const bright = (naip.red[k] + naip.green[k] + naip.blue[k]) / 3;
+      if (ndvi[k] >= SETTINGS.dormantNdviMin && bright <= SETTINGS.dormantMaxBrightness) {
+        green[k] = 1;
+        dormantPx++;
+      }
+    }
+  }
+  // Lawn dry in both surveys, found by the laser's brightness on open, flat ground.
+  if (measured && grassInt) {
+    const cand = new Uint8Array(n);
+    for (let k = 0; k < n; k++) {
+      if (green[k] || !usable[k] || !measured.known[k] || measured.canopy[k] || measured.obstacle[k] || !measured.flat[k] || trees[k] || rough[k]) continue;
+      const g = measured.groundInt[k];
+      const bright = (naip.red[k] + naip.green[k] + naip.blue[k]) / 3;
+      if (g >= grassInt.min && g <= grassInt.max && ndvi[k] >= SETTINGS.lidarDormantNdviMin && bright <= SETTINGS.dormantMaxBrightness) cand[k] = 1;
+    }
+    const opened = dilate(erode(cand, w, h, 1), w, h, 1); // drop one-pixel lines (curbs, path edges)
+    const pieces = labelRegions(Uint8Array.from(opened, (v, k) => v & cand[k]), w, h);
+    const minPx = SETTINGS.lidarDormantMinM2 / (grid.res * grid.res);
+    for (let k = 0; k < n; k++) {
+      if (pieces.labels[k] && pieces.sizes[pieces.labels[k]] >= minPx) {
+        green[k] = 1;
+        dormantPx++;
+      }
+    }
+  }
+  // Lawn under trees. Groundcover, shrub beds and ivy reflect the laser like
+  // grass, so a grass-bright patch under a canopy counts only when it carries on
+  // from open lawn the photo confirms (lawns run under tree edges), or when it
+  // is big enough to be a lawn in its own right.
+  if (measured) {
+    const reach = Math.round(SETTINGS.underCanopyReachM / grid.res);
+    for (let step = 0; step < reach; step++) {
+      const grown = dilate(green, w, h, 1);
+      let added = 0;
+      for (let k = 0; k < n; k++) {
+        if (underGrass[k] && grown[k] && !green[k]) {
+          green[k] = 1;
+          added++;
+          underCanopyPx++;
+        }
+      }
+      if (!added) break;
+    }
+    const rest = Uint8Array.from(underGrass, (v, k) => (v && !green[k] ? 1 : 0));
+    const pieces = labelRegions(rest, w, h);
+    const minPx = SETTINGS.underCanopyAloneM2 / (grid.res * grid.res);
+    for (let k = 0; k < n; k++) {
+      if (rest[k] && pieces.sizes[pieces.labels[k]] >= minPx) {
+        green[k] = 1;
+        underCanopyPx++;
+      }
+    }
   }
   // Bridge narrow gaps (paths, edging, shadow lines) so one lawn isn't cut into
   // pieces. A closing (grow then shrink) only adds pixels inside narrow gaps,
@@ -589,6 +712,8 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     canopyCoverage: canopy.known.reduce((s, v) => s + v, 0) / n,
     // USGS lidar used for heights, when the property is covered.
     lidar: lidar ? { source: lidar.source, year: lidar.year, points: lidar.count, grassCalibrated: Boolean(grassInt), underCanopySqft: Math.round(underCanopyPx * grid.res * grid.res * SQM_TO_SQFT) } : null,
+    // Lawn that was dormant (faintly green) in the newest survey, found from the one before.
+    dormant: prevNaip || grassInt ? { previousSurvey: prevNaip?.dates.at(-1) ?? null, sqft: Math.round(dormantPx * grid.res * grid.res * SQM_TO_SQFT) } : null,
     templatesUsed,
     // Mapped shapes weren't ready in time; callers shouldn't cache this result.
     templatesPending: templates === null,
@@ -599,6 +724,6 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     paths: layers.paths,
     nearbyRoads,
   };
-  if (debug) result.debug = { grid, naip, canopy, ndvi, parcel, green, trees, rough, roofs: roofLabels };
+  if (debug) result.debug = { grid, naip, canopy, ndvi, parcel, green, trees, rough, roofs: roofLabels, measured, newerTurf, underCanopy, tall, grassInt, prevNaip, usable };
   return result;
 }

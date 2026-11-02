@@ -23,7 +23,7 @@ function baseUrl(env) {
   return (process.env.LAWN_API_URL || `http://localhost:${env.PORT || 3000}`).replace(/\/$/, '');
 }
 
-const ROUTES = { 'GET /lawn': '/v1/lawn', 'POST /lawn': '/v1/lawn', 'POST /area': '/v1/area', 'GET /health': '/health' };
+const ROUTES = { 'GET /lawn': '/v1/lawn', 'POST /lawn': '/v1/lawn', 'GET /locate': '/v1/locate', 'POST /area': '/v1/area', 'GET /health': '/health' };
 
 export const lawnRouter = express.Router();
 lawnRouter.use(express.json({ limit: '1mb' }));
@@ -59,7 +59,7 @@ lawnRouter.use(async (req, res) => {
   const target = ROUTES[`${req.method} ${req.path}`];
   if (!target) return res.status(404).json({ error: { code: 'not_found', message: 'Not found.' } });
 
-  if (req.path === '/lawn' && overLimit(req)) {
+  if ((req.path === '/lawn' || req.path === '/locate') && overLimit(req)) {
     res.setHeader('Retry-After', String(WINDOW_MS / 1000));
     return res.status(429).json({ error: { code: 'rate_limited', message: 'Too many scans in a short time. Please wait a few minutes and try again.' } });
   }

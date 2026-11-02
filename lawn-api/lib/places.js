@@ -88,3 +88,13 @@ export async function placeByName(query) {
   const [hit] = await nominatim('/search', { q: query, format: 'json', polygon_geojson: '1', addressdetails: '1', countrycodes: 'us', limit: '1' });
   return toPlace(hit);
 }
+
+/**
+ * Where OpenStreetMap puts a street address, or null unless its match has the
+ * same house number (so a street or town match never stands in for it).
+ */
+export async function osmAddress(query, houseNumber) {
+  const [hit] = await nominatim('/search', { q: query, format: 'json', addressdetails: '1', countrycodes: 'us', limit: '1' });
+  if (!hit || String(hit.address?.house_number || '').toLowerCase() !== String(houseNumber).toLowerCase()) return null;
+  return { lat: Number(hit.lat), lon: Number(hit.lon) };
+}

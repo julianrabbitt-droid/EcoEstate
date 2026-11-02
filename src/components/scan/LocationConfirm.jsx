@@ -33,7 +33,7 @@ function Recenter({ point }) {
  * the pin onto it first (address lookups sometimes land on the street or the
  * neighbour). onConfirm([lat, lng]) starts the scan there.
  */
-export default function LocationConfirm({ label, point, onConfirm, onCancel }) {
+export default function LocationConfirm({ label, point, estimated = false, onConfirm, onCancel }) {
   const [pin, setPin] = useState(point);
   const [fixing, setFixing] = useState(false);
   const moved = pin[0] !== point[0] || pin[1] !== point[1];
@@ -46,7 +46,9 @@ export default function LocationConfirm({ label, point, onConfirm, onCancel }) {
           {label ? <span className="text-foreground">{label}. </span> : null}
           {fixing
             ? 'Tap your house on the map, or drag the pin onto it.'
-            : 'Check the pin sits on your house before we scan the lawn around it.'}
+            : estimated
+              ? 'This pin is an estimate along the street, so it may be on a neighbour. Check it sits on your house before we scan.'
+              : 'Check the pin sits on your house before we scan the lawn around it.'}
         </p>
       </div>
       <div className="relative h-[340px] w-full sm:h-[400px]">

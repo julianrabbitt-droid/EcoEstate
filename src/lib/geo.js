@@ -68,6 +68,25 @@ function outlineFromGeoJSON(geojson) {
   return simplifyOutline(best.map((c) => [c[1], c[0]]));
 }
 
+// ---- Address labels ----
+// Nominatim labels read "920, Moreno Avenue, Community Center, Palo Alto, …":
+// a comma after the house number and a neighbourhood before the city.
+
+/** "920 Moreno Avenue, Palo Alto" from a Nominatim result's address parts, or '' without a street. */
+function streetLabel(address = {}) {
+  const street = [address.house_number, address.road || address.pedestrian || address.footway].filter(Boolean).join(' ');
+  const city = address.city || address.town || address.village || address.hamlet || '';
+  return street ? [street, city].filter(Boolean).join(', ') : '';
+}
+
+/**
+ * A saved or looked-up address for display: "920, Moreno Avenue, Palo Alto"
+ * becomes "920 Moreno Avenue, Palo Alto". Leaves other text alone.
+ */
+export function cleanAddress(text) {
+  return String(text || '').replace(/^(\s*\d+[a-z]?(?:-\d+[a-z]?)?),\s+/i, '$1 ');
+}
+
 /** Lightweight address suggestions as the user types (Nominatim, top 5). */
 export async function autocompleteAddresses(query) {
   if (!query || query.trim().length < 3) return [];
@@ -79,6 +98,7 @@ export async function autocompleteAddresses(query) {
     if (!Array.isArray(data)) return [];
     return data.map((hit) => ({
       label: hit.display_name,
+      short: streetLabel(hit.address),
       lat: parseFloat(hit.lat),
       lng: parseFloat(hit.lon),
       // OpenStreetMap ID (e.g. "R12409275"): lets the lawn API use a campus's or park's whole outline.
@@ -122,6 +142,7 @@ export async function geocodeAddress(query) {
     lat: parseFloat(hit.lat),
     lng: parseFloat(hit.lon),
     label: hit.display_name,
+    short: streetLabel(hit.address),
     zip: hit.address?.postcode || '',
     city: hit.address?.city || hit.address?.town || hit.address?.village || '',
     state: hit.address?.state || '',

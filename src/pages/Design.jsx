@@ -16,6 +16,7 @@ import { updateProject } from '@/lib/projectStore';
 import { useProject } from '@/hooks/useProjects';
 import { usePlantPhotos } from '@/hooks/usePlantPhotos';
 import { useAutosave } from '@/hooks/useAutosave';
+import { cleanAddress } from '@/lib/geo';
 
 export default function Design() {
   const { id } = useParams();
@@ -115,7 +116,7 @@ export default function Design() {
 
   const turfSqft = project.breakdown?.turf || 0;
   // The property's name: the place name or street address, before the city.
-  const nameParts = String(project.address || '').split(',').map((p) => p.trim()).filter(Boolean);
+  const nameParts = cleanAddress(project.address).split(',').map((p) => p.trim()).filter(Boolean);
   const propertyName =
     (/^\d+[a-z]?$/i.test(nameParts[0] || '') && nameParts[1] ? `${nameParts[0]} ${nameParts[1]}` : nameParts[0]) || 'Your property';
   const totals = plantTotals(entries);

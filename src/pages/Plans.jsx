@@ -7,7 +7,7 @@ import { usePageMeta } from '@/hooks/usePageMeta';
 // (server/shared/entitlements.ts, server/entities.js, the designFromPrompt
 // function): each plan is for a different person and adds something real.
 const PLANS = [
-  { id: 'free', name: 'Free', price: '$0', who: 'Curious homeowners', note: 'See your lawn, a native design and the payoff. No account needed to scan.' },
+  { id: 'free', name: 'Free', price: '$0', who: 'Curious homeowners', note: 'See your lawn, a native design and the payoff with a free account. Drawing your lawn by hand needs no account at all.' },
   { id: 'student', name: 'Student / educator', price: '$0', who: 'Classes and school projects', note: 'Verified school email. Study real properties and share work with the community.' },
   { id: 'pro', name: 'Pro', price: '$10/mo', who: 'Homeowners doing the conversion', note: 'Plan it, build it and track it to maturity. Cancel anytime; first month half off with LAUNCH50.' },
   { id: 'city', name: 'City partner', price: 'Sponsored', who: 'Cities, water districts, organizations', note: 'Your program covers it, so every resident gets Pro free, plus tools for running the program.' },
@@ -34,6 +34,7 @@ const FEATURES = [
       ['Real 3D: your street and neighbours from Google 3D around your model', PAID],
       ['Design from a sentence ("drought-tolerant pollinator hedge")', PAID],
       ['Saved properties', { student: 'Latest 10', pro: 'Unlimited', city: 'Unlimited' }],
+      ['Export the plan: printable PDF and shopping list', RESIDENTS],
     ],
   },
   {
@@ -115,7 +116,7 @@ export default function Plans() {
           <Link to="/">Scan my lawn free</Link>
         </Button>
         <Button asChild variant="outline" className="rounded-full">
-          <a href="mailto:support@ecoestate.org?subject=City%20or%20organization%20partnership">Partner with us</a>
+          <Link to="/cities">Partner with us</Link>
         </Button>
       </div>
       <p className="mt-4 max-w-2xl text-[12.5px] leading-relaxed text-muted-foreground">

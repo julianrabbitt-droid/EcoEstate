@@ -34,6 +34,57 @@ export function png({ w, h, rgb }) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 
+/** Decode an 8-bit, non-interlaced RGB or RGBA PNG into { w, h, rgb }. */
+export function decodePng(buf) {
+  let p = 8;
+  let w = 0;
+  let h = 0;
+  let type = 0;
+  const idat = [];
+  while (p < buf.length) {
+    const len = buf.readUInt32BE(p);
+    const kind = buf.toString('ascii', p + 4, p + 8);
+    const data = buf.subarray(p + 8, p + 8 + len);
+    if (kind === 'IHDR') {
+      w = data.readUInt32BE(0);
+      h = data.readUInt32BE(4);
+      if (data[8] !== 8 || data[12] !== 0) throw new Error('unsupported png');
+      type = data[9];
+    } else if (kind === 'IDAT') idat.push(data);
+    p += 12 + len;
+  }
+  const bpp = type === 6 ? 4 : type === 2 ? 3 : 0;
+  if (!bpp) throw new Error(`unsupported png colour type ${type}`);
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const stride = w * bpp;
+  const cur = Buffer.alloc(stride);
+  const prev = Buffer.alloc(stride);
+  const rgb = new Uint8Array(w * h * 3);
+  for (let y = 0; y < h; y++) {
+    const f = raw[y * (stride + 1)];
+    const line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    for (let i = 0; i < stride; i++) {
+      const a = i >= bpp ? cur[i - bpp] : 0;
+      const b = prev[i];
+      const c = i >= bpp ? prev[i - bpp] : 0;
+      let v = line[i];
+      if (f === 1) v += a;
+      else if (f === 2) v += b;
+      else if (f === 3) v += (a + b) >> 1;
+      else if (f === 4) {
+        const pa = Math.abs(b - c);
+        const pb = Math.abs(a - c);
+        const pc = Math.abs(a + b - 2 * c);
+        v += pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+      }
+      cur[i] = v & 255;
+    }
+    for (let x = 0; x < w; x++) rgb.set(cur.subarray(x * bpp, x * bpp + 3), (y * w + x) * 3);
+    cur.copy(prev);
+  }
+  return { w, h, rgb };
+}
+
 export function blank(w, h, color = 255) {
   return { w, h, rgb: new Uint8Array(w * h * 3).fill(color) };
 }

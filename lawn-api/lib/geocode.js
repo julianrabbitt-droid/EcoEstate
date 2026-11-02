@@ -35,5 +35,8 @@ export async function geocode(address) {
     lon: Number(top.location.lng),
     label: top.formatted_address,
     accuracy: top.accuracy_type,
+    city: top.address_components?.city || '',
+    state: top.address_components?.state_province || top.address_components?.state || '',
+    zip: top.address_components?.postal_code || top.address_components?.zip || '',
   };
 }
