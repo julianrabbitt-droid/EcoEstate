@@ -937,7 +937,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     const markDirty = () => { dirty = true; };
 
     threeRef.current = { scene, camera, renderer, controls, plantGroup, ring, raycaster, pointer, groundPlane, cx, cy, maxDim, overview, camFor, markDirty };
-    if (import.meta.env.DEV) window.__ecoThree = threeRef; // inspect the scene from the console while developing
+    // Inspect the scene from the console while developing, or on the live site with ?debug3d.
+    if (import.meta.env.DEV || /[?&]debug3d\b/.test(window.location.search)) window.__ecoThree = threeRef;
 
     let frame;
     const ease = (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
@@ -1229,6 +1230,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
 
       holder.visible = photoRealRef.current;
       state = { tiles, holder, active: photoRealRef.current, wantUpdate: true, dispose: null };
+      if (window.__ecoThree) window.__ecoTiles = state;
       const ray = new THREE.Raycaster();
       ray.firstHitOnly = true;
       const down = new THREE.Vector3(0, -1, 0);
