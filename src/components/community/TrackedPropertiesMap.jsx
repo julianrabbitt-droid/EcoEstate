@@ -13,6 +13,8 @@ const ATTRIBUTION = 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenSt
 const NEARBY_MILES = 25;
 const OTHER_STYLE = { color: '#4a6b3a', weight: 2, fillColor: '#7d8f6e', fillOpacity: 0.45 };
 const OWN_STYLE = { color: '#c4673b', weight: 2, fillColor: '#f0a03c', fillOpacity: 0.5 };
+// Community posts sit at their city's centre: a ringed marker, distinct from projects.
+const POST_STYLE = { color: '#2f5d8a', weight: 3, fillColor: '#ffffff', fillOpacity: 0.9 };
 // Locations are approximate (~1 km), so markers are drawn as areas, not pins.
 const MARKER_RADIUS_PX = 14;
 
@@ -84,7 +86,7 @@ function MessageButton({ project }) {
 }
 
 // Map and "nearby" list of other members' shared lawn conversions.
-export default function TrackedPropertiesMap() {
+export default function TrackedPropertiesMap({ posts = [] }) {
   const { user } = useAuth();
   const [projects, setProjects] = useState([]);
   const [mine, setMine] = useState([]);
@@ -139,7 +141,20 @@ export default function TrackedPropertiesMap() {
       .sort((a, b) => a.miles - b.miles);
   }, [located, home, user?.id]);
 
-  const fitPoints = useMemo(() => located.map((p) => p.point), [located]);
+  // Posts with a city, grouped so one marker per city lists all of its posts.
+  const postPlaces = useMemo(() => {
+    const groups = new Map();
+    for (const post of posts) {
+      const point = toPoint(post.mapPoint);
+      if (!point) continue;
+      const key = point.join(',');
+      if (!groups.has(key)) groups.set(key, { key, point, city: post.city, posts: [] });
+      groups.get(key).posts.push(post);
+    }
+    return [...groups.values()];
+  }, [posts]);
+
+  const fitPoints = useMemo(() => [...located.map((p) => p.point), ...postPlaces.map((g) => g.point)], [located, postPlaces]);
 
   const useMyLocation = () => {
     setGeoError('');
@@ -185,12 +200,12 @@ export default function TrackedPropertiesMap() {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
         <div className="surface relative h-[360px] overflow-hidden">
-          {located.length === 0 && (
+          {located.length === 0 && postPlaces.length === 0 && (
             <p className="absolute inset-x-0 top-3 z-[500] mx-auto w-fit rounded-full bg-background/90 px-3 py-1 text-[11.5px] text-muted-foreground shadow">
-              No properties shared yet
+              No properties or posts on the map yet
             </p>
           )}
-          <MapContainer center={home || [39.5, -98.35]} zoom={home ? 10 : 4} className="h-full w-full" style={{ background: "#e9e9e6" }} scrollWheelZoom={false}>
+          <MapContainer center={home || [39.5, -98.35]} zoom={home ? 10 : 4} className="h-full w-full" style={{ background: "#e9e9e6" }} scrollWheelZoom>
             <TileLayer url={BASEMAP} attribution={ATTRIBUTION} maxNativeZoom={16} maxZoom={19} />
             <KeepSized />
             <FitBounds points={fitPoints} />
@@ -210,6 +225,23 @@ export default function TrackedPropertiesMap() {
                 </CircleMarker>
               );
             })}
+            {postPlaces.map((g) => (
+              <CircleMarker key={`post-${g.key}`} center={g.point} radius={9} pathOptions={POST_STYLE}>
+                <Popup>
+                  <div className="space-y-1.5 text-[12.5px]">
+                    <p className="font-medium">{g.city}</p>
+                    <ul className="space-y-1">
+                      {g.posts.slice(0, 5).map((post) => (
+                        <li key={post.id}>
+                          <a href={`#post-${post.id}`} className="underline underline-offset-2">{post.title}</a>
+                        </li>
+                      ))}
+                    </ul>
+                    {g.posts.length > 5 && <p className="text-muted-foreground">+{g.posts.length - 5} more in the feed</p>}
+                  </div>
+                </Popup>
+              </CircleMarker>
+            ))}
           </MapContainer>
         </div>
 

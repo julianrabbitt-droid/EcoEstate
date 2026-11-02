@@ -34,7 +34,7 @@ export default function Community() {
       </p>
 
       <div className="mt-6">
-        <TrackedPropertiesMap />
+        <TrackedPropertiesMap posts={posts} />
       </div>
 
       <div className="mt-6">

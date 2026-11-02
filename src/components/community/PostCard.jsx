@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, MessageCircle, Send, Trash2 } from 'lucide-react';
+import { Loader2, MapPin, MessageCircle, Send, Trash2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ConfirmProvider';
@@ -96,12 +96,13 @@ export default function PostCard({ post, me, onDelete }) {
   };
 
   return (
-    <article className="surface overflow-hidden">
+    <article id={`post-${post.id}`} className="surface scroll-mt-24 overflow-hidden">
       <div className="flex items-start justify-between gap-3 px-5 pt-4">
         <div>
           <h2 className="text-[15px] font-medium leading-tight">{post.title}</h2>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
             {(isMine || me?.role === 'admin') ? (post.author_name || 'Member') : 'Member'} · {timeOf(post.created_date)}
+            {post.city && <> · <MapPin className="mb-0.5 inline h-3 w-3" aria-hidden /> {post.city}</>}
           </p>
         </div>
         {isMine && (

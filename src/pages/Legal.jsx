@@ -53,7 +53,7 @@ const PRIVACY = [
     title: 'What other people can see',
     list: [
       'Your scans, designs, photos and tracked projects are private to your account unless you choose to share them.',
-      'Community posts and comments show your name and the photos you attach, to other members.',
+      'Community posts and comments show your name and the photos you attach, to other members. If you add a city to a post, it also appears on the community map at the centre of that city, never at your address.',
       'If you turn on “Share on community map” for a tracked project, other members see your first name, the project’s progress, and an approximate location (rounded to about 1 km) with the city or neighborhood name, never your street address or exact location. You can turn sharing off at any time.',
       'Messages are visible only to you and the member you are messaging. If a member reports a conversation to us, we may review it to enforce the community rules.',
       'If you subscribe using a friend’s referral code, we show your first name to that friend so they know the referral worked.',

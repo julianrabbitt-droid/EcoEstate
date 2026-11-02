@@ -20,6 +20,14 @@
       },
       "title": "Image URIs"
     },
+    "city": {
+      "type": "string",
+      "title": "City the post is about, e.g. Palo Alto, California (optional)"
+    },
+    "mapPoint": {
+      "type": "array",
+      "title": "City centre [lat, lng], rounded to about 1 km, for the community map"
+    },
     "author_name": {
       "type": "string",
       "title": "Author name",
