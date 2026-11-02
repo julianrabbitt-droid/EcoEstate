@@ -1,13 +1,13 @@
 # Render blueprint: one web service runs the site, the API and the lawn
-# measurement service (scripts/start-production.mjs). Free plan (512 MB, sleeps
-# when idle): very large scans can need ~730 MB, so move to Standard (2 GB) if
-# they start failing. Secrets marked sync: false are entered in the Render
+# measurement service (scripts/start-production.mjs). Starter plan ($7/month,
+# 512 MB, always on): very large scans can need ~730 MB, so move to Standard
+# (2 GB) if they start failing. Secrets marked sync: false are entered in the Render
 # dashboard, never committed.
 services:
   - type: web
     name: ecoestate
     runtime: node
-    plan: free
+    plan: starter
     region: oregon
     branch: main
     buildCommand: npm ci && npm run build

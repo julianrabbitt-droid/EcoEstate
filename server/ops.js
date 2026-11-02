@@ -39,7 +39,7 @@ const stripeUrl = (path) => `https://dashboard.stripe.com/${stripeLive() ? '' : 
 // Metered usage is added separately.
 export const FIXED_COSTS = [
   { name: 'Anthropic (Claude subscription)', usd: 100, url: 'https://claude.ai/settings/billing', since: '2026-10' },
-  { name: 'Render (Free web service)', usd: 0, url: CONSOLES.render, since: '2026-10' },
+  { name: 'Render (Starter web service)', usd: 7, url: CONSOLES.render, since: '2026-11' },
   { name: 'Cloudflare (ecoestate.org domain, yearly / 12)', usd: 10.44 / 12, url: CONSOLES.cloudflare, since: '2026-10', billingApi: 'cloudflare' },
   { name: 'Supabase (Free plan)', usd: 0, url: `${CONSOLES.supabase}/settings/billing`, since: '2026-10' },
   { name: 'Clerk (Free plan)', usd: 0, url: CONSOLES.clerk, since: '2026-10' },

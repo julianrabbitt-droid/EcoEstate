@@ -12,7 +12,7 @@ const STAC_ROOT = 'https://stac.overturemaps.org/catalog.json';
 const INDEX_TTL = 24 * 3600 * 1000;
 const RETRY_MS = 10 * 60 * 1000; // after a failed refresh, keep the old index this long before trying again
 const READ_TIMEOUT_MS = 30000;
-const READ_AT_ONCE = 2; // row groups read in parallel (each is a few MB in memory; the free server has 512 MB)
+const READ_AT_ONCE = 2; // row groups read in parallel (each is a few MB in memory; the server has 512 MB)
 
 const BUILDINGS = 'buildings/building';
 const SEGMENTS = 'transportation/segment';
