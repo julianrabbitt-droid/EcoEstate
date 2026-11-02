@@ -32,7 +32,7 @@ export default function ScanDiagram({ project, defaultOpen = true }) {
             className="absolute inset-0 h-full w-full object-contain"
           />
           <ScanContours estimate={project.scanEstimate} />
-          <figcaption className="absolute left-2 top-2 rounded-full bg-foreground/85 px-2.5 py-1 text-[9.5px] uppercase tracking-[0.14em] text-background">
+          <figcaption className="absolute left-2 top-2 rounded-full bg-foreground/85 px-2.5 py-1 text-[12px] text-background">
             Satellite · scan
           </figcaption>
         </figure>

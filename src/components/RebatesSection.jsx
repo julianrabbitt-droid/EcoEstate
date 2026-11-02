@@ -37,7 +37,7 @@ export default function RebatesSection({ incentives }) {
                   {program.upTo != null ? `Up to ${money(program.upTo)}` : money(program.amount)}
                 </span>
               </div>
-              <p className="mt-1 text-[11px] uppercase tracking-[0.08em] text-muted-foreground">{program.provider}</p>
+              <p className="mt-1 text-[12px] text-muted-foreground">{program.provider}</p>
               <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">{program.desc}</p>
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
                 <a

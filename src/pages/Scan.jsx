@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Leaf, Loader2 } from 'lucide-react';
 import { getLawn, getLawnForParcel, measureArea, mergeLawnOutlines } from '@/api/lawnApi';
 import { Button } from '@/components/ui/button';
@@ -14,8 +14,9 @@ import { geocodeAddress, geoJsonOuterRings, outlinesToFeatureCollection, zoomFor
 import { carryBuildingHeights } from '@/lib/gardenLayout';
 import AddressAutocomplete from '@/components/scan/AddressAutocomplete';
 import { createProject } from '@/lib/projectStore';
-import { autoDesign, financials, money, num } from '@/lib/landscapeMath';
+import { autoDesign, financials, money } from '@/lib/landscapeMath';
 import { useAutoScanAccess } from '@/hooks/useAutoScanAccess';
+import { usePageMeta } from '@/hooks/usePageMeta';
 // "920, Moreno Avenue, Palo Alto, Santa Clara County, …" -> "920 Moreno Avenue, Palo Alto".
 function shortAddress(label) {
   const parts = String(label || '').split(',').map((p) => p.trim()).filter(Boolean);
@@ -50,26 +51,18 @@ function scannedStructures(d) {
 }
 
 const STEPS = [
-  {
-    t: 'Measure the lawn',
-    d: 'Enter your address and we measure the lawn from aerial imagery, mapping it alongside the buildings, trees and paths around it.',
-  },
-  {
-    t: 'Adjust the outline',
-    d: 'Check the lawn map and adjust its outline to fix anything the imagery missed, or trace it yourself, or enter your own size.',
-  },
-  {
-    t: 'Design the replacement',
-    d: 'Regional native species matched to your location, swapped one by one and grown to maturity in 3D.',
-  },
-  {
-    t: 'See the payoff',
-    d: 'Rebates from the programs that serve your address, water and money saved, payback, and how water, carbon and habitat add up over 10 or 30 years.',
-  },
-  {
-    t: 'Build it',
-    d: 'A planting plan, materials list and local nurseries and crews to install it.',
-  },
+  { t: 'Scan your lawn', d: 'Enter an address and we outline the lawn from aerial imagery. Adjust it if anything’s off.' },
+  { t: 'Design a native garden', d: 'Plants that belong in your area, laid out on your lawn in 3D.' },
+  { t: 'See the payoff', d: 'Water and money saved, local rebates, the cost to install, and a plan to build it.' },
+];
+
+// Kept to differences that hold generally; specifics depend on the plants chosen.
+const COMPARISON = [
+  ['Water', 'Needs regular watering through dry months', 'Little extra water once established, when plants suit your area'],
+  ['Wildlife', 'Feeds almost no local insects or birds', 'Food and shelter for local pollinators and birds'],
+  ['Upkeep', 'Weekly mowing, fertilizer and weed control', 'No mowing; some weeding and seasonal pruning'],
+  ['Cost', 'Cheap to keep as is, but water and mowing never stop', 'Costs money to install; lower ongoing costs, often with rebates'],
+  ['Look', 'Uniform green, brown in drought', 'Changing color, flowers and texture through the year'],
 ];
 
 const SOURCE_LABEL = {
@@ -81,6 +74,7 @@ const SOURCE_LABEL = {
 };
 
 export default function Scan() {
+  usePageMeta();
   const [query, setQuery] = useState('');
   const [center, setCenter] = useState(DEFAULT_CENTER);
   const [zoom, setZoom] = useState(17);
@@ -97,10 +91,16 @@ export default function Scan() {
   const [result, setResult] = useState({ area: 0, source: 'satellite', boundary: [], turf: null });
   const navigate = useNavigate();
   const autoAccess = useAutoScanAccess();
-  const sampleFin = useMemo(
-    () => financials({ breakdown: { turf: 1200 } }, autoDesign({ countryCode: 'US', state: 'California', zip: '94301', breakdown: { turf: 1200 } })),
-    [],
-  );
+  // An honest range from the app's own model for common lawn sizes, rather
+  // than one confident number: yearly savings next to what installing costs.
+  const sampleRange = useMemo(() => {
+    const at = (turf) => {
+      const p = { countryCode: 'US', state: 'California', zip: '94301', breakdown: { turf } };
+      return financials(p, autoDesign(p));
+    };
+    const [small, large] = [at(800), at(2000)];
+    return { save: [small.annualSavings, large.annualSavings], cost: [small.totalCost, large.totalCost] };
+  }, []);
 
   const buildProject = async (over) =>
     createProject({
@@ -311,14 +311,12 @@ export default function Scan() {
     <div>
       <section className="mx-auto grid w-full max-w-6xl gap-12 px-5 pb-16 pt-12 lg:grid-cols-[1fr_1.1fr] lg:items-start lg:pt-20">
         <div className="lg:sticky lg:top-24">
-          <span className="label-xs">Scan your lawn</span>
-          <h1 className="mt-5 font-display text-[2.3rem] font-normal leading-[1.05] tracking-tight text-foreground sm:text-[2.7rem]">
-            Replace your lawn with <em className="italic text-accent">native plants</em>, save water and money.
+          <h1 className="font-display text-[2.6rem] font-normal leading-[1.02] tracking-[-0.015em] text-foreground sm:text-[3.4rem]">
+            Your lawn could be doing more.
           </h1>
-          <p className="mt-6 max-w-md text-[15px] leading-relaxed text-muted-foreground">
-            We scan your lawn to measure its size and water use: the starting point for calculating how much water,
-            money and habitat you'd gain by replacing it with native plants. Confirm the scan, fine-tune it, or
-            upload your own photos, and we'll show the payoff.
+          <p className="mt-6 max-w-md text-[16.5px] leading-relaxed text-foreground/80">
+            Enter your address. We outline your lawn from satellite imagery and show what replacing it with native
+            plants could save in water and money, and what it could look like.
           </p>
 
           <form onSubmit={handleScan} className="mt-9 flex flex-col gap-2.5 sm:flex-row">
@@ -326,42 +324,30 @@ export default function Scan() {
               value={query}
               onChange={setQuery}
               onSelect={(hit) => scanAddress(hit.label || query, hit)}
-              placeholder="Enter address"
+              placeholder="Enter your address"
             />
             <Button type="submit" disabled={loading} className="h-12 rounded-full px-6 text-[15px]">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Scan property<ArrowRight className="ml-2 h-4 w-4" /></>}
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Scan my lawn'}
             </Button>
           </form>
-          <p className="mt-3 max-w-md text-[11.5px] leading-relaxed text-muted-foreground">
-            Automatic lawn measurement is available for properties in the United States only. Elsewhere, you can
-            outline your lawn by hand.
+          {note && <p className="mt-3 max-w-md text-[13px] leading-relaxed text-muted-foreground">{note}</p>}
+          <p className="mt-4 max-w-md text-[13px] leading-relaxed text-muted-foreground">
+            Free, no account needed. US addresses scan automatically; elsewhere you can outline your lawn by hand.{' '}
+            <Link to="/examples" className="font-medium text-foreground underline underline-offset-4">See real examples</Link>
           </p>
-          {note && <p className="mt-3 max-w-md text-xs leading-relaxed text-muted-foreground">{note}</p>}
 
-          {!autoAccess.loading && autoAccess.needsSignIn && (
-            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-[11px] font-medium text-foreground shadow-sm">
-              <Leaf className="h-3.5 w-3.5 text-accent" />
-              Sign in to run a free Full Auto Scan
-            </div>
-          )}
-
-          <dl className="mt-10 grid max-w-md grid-cols-2 gap-x-6 gap-y-5 border-t border-border/70 pt-6">
-            {[
-              [money(sampleFin.annualSavings), 'saved per year'],
-              [`${num(sampleFin.gallonsSaved)} gal`, 'water cut annually'],
-              ['Up to $5/sq ft', 'in local rebates, where offered'],
-              [`${Math.max(1, Math.round(sampleFin.payback))} yr`, 'to pay back'],
-            ].map(([v, l]) => (
-              <div key={l}>
-                <dt className="font-display text-2xl tracking-tight">{v}</dt>
-                <dd className="mt-0.5 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{l}</dd>
-              </div>
-            ))}
-          </dl>
-          <p className="mt-3 max-w-md text-[11px] leading-relaxed text-muted-foreground">
-            Savings and payback are modeled for a typical 1,200 sq ft lawn, before any rebate. Your scan uses your
-            lawn and the programs that serve your address.
-          </p>
+          <div className="mt-10 max-w-md border-t border-border/70 pt-6">
+            <p className="text-[14px] text-foreground">
+              Typical lawns of 800 to 2,000 sq ft could save about{' '}
+              <span className="font-display text-[1.35rem]">{money(sampleRange.save[0])}–{money(sampleRange.save[1])}</span> a year in
+              water and upkeep.
+            </p>
+            <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
+              Installing a native garden costs roughly {money(sampleRange.cost[0])}–{money(sampleRange.cost[1])} before rebates, so
+              payback takes years. Your scan shows the numbers for your lawn, your local rebates and the assumptions
+              behind them.
+            </p>
+          </div>
         </div>
 
         <div className="overflow-hidden rounded-[26px] border border-border bg-card shadow-[0_30px_70px_-40px_rgba(16,35,28,0.55)]">
@@ -467,54 +453,73 @@ export default function Scan() {
         </div>
       </section>
 
-      <section className="border-t border-border/70 bg-secondary/40 py-16">
+      <section className="border-t border-border/70 py-16 sm:py-20">
         <div className="mx-auto w-full max-w-6xl px-5">
-          <span className="label-xs">How it works</span>
-          <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
-            {STEPS.map((s, i) => (
-              <div key={s.t} className="border-t border-border pt-4">
-                <span className="font-mono text-[11px] text-accent">0{i + 1}</span>
-                <h3 className="mt-2 text-[15px] font-medium tracking-tight">{s.t}</h3>
-                <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{s.d}</p>
-              </div>
+          <h2 className="font-display text-[2rem] tracking-tight">How it works</h2>
+          <ol className="mt-8 grid gap-8 sm:grid-cols-3">
+            {STEPS.map((step, i) => (
+              <li key={step.t} className="border-t border-border pt-4">
+                <span className="font-display text-[1.6rem] text-accent">{i + 1}</span>
+                <h3 className="mt-1 text-[16px] font-medium tracking-tight">{step.t}</h3>
+                <p className="mt-1.5 max-w-xs text-[14px] leading-relaxed text-muted-foreground">{step.d}</p>
+              </li>
             ))}
-          </div>
+          </ol>
         </div>
       </section>
 
-      <section className="border-t border-border/70 py-16">
-        <div className="mx-auto grid w-full max-w-6xl gap-10 px-5 sm:grid-cols-2">
-          <div className="surface p-6">
-            <div className="flex items-center gap-2">
-              <span className="label-xs">Free for everyone</span>
-              <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-accent">
-                Unlimited
-              </span>
-            </div>
-            <h2 className="mt-3 font-display text-2xl tracking-tight">Scanning and 3D are free.</h2>
-            <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
-              Sign in to run unlimited Full Auto Scans and explore your garden in the full 3D view, including the
-              orbit camera and first-person walk-through, at no cost. EcoEstate Pro ($10/month) adds the
-              community, project tracking and project exports, and is free for students with a school email. Manual
-              outlining, analysis and planning are always free.
+      <section className="border-t border-border/70 bg-secondary/40 py-16 sm:py-20">
+        <div className="mx-auto grid w-full max-w-6xl gap-10 px-5 lg:grid-cols-[0.8fr_1.2fr]">
+          <div>
+            <h2 className="font-display text-[2rem] leading-tight tracking-tight">A lawn, or a native garden?</h2>
+            <p className="mt-4 max-w-sm text-[15px] leading-relaxed text-muted-foreground">
+              Native plants are the ones that grow naturally where you live, alongside the local climate and
+              wildlife. Chosen for your area, they can look beautiful with far less water and mowing.
             </p>
+            <Link to="/why-native" className="mt-5 inline-block text-[14px] font-medium underline underline-offset-4">
+              Why native plants matter
+            </Link>
           </div>
-
-          <div className="surface p-6">
-            <span className="label-xs">Support</span>
-            <h2 className="mt-3 font-display text-2xl tracking-tight">Need a hand?</h2>
-            <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">
-              Questions about a scan, a plant list or a rebate? Email me and I'll help you get the most out of your
-              property.
-            </p>
-            <a
-              href="mailto:support@ecoestate.org"
-              className="mt-4 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-[13px] font-medium text-primary-foreground transition hover:bg-primary/90"
-            >
-              support@ecoestate.org
-            </a>
-          </div>
+          <table className="w-full text-left text-[14px]">
+            <caption className="sr-only">How a conventional lawn compares with a native garden</caption>
+            <thead>
+              <tr className="border-b border-border">
+                <th scope="col" className="py-2 pr-4 font-medium text-muted-foreground"><span className="sr-only">Topic</span></th>
+                <th scope="col" className="py-2 pr-4 font-medium">Conventional lawn</th>
+                <th scope="col" className="py-2 font-medium">Native garden</th>
+              </tr>
+            </thead>
+            <tbody>
+              {COMPARISON.map(([topic, lawn, native]) => (
+                <tr key={topic} className="border-b border-border/70 align-top">
+                  <th scope="row" className="py-3 pr-4 font-medium">{topic}</th>
+                  <td className="py-3 pr-4 text-muted-foreground">{lawn}</td>
+                  <td className="py-3 text-foreground">{native}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+      </section>
+
+      <section className="border-t border-border/70 py-16 sm:py-20">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-end justify-between gap-6 px-5">
+          <div className="max-w-xl">
+            <h2 className="font-display text-[2rem] leading-tight tracking-tight">See what other lawns became</h2>
+            <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+              Real lawn-to-garden projects from community programs, with links to their own write-ups, plus trusted
+              guides to native plants and local rebates.
+            </p>
+          </div>
+          <Button asChild variant="outline" className="rounded-full px-6">
+            <Link to="/examples">Browse examples</Link>
+          </Button>
+        </div>
+        <p className="mx-auto mt-12 w-full max-w-6xl px-5 text-[13px] leading-relaxed text-muted-foreground">
+          Scanning, design and the 3D view are free. Pro ($10/month) adds tracking, exports and the community, and is
+          free with a school email. Questions?{' '}
+          <a href="mailto:support@ecoestate.org" className="text-foreground underline underline-offset-4">support@ecoestate.org</a>
+        </p>
       </section>
     </div>
   );

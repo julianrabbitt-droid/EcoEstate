@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /project/
+Disallow: /projects
+Disallow: /my-projects
+Disallow: /social
+Disallow: /invite
+Disallow: /admin
+Sitemap: https://ecoestate.org/sitemap.xml

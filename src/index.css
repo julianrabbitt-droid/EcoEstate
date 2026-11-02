@@ -98,7 +98,8 @@
   }
 
   .label-xs {
-    @apply text-[10.5px] font-medium uppercase tracking-[0.2em] text-muted-foreground;
+    /* Small section labels: sentence case and readable, not tiny tracked capitals. */
+    @apply text-[12.5px] font-medium tracking-normal text-muted-foreground;
   }
 
   .field {

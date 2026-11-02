@@ -34,7 +34,7 @@ export default function BuildTimeline({ sqft = 0 }) {
               <p.icon className="h-4 w-4" />
             </span>
             <div className="pt-0.5">
-              <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">{p.when}</p>
+              <p className="font-mono text-[12px] text-muted-foreground">{p.when}</p>
               <p className="mt-0.5 text-[13px] font-medium leading-tight">{p.title}</p>
               <p className="mt-1 max-w-md text-[11.5px] leading-relaxed text-muted-foreground">{p.body}</p>
             </div>

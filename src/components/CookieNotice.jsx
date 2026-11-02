@@ -26,16 +26,18 @@ export default function CookieNotice() {
     setOpen(false);
   };
   return (
-    <div role="region" aria-label="Cookie notice" className="fixed inset-x-3 bottom-3 z-40 mx-auto max-w-xl rounded-2xl border border-border bg-card p-4 shadow-lg sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2">
-      <p className="text-[13px] leading-relaxed text-foreground">
-        We only use cookies needed to sign you in and keep the site working. No ads, analytics or tracking.{' '}
-        <Link to="/cookies" className="underline underline-offset-2">Cookie Policy</Link>
+    <div
+      role="region"
+      aria-label="Cookie notice"
+      className="fixed bottom-3 left-3 right-3 z-40 flex items-center gap-3 rounded-2xl border border-border bg-card/95 px-4 py-3 shadow-lg backdrop-blur sm:right-auto sm:max-w-sm"
+    >
+      <p className="text-[12.5px] leading-snug text-foreground">
+        Only the cookies needed to sign in. No ads or tracking.{' '}
+        <Link to="/cookies" className="underline underline-offset-2">Details</Link>
       </p>
-      <div className="mt-3 flex justify-end">
-        <Button size="sm" className="rounded-full px-5" onClick={close}>
-          OK
-        </Button>
-      </div>
+      <Button size="sm" className="shrink-0 rounded-full px-4" onClick={close}>
+        OK
+      </Button>
     </div>
   );
 }

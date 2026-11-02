@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { usePageMeta } from '@/hooks/usePageMeta';
 
 // Privacy Policy and Terms of Service. Plain-language, and kept in step with
 // what the app actually does: if a feature starts collecting or sharing new
@@ -304,6 +305,7 @@ function Section({ title, body = [], list, after = [] }) {
 }
 
 function LegalPage({ label, title, sections }) {
+  usePageMeta({ title, description: `EcoEstate ${title.toLowerCase()}.` });
   return (
     <div className="mx-auto w-full max-w-2xl px-5 py-12">
       <p className="label-xs">{label}</p>

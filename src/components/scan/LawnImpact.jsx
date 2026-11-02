@@ -21,7 +21,7 @@ export default function LawnImpact({ lawnSqft, impact, updating = false, error =
     <div className="space-y-3 px-4">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Lawn area</p>
+          <p className="text-[12px] text-muted-foreground">Lawn area</p>
           <p className="font-display text-[2.1rem] leading-none tracking-tight">
             {typeof lawnSqft === 'number' ? num(lawnSqft) : '—'}
             <span className="ml-1.5 text-sm text-muted-foreground">sq ft</span>

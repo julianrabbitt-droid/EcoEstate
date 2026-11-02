@@ -157,6 +157,14 @@ export default function Design() {
             activeArrangement={arrangement}
             onApplyArrangement={applyArrangement}
           />
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-secondary/60 px-4 py-3">
+            <p className="text-[13px] text-foreground">Lawn, house or trees not quite right?</p>
+            <Button asChild variant="outline" size="sm" className="rounded-full">
+              <Link to={`/project/${id}?edit=1`} state={{ project }}>
+                Edit the scan
+              </Link>
+            </Button>
+          </div>
         </section>
 
         <section className="surface p-5 lg:sticky lg:top-24">

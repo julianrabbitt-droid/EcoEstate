@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ChevronDown, Crown, Gift, GraduationCap, Leaf, LogIn, LogOut, RefreshCw, Trash2, User } from 'lucide-react';
+import { ChevronDown, Crown, Gift, GraduationCap, Leaf, LogIn, LogOut, RefreshCw, Sprout, Trash2, User } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -141,6 +141,9 @@ export default function AccountMenu() {
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => navigate('/projects')} className="gap-2">
             <User className="h-4 w-4" /> My properties
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => navigate('/my-projects')} className="gap-2">
+            <Sprout className="h-4 w-4" /> My projects
           </DropdownMenuItem>
           <DropdownMenuItem onClick={refresh} disabled={loading} className="gap-2">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh access

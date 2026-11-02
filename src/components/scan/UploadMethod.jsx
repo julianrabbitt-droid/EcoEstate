@@ -23,7 +23,7 @@ export default function UploadMethod({ onResult }) {
       </p>
 
       <div className="mt-4 flex items-center gap-2">
-        <label className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Your lawn size</label>
+        <label className="text-[12px] text-muted-foreground">Your lawn size</label>
         <input
           type="number"
           min={0}

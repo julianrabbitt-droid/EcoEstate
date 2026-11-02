@@ -260,7 +260,7 @@ export default function Plan() {
               <li key={org.id} className={org.highlight ? 'rounded-xl border border-accent/30 bg-accent/5 p-4' : 'border-b border-border/60 pb-4'}>
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="text-[13.5px] font-medium">{org.name}</p>
-                  <span className="text-[10.5px] uppercase tracking-[0.12em] text-muted-foreground">{org.kind}</span>
+                  <span className="text-[12px] text-muted-foreground">{org.kind}</span>
                 </div>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">{org.area}</p>
                 <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">{org.desc}</p>
@@ -294,7 +294,7 @@ export default function Plan() {
             {copied ? 'Copied to clipboard' : 'Copy project brief'}
           </Button>
 
-          <h3 className="mt-5 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Where to buy plants</h3>
+          <h3 className="mt-5 text-[12px] text-muted-foreground">Where to buy plants</h3>
           <ul className="mt-2 space-y-1.5 text-[11.5px]">
             {NURSERIES.map((nursery) => (
               <li key={nursery.name} className="flex justify-between gap-2 border-b border-border/50 pb-1.5">

@@ -5,7 +5,7 @@ export default function StatTile({ label, value, sub, accent = false, className 
     <div className={cn('surface px-4 py-4', accent && 'bg-primary text-primary-foreground', className)}>
       <p
         className={cn(
-          'text-[10px] uppercase tracking-[0.16em]',
+          'text-[12px]',
           accent ? 'text-primary-foreground/60' : 'text-muted-foreground'
         )}
       >

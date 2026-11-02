@@ -88,7 +88,7 @@ function PropertyList() {
             return (
               <li key={project.id} className="surface group relative p-5">
                 <Link to={`/project/${project.id}`} className="block">
-                  <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                  <p className="text-[12px] text-muted-foreground">
                     {project.city || 'Property'} · {new Date(project.createdAt || Date.now()).toLocaleDateString()}
                   </p>
                   <p className="mt-1.5 pr-8 font-display text-[19px] leading-snug tracking-tight">{project.address}</p>

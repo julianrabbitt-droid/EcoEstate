@@ -176,16 +176,16 @@ export default function PhotoCompare({ entries = [] }) {
                   style={{ left: `${slider}%` }}
                   aria-hidden
                 />
-                <span className="absolute left-3 top-3 rounded-full bg-foreground/70 px-2 py-0.5 text-[9.5px] uppercase tracking-[0.14em] text-background">
+                <span className="absolute left-3 top-3 rounded-full bg-foreground/70 px-2 py-0.5 text-[12px] text-background">
                   Proposed
                 </span>
-                <span className="absolute right-3 top-3 rounded-full bg-foreground/70 px-2 py-0.5 text-[9.5px] uppercase tracking-[0.14em] text-background">
+                <span className="absolute right-3 top-3 rounded-full bg-foreground/70 px-2 py-0.5 text-[12px] text-background">
                   Current
                 </span>
               </>
             )}
             {!proposed && (
-              <span className="absolute left-3 top-3 rounded-full bg-foreground/70 px-2 py-0.5 text-[9.5px] uppercase tracking-[0.14em] text-background">
+              <span className="absolute left-3 top-3 rounded-full bg-foreground/70 px-2 py-0.5 text-[12px] text-background">
                 Current
               </span>
             )}

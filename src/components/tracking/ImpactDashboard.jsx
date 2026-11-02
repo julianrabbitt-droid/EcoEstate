@@ -28,7 +28,7 @@ function Stat({ label, value, unit, tag, note }) {
         {unit && value !== '—' && <span className="ml-1 text-[12px] font-sans text-muted-foreground">{unit}</span>}
       </p>
       {tag && value !== '—' && (
-        <span className="mt-1 inline-block rounded-full bg-secondary px-2 py-0.5 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+        <span className="mt-1 inline-block rounded-full bg-secondary px-2 py-0.5 text-[12px] text-muted-foreground">
           {tag}
         </span>
       )}

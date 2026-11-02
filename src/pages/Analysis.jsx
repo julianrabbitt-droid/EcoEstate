@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Check, Loader2, Sprout } from 'lucide-react';
 import StepNav from '@/components/StepNav';
 import ScanDiagram from '@/components/ScanDiagram';
@@ -37,6 +37,7 @@ function ConfidenceBar({ value }) {
 }
 
 export default function Analysis() {
+  const [searchParams] = useSearchParams();
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -132,6 +133,7 @@ export default function Analysis() {
         <ScanDiagram project={project} />
         <EditScanPanel
           project={project}
+          defaultOpen={searchParams.get('edit') === '1'}
           onApplied={() => {
             autosave.cancel();
             setSynced(false);
@@ -144,7 +146,7 @@ export default function Analysis() {
         <section className="surface p-5">
           <div className="flex items-center justify-between">
             <h2 className="text-[15px] font-medium tracking-tight">Landscape breakdown</h2>
-            <span className="rounded-full bg-secondary px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            <span className="rounded-full bg-secondary px-2.5 py-1 text-[12px] text-muted-foreground">
               imagery estimate
             </span>
           </div>
@@ -178,7 +180,7 @@ export default function Analysis() {
             <span className="font-medium">{num(total)} sq ft</span>
           </div>
           <div className="mt-2 flex items-center justify-between rounded-xl bg-primary px-3.5 py-2.5 text-primary-foreground">
-            <span className="text-[12px] uppercase tracking-[0.12em] text-primary-foreground/70">Convertible</span>
+            <span className="text-[12px] text-primary-foreground/70">Convertible</span>
             <span className="font-display text-lg">{num(breakdown.turf)} sq ft</span>
           </div>
         </section>
@@ -186,7 +188,7 @@ export default function Analysis() {
         <section className="surface p-5">
           <div className="flex items-center justify-between">
             <h2 className="text-[15px] font-medium tracking-tight">What grows there</h2>
-            <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            <span className="text-[12px] text-muted-foreground">
               {turf.source === 'camera' ? 'confirmed by camera' : 'estimated'}
             </span>
           </div>
@@ -220,7 +222,7 @@ export default function Analysis() {
             )}
           </div>
 
-          <label className="mt-4 block text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+          <label className="mt-4 block text-[12px] text-muted-foreground">
             Or input your own values
           </label>
           <div className="mt-1.5 flex gap-2">
@@ -257,7 +259,7 @@ export default function Analysis() {
           </p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Sun exposure</label>
+              <label className="text-[12px] text-muted-foreground">Sun exposure</label>
               <div className="mt-1.5 flex gap-1.5">
                 {SUN_OPTIONS.map((option) => (
                   <button
@@ -275,7 +277,7 @@ export default function Analysis() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Soil</label>
+                <label className="text-[12px] text-muted-foreground">Soil</label>
                 <select value={soil} onChange={(e) => edit(setSoil)(e.target.value)} className="field mt-1.5">
                   {SOIL_OPTIONS.map((option) => (
                     <option key={option}>{option}</option>
@@ -283,7 +285,7 @@ export default function Analysis() {
                 </select>
               </div>
               <div>
-                <label className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">ZIP / postal code</label>
+                <label className="text-[12px] text-muted-foreground">ZIP / postal code</label>
                 <input value={zip} onChange={(e) => edit(setZip)(e.target.value)} placeholder="95126" className="field mt-1.5" />
               </div>
             </div>

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, Bird, Bug, CloudRain, Droplets, ExternalLink, Leaf, Sprout } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { REGIONS } from '@/data/regions';
+import { usePageMeta } from '@/hooks/usePageMeta';
 
 // Why native plants matter. Figures are only those we can source; each card
 // links to where it comes from. Keep it that way when editing.
@@ -46,6 +47,7 @@ const regionSources = Object.values(REGIONS)
   .map((r) => ({ name: r.name, ...r.source }));
 
 export default function WhyNative() {
+  usePageMeta({ title: 'Why native plants matter', description: 'What native plants are, why they matter for water, birds and pollinators, and how to choose ones that belong where you live.' });
   return (
     <div className="mx-auto w-full max-w-4xl px-5 py-12">
       <p className="label-xs">Why native plants</p>
@@ -117,7 +119,7 @@ export default function WhyNative() {
           {regionSources.map((r) => (
             <li key={r.url}>
               <a href={r.url} target="_blank" rel="noreferrer" className="group block rounded-xl border border-border p-3 hover:border-primary/30">
-                <span className="block text-[11px] uppercase tracking-[0.08em] text-muted-foreground">{r.name}</span>
+                <span className="block text-[12px] text-muted-foreground">{r.name}</span>
                 <span className="mt-0.5 flex items-center gap-1 text-[13px] text-foreground">
                   {r.label} <ExternalLink className="h-3 w-3 shrink-0 opacity-60" aria-hidden />
                 </span>

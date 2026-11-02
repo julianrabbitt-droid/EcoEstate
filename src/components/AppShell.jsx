@@ -1,13 +1,20 @@
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet } from 'react-router-dom';
 import { Sprout } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import AccountMenu from '@/components/AccountMenu';
 import AuthModal from '@/components/AuthModal';
 import CookieNotice from '@/components/CookieNotice';
 
+// First-time visitors see four places to go; your own properties and
+// projects live in the account menu.
+const NAV = [
+  { to: '/', label: 'Scan', end: true },
+  { to: '/why-native', label: 'Native plants' },
+  { to: '/examples', label: 'Examples' },
+  { to: '/social', label: 'Community' },
+];
+
 export default function AppShell() {
-  const { pathname } = useLocation();
-  const inProject = pathname.startsWith('/project');
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -28,66 +35,21 @@ export default function AppShell() {
             <span className="font-display text-[19px] tracking-tight">EcoEstate</span>
           </Link>
           <nav className="order-3 -mx-2 flex w-[calc(100%+1rem)] items-center gap-1 overflow-x-auto px-1 pb-1 text-sm md:order-2 md:mx-0 md:w-auto md:overflow-visible md:p-0" style={{ scrollbarWidth: 'none' }}>
-            <NavLink
-              to="/"
-              className={({ isActive }) =>
-                cn(
-                  'shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 transition',
-                  isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'
-                )
-              }
-            >
-              New scan
-            </NavLink>
-            <NavLink
-              to="/why-native"
-              className={({ isActive }) =>
-                cn(
-                  'shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 transition',
-                  isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'
-                )
-              }
-            >
-              Why native
-            </NavLink>
-            <NavLink
-              to="/projects"
-              className={({ isActive }) =>
-                cn(
-                  'shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 transition',
-                  isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'
-                )
-              }
-            >
-              My properties
-            </NavLink>
-            <NavLink
-              to="/my-projects"
-              className={({ isActive }) =>
-                cn(
-                  'shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 transition',
-                  isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'
-                )
-              }
-            >
-              My projects
-            </NavLink>
-            <NavLink
-              to="/social"
-              className={({ isActive }) =>
-                cn(
-                  'shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 transition',
-                  isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'
-                )
-              }
-            >
-              Social
-            </NavLink>
-            {inProject && (
-              <span className="ml-1 hidden rounded-full border border-border px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground sm:inline">
-                Project
-              </span>
-            )}
+            {NAV.map(({ to, label, end: exact }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={exact}
+                className={({ isActive }) =>
+                  cn(
+                    'shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 transition',
+                    isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'
+                  )
+                }
+              >
+                {label}
+              </NavLink>
+            ))}
           </nav>
           <div className="order-2 md:order-3">
             <AccountMenu />

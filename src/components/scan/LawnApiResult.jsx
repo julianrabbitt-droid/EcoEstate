@@ -154,7 +154,7 @@ export default function LawnApiResult({ data, onConfirm, onEdit, onRescan, onRem
             )}
             <FitTo geo={data.parcel?.geometry} fallback={center} />
           </MapContainer>
-          <span className="pointer-events-none absolute right-2 top-2 z-[500] rounded-full bg-foreground/85 px-2.5 py-1 text-[9.5px] uppercase tracking-[0.14em] text-background">
+          <span className="pointer-events-none absolute right-2 top-2 z-[500] rounded-full bg-foreground/85 px-2.5 py-1 text-[12px] text-background">
             {adjusting ? 'Estimated property line' : `Satellite · ${regionCount} lawn area${regionCount === 1 ? '' : 's'}`}
           </span>
         </div>

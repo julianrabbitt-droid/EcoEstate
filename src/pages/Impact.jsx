@@ -198,7 +198,7 @@ export default function Impact() {
             </div>
           </dl>
           <div className="mt-4 flex items-center justify-between rounded-xl bg-primary px-4 py-3 text-primary-foreground">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-primary-foreground/80">Your cost</span>
+            <span className="text-[12px] text-primary-foreground/80">Your cost</span>
             <span className="font-display text-2xl">{money(fin.outOfPocket)}</span>
           </div>
           <div className="mt-4 space-y-2 border-t border-border/70 pt-3 text-[12.5px]">

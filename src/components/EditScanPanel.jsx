@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Loader2, MapPin, Pencil } from 'lucide-react';
 import EditableLawnMap from '@/components/scan/EditableLawnMap';
 import { Button } from '@/components/ui/button';
@@ -21,8 +21,13 @@ function sameOutlines(a, b) {
 // Lets a user reopen the drawing tool and re-trace the lawn even after the scan
 // is confirmed. Seeds the map with the project's existing lawn, building, tree
 // and lot outlines, then writes the new geometry back to the project.
-export default function EditScanPanel({ project, onApplied }) {
-  const [open, setOpen] = useState(false);
+export default function EditScanPanel({ project, onApplied, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const sectionRef = useRef(null);
+  // Arriving from "Edit the scan" on the Design step: open and bring it into view.
+  useEffect(() => {
+    if (defaultOpen) sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [defaultOpen]);
   const [result, setResult] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -63,7 +68,7 @@ export default function EditScanPanel({ project, onApplied }) {
   };
 
   return (
-    <section className="surface p-4">
+    <section ref={sectionRef} className="surface scroll-mt-24 p-4">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}

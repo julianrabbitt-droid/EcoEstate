@@ -125,7 +125,7 @@ export default function PlantHelp({ tracked, project, latestEntry }) {
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-[14px] font-medium tracking-tight">{c.name}</h3>
                         {lowWater && c.lowWater && (
-                          <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                          <span className="rounded-full bg-secondary px-2 py-0.5 text-[12px] text-muted-foreground">
                             Most likely for this plant
                           </span>
                         )}

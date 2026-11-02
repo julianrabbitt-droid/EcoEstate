@@ -274,7 +274,7 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
       <div className="flex flex-wrap items-center gap-1.5 border-b border-border/70 px-4 py-2.5">
         {activeShape ? (
           <>
-            <span className="mr-1 text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">Label</span>
+            <span className="mr-1 text-[12px] text-muted-foreground">Label</span>
             {['lawn', 'building'].map((t) => {
               const st = featureStyle(t);
               return (
@@ -292,7 +292,7 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
           </>
         ) : selectedTree ? (
           <>
-            <span className="mr-1 text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">Canopy</span>
+            <span className="mr-1 text-[12px] text-muted-foreground">Canopy</span>
             <input
               type="range"
               min={3}
@@ -316,7 +316,7 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
           <span className="font-display text-lg leading-none tracking-tight">
             {measuredSqft !== null ? Math.round(measuredSqft).toLocaleString() : lawnArea > 0 ? Math.round(lawnArea).toLocaleString() : '—'}
           </span>
-          <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">lawn sq ft</span>
+          <span className="text-[12px] text-muted-foreground">lawn sq ft</span>
         </div>
       </div>
 

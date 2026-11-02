@@ -27,7 +27,7 @@ export default function WalkSpeedControl({ value, onChange }) {
         step={0.1}
         className="mt-2"
       />
-      <div className="mt-1 flex justify-between text-[8px] uppercase tracking-wide text-muted-foreground">
+      <div className="mt-1 flex justify-between text-[10.5px] text-muted-foreground">
         {MARKS.map((m) => (
           <button
             key={m.label}
