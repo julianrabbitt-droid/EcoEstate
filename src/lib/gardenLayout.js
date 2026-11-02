@@ -131,14 +131,18 @@ export function preparePaths(project) {
     .filter(Boolean);
 }
 
-// Lattice planting: every lawn gets a clean, regular grid aligned to its own
-// longest edge, filling corner to corner. Structural plants (shrubs/trees with a
-// mature clearance >= 5 ft) form a coarse lattice at their real clearance so
-// canopies never touch; groundcover/flower/grass species form one fine lattice
-// whose pitch matches the requested density, with species repeating in a fixed
-// cycle so the blend is a regular lattice, never a wavy drift. Render counts
-// are capped (by widening pitch) so huge lawns don't freeze the browser; the
-// planting-list quantities stay exact.
+// Planting layout. Every lawn gets its share of the planting list (by area)
+// and the plants spread evenly over all of it, edge to edge, with no bare
+// patches or crowding:
+// - rows and drifts: a grid (square for rows, staggered for drifts) along the
+//   lawn's longest edge, its spacing fitted so the plants fill the shape;
+// - clusters and scatter: natural, irregular spacing (best-candidate sampling).
+// The large plants (shrubs and trees) take the spots furthest from each other
+// first; the rest are given out by pattern: rows in bands, drifts in diagonal
+// sweeps, clusters in small groups of one species, scatter mixed through.
+// Render counts are capped so huge lawns don't freeze the browser; the
+// planting-list quantities stay exact. Each spot carries `spacing`, the
+// distance to its neighbours, so plants can be drawn wide enough to meet.
 const rotateP = (p, a) => {
   const c = Math.cos(a), s = Math.sin(a);
   return [p[0] * c - p[1] * s, p[0] * s + p[1] * c];
@@ -154,6 +158,94 @@ const polyAngle = (poly) => {
   return best;
 };
 
+const MAX_PLANTS = 1200;
+const STRUCT_FT = 5; // plants this wide or wider are placed first, apart
+// Small seeded random numbers, so a layout is the same every time it's drawn.
+const rng = (seed) => () => {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+const edgeDist = (x, y, poly) => {
+  let d = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const [ax, ay] = poly[i];
+    const [bx, by] = poly[(i + 1) % poly.length];
+    const ex = bx - ax;
+    const ey = by - ay;
+    const t = Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey || 1)));
+    d = Math.min(d, Math.hypot(x - ax - t * ex, y - ay - t * ey));
+  }
+  return d;
+};
+
+// n spots spread evenly inside poly (already turned to its long edge).
+function spotsIn(poly, n, pattern, random) {
+  if (n <= 0) return [];
+  const xs = poly.map((p) => p[0]);
+  const ys = poly.map((p) => p[1]);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const area = polyAreaLocal(poly);
+  const inside = (x, y, margin) => inPoly(x, y, poly) && edgeDist(x, y, poly) >= margin;
+  const grid = (pitch) => {
+    const pts = [];
+    const stagger = pattern === 'drifts';
+    const rows = Math.ceil((y1 - y0) / pitch) + 1;
+    const cols = Math.ceil((x1 - x0) / pitch) + 1;
+    for (let r = 0; r < rows; r++) {
+      const off = stagger && r % 2 ? pitch / 2 : 0;
+      for (let c = 0; c < cols; c++) {
+        const x = x0 + pitch / 2 + c * pitch + off;
+        const y = y0 + pitch / 2 + r * pitch;
+        if (inside(x, y, pitch * 0.3)) pts.push({ x, y });
+      }
+    }
+    return pts;
+  };
+  let pts = [];
+  if (pattern === 'rows' || pattern === 'drifts') {
+    // The widest spacing that still fits all n, then trimmed to exactly n.
+    let [lo, hi] = [0.3, Math.max(1, Math.sqrt(area / n) * 2)];
+    for (let k = 0; k < 24; k++) {
+      const mid = (lo + hi) / 2;
+      if (grid(mid).length >= n) lo = mid;
+      else hi = mid;
+    }
+    pts = grid(lo);
+    if (pts.length > n) pts = Array.from({ length: n }, (_, k) => pts[Math.floor((k * pts.length) / n)]);
+  }
+  // Natural spacing (or topping up a grid): each new spot is the best of a few
+  // random candidates, the one furthest from every spot so far and the edge.
+  const margin = Math.min(Math.sqrt(area / n) * 0.3, 1.5);
+  let guard = 0;
+  while (pts.length < n && guard++ < n * 40) {
+    let best = null;
+    for (let k = 0; k < 40; k++) {
+      const x = x0 + random() * (x1 - x0);
+      const y = y0 + random() * (y1 - y0);
+      if (!inside(x, y, margin)) continue;
+      let d = edgeDist(x, y, poly) * 2;
+      for (const p of pts) d = Math.min(d, Math.hypot(p.x - x, p.y - y));
+      if (!best || d > best.d) best = { x, y, d };
+    }
+    if (best) pts.push({ x: best.x, y: best.y });
+  }
+  return pts;
+}
+
+// Whole numbers that add up to total, in proportion to weights.
+function apportion(weights, total) {
+  const sum = weights.reduce((a, b) => a + b, 0) || 1;
+  const raw = weights.map((w) => (w * total) / sum);
+  const out = raw.map(Math.floor);
+  let left = total - out.reduce((a, b) => a + b, 0);
+  raw.map((v, i) => [v - Math.floor(v), i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => {
+    if (left-- > 0) out[i]++;
+  });
+  return out;
+}
+
 export function arrangePlants(polys, entries, pattern = 'drifts') {
   const beds = (polys || []).filter((p) => p.length >= 3);
   if (!beds.length) return [];
@@ -167,111 +259,98 @@ export function arrangePlants(polys, entries, pattern = 'drifts') {
     .filter(Boolean);
   if (!items.length) return [];
 
-  const STRUCT = 5;
-  const MAX_STRUCT_PER_SP = 350;
-  const MAX_FILL = 1200;
-  const bedAreas = beds.map(polyAreaLocal);
-  const totalArea = bedAreas.reduce((s, a) => s + a, 0) || 1;
+  // Drawn counts: the list's quantities, scaled down together past MAX_PLANTS.
+  const listed = items.reduce((a, it) => a + it.qty, 0);
+  const drawn = apportion(items.map((it) => it.qty), Math.min(listed, MAX_PLANTS)).map((n) => Math.max(1, n));
+  const areas = beds.map(polyAreaLocal);
+  // Plants per lawn by area (every lawn gets at least one while there are
+  // enough to go round), then each species dealt across the lawns in turn, so
+  // a few big shrubs don't all land in the largest lawn.
+  const total = drawn.reduce((a, b) => a + b, 0);
+  const order = areas.map((a, bi) => [a, bi]).sort((a, b) => b[0] - a[0]).map(([, bi]) => bi);
+  const seeded = order.slice(0, Math.min(total, beds.length));
+  const bedCount = apportion(areas, total - seeded.length);
+  seeded.forEach((bi) => bedCount[bi]++);
+  const perBed = items.map(() => beds.map(() => 0));
+  const remaining = drawn.slice();
+  const room = bedCount.slice();
+  while (remaining.some((c) => c > 0)) {
+    const si = remaining.indexOf(Math.max(...remaining));
+    const bi = room.indexOf(Math.max(...room));
+    perBed[si][bi]++;
+    remaining[si]--;
+    room[bi]--;
+  }
   const placed = [];
 
   beds.forEach((poly, bi) => {
-    const area = bedAreas[bi];
     const angle = polyAngle(poly);
     const rPoly = poly.map((p) => rotateP(p, -angle));
-    const xs = rPoly.map((p) => p[0]);
-    const ys = rPoly.map((p) => p[1]);
-    const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const minY = Math.min(...ys), maxY = Math.max(...ys);
-
-    const lattice = (pitch, inset) => {
-      const pts = [];
-      const cols = Math.max(1, Math.floor((maxX - minX) / pitch));
-      const rowsN = Math.max(1, Math.floor((maxY - minY) / pitch));
-      const ox = minX + ((maxX - minX) - cols * pitch) / 2 + pitch / 2;
-      const oy = minY + ((maxY - minY) - rowsN * pitch) / 2 + pitch / 2;
-      for (let r = 0; r < rowsN; r++) {
-        for (let c = 0; c < cols; c++) {
-          const x = ox + c * pitch;
-          const y = oy + r * pitch;
-          if (!inPoly(x, y, rPoly)) continue;
-          if (inset > 0 && (!inPoly(x + inset, y, rPoly) || !inPoly(x - inset, y, rPoly) || !inPoly(x, y + inset, rPoly) || !inPoly(x, y - inset, rPoly))) continue;
-          pts.push({ x, y });
-        }
-      }
-      return pts;
+    const left = items.map((_, si) => perBed[si][bi]);
+    const n = left.reduce((a, b) => a + b, 0);
+    if (!n) return;
+    const random = rng(bi * 7919 + n * 31 + pattern.length);
+    const spots = spotsIn(rPoly, n, pattern, random);
+    const spacing = Math.sqrt(areas[bi] / Math.max(1, spots.length));
+    const free = new Set(spots.map((_, k) => k));
+    const take = (k, si) => {
+      free.delete(k);
+      left[si]--;
+      const [x, y] = rotateP([spots[k].x, spots[k].y], angle);
+      placed.push({ x, y, plant: items[si].plant, speciesId: items[si].speciesId, spacing });
     };
-    const back = (p) => rotateP([p.x, p.y], angle);
-    const reserved = [];
 
-    // 1) Structural lattice at (at least) mature clearance, corner to corner.
-    // On smaller lawns, skip a large plant if its mature canopy wouldn't leave
-    // room for the fill rows — require the bed's narrow side to be at least 3x
-    // the plant's clearance before placing it.
-    const minDim = Math.min(maxX - minX, maxY - minY);
-    items.filter((it) => it.clearance >= STRUCT).forEach((it) => {
-      if (minDim < it.clearance * 3) return;
-      const want = (it.qty * area) / totalArea;
-      const pitch = Math.max(it.clearance, Math.sqrt(area / Math.max(1, Math.min(want, MAX_STRUCT_PER_SP))));
-      const pts = lattice(pitch, pitch * 0.25);
-      pts.forEach((p) => {
-        if (reserved.some((rr) => Math.hypot(rr.x - p.x, rr.y - p.y) < pitch * 0.85)) return;
-        const w = back(p);
-        placed.push({ x: w[0], y: w[1], plant: it.plant, speciesId: it.speciesId });
-        reserved.push({ x: p.x, y: p.y, r: pitch * 0.5 });
-      });
+    // 1) Large plants: each takes the free spot furthest from the large ones
+    // already placed (and from the edge), so they stand apart.
+    const anchors = [];
+    items.forEach((it, si) => {
+      if (it.clearance < STRUCT_FT) return;
+      while (left[si] > 0 && free.size) {
+        let [best, bestD] = [-1, -1];
+        for (const k of free) {
+          let d = edgeDist(spots[k].x, spots[k].y, rPoly) * 1.5;
+          for (const a of anchors) d = Math.min(d, Math.hypot(a.x - spots[k].x, a.y - spots[k].y));
+          if (d > bestD) [bestD, best] = [d, k];
+        }
+        anchors.push(spots[best]);
+        take(best, si);
+      }
     });
 
-    // 2) Mixed fill: a staggered (brick) lattice where the species index advances
-    // diagonally (row + column) so the blend reads as intersecting diagonal bands
-    // of color rather than horizontal ribbons. Species interleave weighted by
-    // their share so the visual mix tracks the planting-list quantities;
-    // structural canopies (reserved) are skipped so the low fill weaves around
-    // the anchors.
-    const fill = items.filter((it) => it.clearance < STRUCT);
-    if (fill.length) {
-      const fillCount = fill.reduce((s, it) => s + (it.qty * area) / totalArea, 0);
-      const effective = Math.min(fillCount, MAX_FILL);
-      const pitch = Math.max(0.5, Math.sqrt(area / Math.max(1, effective)));
-      const shares = fill.map((it) => (it.qty * area) / totalArea / Math.max(1, fillCount));
-      const L = Math.max(8, Math.min(60, Math.round(effective)));
-      const remain = fill.map((_, i) => ({ i, n: Math.max(1, Math.round(shares[i] * L)) }));
-      const cycle = [];
-      while (remain.some((r) => r.n > 0)) {
-        remain.sort((a, b) => b.n - a.n);
-        for (const r of remain) { if (r.n > 0) { cycle.push(r.i); r.n--; } }
+    // 2) The rest, by pattern.
+    const order = [...free];
+    if (pattern === 'rows' || pattern === 'drifts') {
+      // Bands: rows run along the lawn, drifts sweep diagonally across it; each
+      // species gets several bands spread through, so none owns one end.
+      const key = (p) => (pattern === 'rows' ? p.y : p.x * 0.7 + p.y);
+      order.sort((a, b) => key(spots[a]) - key(spots[b]) || spots[a].x - spots[b].x);
+      const bands = Math.max(1, Math.round(order.length / Math.max(1, items.length * 6)));
+      const chunks = [];
+      left.forEach((c, si) => apportion(Array(bands).fill(1), c).forEach((m, b) => chunks.push({ si, m, b })));
+      chunks.sort((a, b) => a.b - b.b || a.si - b.si);
+      let k = 0;
+      chunks.forEach(({ si, m }) => {
+        for (let t = 0; t < m && k < order.length; t++) take(order[k++], si);
+      });
+    } else if (pattern === 'clusters') {
+      // Groups of 3 to 7 of one species, each grown outward from a free spot;
+      // species take turns, the one with the most left first.
+      while (free.size && left.some((c) => c > 0)) {
+        const start = spots[[...free][Math.floor(random() * free.size)]];
+        const si = left.indexOf(Math.max(...left));
+        const size = Math.min(left[si], 3 + Math.floor(random() * 5));
+        const dist = (k) => Math.hypot(spots[k].x - start.x, spots[k].y - start.y);
+        [...free].sort((a, b) => dist(a) - dist(b)).slice(0, size).forEach((k) => take(k, si));
       }
-      if (!cycle.length) cycle.push(0);
-      const cols = Math.max(1, Math.floor((maxX - minX) / pitch));
-      const rowsN = Math.max(1, Math.floor((maxY - minY) / pitch));
-      const ox = minX + ((maxX - minX) - cols * pitch) / 2 + pitch / 2;
-      const oy = minY + ((maxY - minY) - rowsN * pitch) / 2 + pitch / 2;
-      const inset = pitch * 0.2;
-      const stagger = pattern === 'drifts';
-      const pickIndex = (r, c) => {
-        if (pattern === 'rows') return r % cycle.length;
-        if (pattern === 'clusters') return (Math.floor(r / 2) + Math.floor(c / 2)) % cycle.length;
-        if (pattern === 'scatter') {
-          // deterministic per-cell hash so the scatter is stable across renders
-          const h = (r * 73856093) ^ (c * 19349663);
-          return (h >>> 0) % cycle.length;
-        }
-        return (r + c) % cycle.length; // drifts: diagonal bands
-      };
-      for (let r = 0; r < rowsN; r++) {
-        // Stagger every other row by half a pitch for the drifts brick lattice;
-        // rows/clusters/scatter stay aligned to the rotation for a clean grid.
-        const rowOffset = stagger ? (r % 2) * (pitch / 2) : 0;
-        for (let c = 0; c < cols; c++) {
-          const x = ox + c * pitch + rowOffset;
-          const y = oy + r * pitch;
-          if (!inPoly(x, y, rPoly)) continue;
-          if (inset > 0 && (!inPoly(x + inset, y, rPoly) || !inPoly(x - inset, y, rPoly) || !inPoly(x, y + inset, rPoly) || !inPoly(x, y - inset, rPoly))) continue;
-          if (reserved.some((rr) => Math.hypot(rr.x - x, rr.y - y) < rr.r + pitch * 0.5)) continue;
-          const sp = cycle[pickIndex(r, c)];
-          const w = back({ x, y });
-          placed.push({ x: w[0], y: w[1], plant: fill[sp].plant, speciesId: fill[sp].speciesId });
-        }
+    } else {
+      // Scatter: species mixed through at random, in their proportions.
+      const seq = [];
+      left.forEach((c, si) => { for (let t = 0; t < c; t++) seq.push(si); });
+      for (let k = seq.length - 1; k > 0; k--) {
+        const r = Math.floor(random() * (k + 1));
+        [seq[k], seq[r]] = [seq[r], seq[k]];
       }
+      order.forEach((k, idx) => { if (idx < seq.length) take(k, seq[idx]); });
     }
   });
   return placed;

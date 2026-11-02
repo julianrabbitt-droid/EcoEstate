@@ -911,9 +911,12 @@ function plantDetailFor(count) {
 // Prepared plant models (see plantModels.js): one consistent template per
 // form, textured leaf cards tinted per species, scaled to its size. A random
 // turn per plant keeps a bed of one species from looking cloned.
-function buildPlant(plant, mature, detail = 'normal', { scanned = false, variant = 0 } = {}) {
+// At maturity a plant spreads to meet its neighbours (`spacing`, from the
+// layout), up to twice its listed width, so the bed reads as planted, not dotted.
+function buildPlant(plant, mature, detail = 'normal', { scanned = false, variant = 0, spacing = 0 } = {}) {
   const s = mature ? 1 : 0.35;
-  const w = Math.max(0.8, plant.w) * s;
+  const listed = Math.max(0.8, plant.w);
+  const w = (mature ? Math.min(listed * 2, Math.max(listed, spacing * 0.95)) : listed) * s;
   const h = Math.max(0.8, plant.h) * s;
   // A photo-scanned shrub (CC0, Poly Haven) when it has loaded and the garden is small enough.
   const scan = scanned && plant.form === 'shrub' ? scannedShrub(variant) : null;
@@ -1265,7 +1268,6 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         for (const c of scene.children) {
           const u = c.userData;
           if (u && (u.satellite || (u.offLot && !u.inFront))) c.visible = !t3;
-          if (u && u.frontStrip) c.visible = !!t3;
           if (u && u.outline) c.visible = !t3;
           if (u && u.skirt) c.visible = !!t3;
           if (u && u.lotGround) c.visible = !t3;
@@ -1380,9 +1382,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   }, [origin, lot, polys, buildings, cx, cy]);
 
   // What is cut out of Google's mesh: only where our model replaces something:
-  // the house (with a margin for eaves and scan offsets), the planned beds, and
-  // the strip between the lot and its street (see frontStrip), so no rough tree
-  // blob stands between the street and the property. The rest of the yard stays
+  // the house (with a margin for eaves and scan offsets) and the planned beds.
+  // Between the lot and its street (see frontStrip) only what stands above the
+  // ground goes (trees, hedges, cars), so the real street, sidewalk and lawn
+  // stay and nothing blocks the view of the property. The rest of the yard stays
   // Google's real one (lawn, patios, pools, sheds, fences), so nothing that
   // straddles the property line gets sliced and the property blends into its
   // surroundings; a soft dashed line marks it.
@@ -1414,11 +1417,6 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       ctx.closePath();
     };
     // Green: the lot (kept in full colour; the surroundings are muted). Red: cut away.
-    if (front) {
-      ctx.fillStyle = '#fff';
-      trace(front);
-      ctx.fill();
-    }
     if (lotPts) {
       ctx.fillStyle = '#00ff00';
       trace(lotPts);
@@ -1461,10 +1459,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // With the house modelled, everything of Google's taller than a low wall
     // on the lot goes too (its trees are modelled from the scan), so nothing
     // rough stands over the yard; pools, patios and low walls stay.
-    if (houses.length && lotPts) {
+    const fillTree = (pts) => {
       tctx.fillStyle = '#00ff00';
       tctx.beginPath();
-      lotPts.forEach(([x, z], i) => {
+      pts.forEach(([x, z], i) => {
         const px = ((x - nx0) / (nx1 - nx0)) * W;
         const py = (1 - (z - nz0) / (nz1 - nz0)) * W;
         if (i) tctx.lineTo(px, py);
@@ -1472,7 +1470,9 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       });
       tctx.closePath();
       tctx.fill();
-    }
+    };
+    if (houses.length && lotPts) fillTree(lotPts);
+    if (front) fillTree(front);
     const treeTex = new THREE.CanvasTexture(tc);
     const G = 64;
     const heights = new Float32Array(G * G);
@@ -1793,23 +1793,6 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           ...polys.filter((q) => q && q.length >= 3).map((q) => [toScene(q), 2]),
         ];
         const skirt = drapedGround(toScene(outerPoly), [], at, skirtTex, circles, true, publicWays, cutFills);
-        // The strip to the street (front yard to curb), where Google's mesh is cut
-        // away in Real 3D: plain light ground like an architectural model's base
-        // (so the lawn is the only green), with sidewalks
-        // and driveways on it as slabs. Nothing stands between the street and
-        // the property except what the scan modelled.
-        if (front) {
-          // Streets stay Google's; driveways ('service') in the strip are ours.
-          const roadsScene = paths.filter((q) => q && q.length >= 3 && ROAD_KINDS.has(q.kind) && q.kind !== 'service').map(toScene);
-          const stripTex = groundTexture().clone();
-          stripTex.needsUpdate = true;
-          const strip = drapedGround(front, [toScene(outerPoly)], at, stripTex, [], false, roadsScene);
-          strip.material.color.set(0xf4f1ea); // neutral, like a model's base: only the lawn is green
-          strip.userData.ground = true;
-          strip.userData.frontStrip = true; // Real 3D only
-          strip.visible = false;
-          scene.add(strip);
-        }
         skirt.userData.ground = true;
         skirt.userData.skirt = true; // Real 3D only
         skirt.visible = false;
@@ -2011,15 +1994,12 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       if (!poly || poly.length < 3) return;
       const road = ROAD_KINDS.has(poly.kind);
       const offLot = !onLot(poly.reduce((s, p) => s + p[0], 0) / poly.length, poly.reduce((s, p) => s + p[1], 0) / poly.length);
-      // Sidewalks and driveway aprons in the strip to the street stay ours in Real 3D.
-      const inFront = Boolean(front) && (!road || poly.kind === 'service') && insidePoly([poly.reduce((s, p) => s + p[0], 0) / poly.length - cx, -(poly.reduce((s, p) => s + p[1], 0) / poly.length - cy)], front);
       const depth = road ? 0.9 : 0.5; // roads stand well clear of the faded satellite ground
       const shape = new THREE.Shape();
       poly.forEach((p, i) => { const x = p[0] - cx; const y = p[1] - cy; if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y); });
       const slab = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false }), road ? roadMat : paverMat);
       slab.userData.path = true;
       slab.userData.offLot = offLot;
-      slab.userData.inFront = inFront;
       slab.rotation.x = -Math.PI / 2;
       slab.position.y = MULCH_Y; // sits on the mulch, so a path crossing a converted lawn stays visible
       slab.receiveShadow = true;
@@ -2031,7 +2011,6 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       );
       edge.userData.path = true;
       edge.userData.offLot = offLot;
-      edge.userData.inFront = inFront;
       scene.add(edge);
 
       // One label per road piece long enough to read; skip repeats close by.
@@ -2044,7 +2023,6 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           label.position.set(axis.mx - cx, at(axis.mx - cx, -(axis.my - cy)) + MULCH_Y + depth + 0.05, -(axis.my - cy));
           label.userData.path = true;
           label.userData.offLot = offLot;
-          label.userData.inFront = inFront;
           scene.add(label);
         }
       }
@@ -2075,7 +2053,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     const shrubCount = layout.filter((p) => p.plant.form === 'shrub').length;
     const scanned = detail === 'high' && shrubCount <= SCANNED_SHRUBS_MAX;
     layout.forEach((p, i) => {
-      const mesh = buildPlant(p.plant, mature, detail, { scanned, variant: i });
+      const mesh = buildPlant(p.plant, mature, detail, { scanned, variant: i, spacing: p.spacing });
       const k = nth.get(p.speciesId) || 0;
       nth.set(p.speciesId, k + 1);
       const moveKey = `${p.speciesId}:${k}`;

@@ -137,10 +137,10 @@ export function clearanceOf(plant) {
   return Math.max(plant.spacing || 1, plant.w || 1);
 }
 
-// Front-yard arrays are sparse: cover roughly this fraction of the bed with
-// mature canopies and cap any single species, so the yard reads as a curated
-// mix rather than a nursery overflow.
-const PLANT_DENSITY = 0.4;
+// Cover about this much of the bed with mature canopies: full enough that the
+// garden reads as planted from edge to edge (plants also spread to meet their
+// neighbours in 3D), with room left between them to grow and be tended.
+const PLANT_DENSITY = 0.55;
 
 export function quantityForShare(share, speciesId, sqft) {
   const plant = plantById(speciesId);

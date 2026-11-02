@@ -70,11 +70,11 @@ const leafSpray = () =>
 const bladeFan = () =>
   canvasTex('blades', 256, (ctx, S) => {
     const r = rand(23);
-    for (let i = 0; i < 38; i++) {
-      const bx = S * (0.35 + r() * 0.3);
-      const tipX = S * (0.05 + r() * 0.9);
-      const tipY = S * (0.02 + r() * 0.35);
-      const wBase = 3 + r() * 4;
+    for (let i = 0; i < 60; i++) {
+      const bx = S * (0.3 + r() * 0.4);
+      const tipX = S * (0.02 + r() * 0.96);
+      const tipY = S * (0.02 + r() * 0.4);
+      const wBase = 5 + r() * 6; // broad enough to read from across the yard
       ctx.fillStyle = grey(Math.round(140 + r() * 115));
       ctx.beginPath();
       ctx.moveTo(bx - wBase, S);
@@ -169,40 +169,53 @@ function buildTemplate(form, detail) {
   if (geoCache.has(key)) return geoCache.get(key);
   const parts = { leaf: [], bloom: [], wood: [], core: [] };
   if (form === 'grass') {
-    const blades = n(6, detail);
-    for (let i = 0; i < blades; i++) {
-      const yaw = (i / blades) * Math.PI;
-      parts.leaf.push(card(1, 1, { yaw, tilt: (i % 2 ? 1 : -1) * 0.12 }));
+    // A full clump: crossed cards in the middle, more around them leaning
+    // outward like arching blades, over a low tuft so it never looks sparse.
+    const r = rand(3);
+    const inner = n(5, detail);
+    for (let i = 0; i < inner; i++) parts.leaf.push(card(0.9, 1, { yaw: (i / inner) * Math.PI, tilt: (i % 2 ? 1 : -1) * 0.1 }));
+    const outer = n(9, detail);
+    for (let i = 0; i < outer; i++) {
+      const a = (i / outer) * Math.PI * 2 + r() * 0.3;
+      const g = card(0.75, 0.85, { tilt: 0.45 + r() * 0.2 });
+      g.rotateY(a);
+      g.translate(Math.cos(a) * 0.1, 0, -Math.sin(a) * 0.1);
+      parts.leaf.push(g);
     }
+    parts.core.push(new THREE.SphereGeometry(0.36, 8, 5).scale(1, 0.35, 1).translate(0, 0.06, 0));
   } else if (form === 'groundcover') {
+    // A wide mat of leaves spreading to the plant's full width.
     const r = rand(5);
-    const leaves = n(10, detail);
+    const leaves = n(16, detail);
     for (let i = 0; i < leaves; i++) {
-      const a = (i / leaves) * Math.PI * 2;
-      const d = 0.15 + r() * 0.25;
-      parts.leaf.push(card(0.55, 0.55, { x: Math.cos(a) * d, y: 0.05 + r() * 0.25, z: Math.sin(a) * d, yaw: a, tilt: -1.15 - r() * 0.3, centred: true }));
+      const a = (i / leaves) * Math.PI * 2 + r() * 0.4;
+      const d = 0.12 + r() * 0.3;
+      parts.leaf.push(card(0.5, 0.5, { x: Math.cos(a) * d, y: 0.06 + r() * 0.2, z: Math.sin(a) * d, yaw: a, tilt: -1.2 - r() * 0.3, centred: true }));
     }
-    parts.core.push(new THREE.SphereGeometry(0.32, 8, 5).scale(1, 0.45, 1).translate(0, 0.12, 0));
+    parts.core.push(new THREE.SphereGeometry(0.42, 10, 5).scale(1, 0.32, 1).translate(0, 0.08, 0));
   } else if (form === 'shrub') {
     parts.leaf.push(...shell(n(28, detail), { cy: 0.52, rx: 0.5, ry: 0.46, size: 0.42, seed: 7 }));
     parts.core.push(new THREE.SphereGeometry(0.4, 10, 7).scale(1, 0.95, 1).translate(0, 0.5, 0));
   } else if (form === 'flower') {
     const r = rand(9);
-    const base = n(8, detail);
+    // A wide leafy rosette with a low mound in it, and blooms on stems spread
+    // over most of the plant's width.
+    const base = n(12, detail);
     for (let i = 0; i < base; i++) {
-      const a = (i / base) * Math.PI * 2;
-      parts.leaf.push(card(0.42, 0.5, { x: Math.cos(a) * 0.12, z: Math.sin(a) * 0.12, yaw: a, tilt: -0.55 }));
+      const a = (i / base) * Math.PI * 2 + r() * 0.3;
+      parts.leaf.push(card(0.5, 0.55, { x: Math.cos(a) * 0.22, z: Math.sin(a) * 0.22, yaw: a, tilt: -0.75 }));
     }
-    const stems = n(5, detail);
+    parts.core.push(new THREE.SphereGeometry(0.34, 8, 5).scale(1, 0.5, 1).translate(0, 0.12, 0));
+    const stems = n(7, detail);
     for (let i = 0; i < stems; i++) {
       const a = (i / stems) * Math.PI * 2 + r();
-      const d = 0.08 + r() * 0.22;
-      const top = 0.65 + r() * 0.35;
+      const d = 0.1 + r() * 0.3;
+      const top = 0.6 + r() * 0.4;
       const x = Math.cos(a) * d;
       const z = Math.sin(a) * d;
-      parts.wood.push(new THREE.CylinderGeometry(0.008, 0.012, top, 4).translate(x, top / 2, z));
+      parts.wood.push(new THREE.CylinderGeometry(0.014, 0.02, top, 4).translate(x, top / 2, z));
       // Two crossed cards so the bloom reads from any angle, plus one facing up.
-      const s = 0.2 + r() * 0.08;
+      const s = 0.26 + r() * 0.1;
       parts.bloom.push(card(s, s, { x, y: top, z, yaw: a, centred: true }));
       parts.bloom.push(card(s, s, { x, y: top, z, yaw: a + Math.PI / 2, centred: true }));
       parts.bloom.push(card(s, s, { x, y: top + 0.01, z, tilt: -Math.PI / 2, centred: true }));
