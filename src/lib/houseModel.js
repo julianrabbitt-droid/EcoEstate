@@ -330,7 +330,11 @@ export const HOUSE_SHARED = [WINDOW_GEO, DOOR_GEO, GLASS, FRAME, DOOR, FRAME_GEO
  * @param {number|null} heightFt measured overall height, or null to estimate
  * @param {object} opts { wallColor, roofType, front: [x, y] plan point the front door should face }
  */
-export function buildHouse(points, heightFt, { wallColor, roofType, front } = {}) {
+// groundAt(x, y): ground height (ft) at plan (x, y). With it, each block of
+// the house stands on the lowest ground under its own corners, so on a hillside
+// the house steps down the slope (like a split-level) instead of one floor
+// level burying the uphill side; the group's y is then 0.
+export function buildHouse(points, heightFt, { wallColor, roofType, front, groundAt = null } = {}) {
   const group = new THREE.Group();
   const total = area(points);
   const blocks = blocksFor(points);
@@ -369,7 +373,14 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front } = {}
 
   blocks.forEach((b, bi) => {
     const block = new THREE.Group();
-    block.position.set(b.cx, 0, -b.cy);
+    let blockBase = 0;
+    if (groundAt) {
+      const c = Math.cos(b.angle);
+      const sn = Math.sin(b.angle);
+      const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => [b.cx + ((u * b.w) / 2) * c - ((v * b.d) / 2) * sn, b.cy + ((u * b.w) / 2) * sn + ((v * b.d) / 2) * c]);
+      blockBase = Math.min(...corners.map(([x, y]) => groundAt(x, y)));
+    }
+    block.position.set(b.cx, blockBase, -b.cy);
     block.rotation.y = b.angle;
     const hw = b.w / 2;
     const hd = b.d / 2;

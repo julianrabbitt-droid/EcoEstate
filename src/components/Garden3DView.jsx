@@ -2056,9 +2056,9 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const my = pts.reduce((s, p) => s + p[1], 0) / pts.length;
       const front = roadPts.reduce((best, p) => (!best || Math.hypot(p[0] - mx, p[1] - my) < Math.hypot(best[0] - mx, best[1] - my) ? p : best), null);
       const heightFt = poly.heightFt > 0 ? poly.heightFt : Number(bAttr.heightFt) > 0 ? Number(bAttr.heightFt) : null;
-      const mesh = buildHouse(pts, heightFt, { wallColor: bAttr.wallColor, roofType: bAttr.roofType, front });
-      // Stand on the lowest ground under the footprint; uphill walls run into the slope like a foundation.
-      mesh.position.y = Math.min(...pts.map(([x, y]) => at(x, -y)));
+      // Each block stands on the lowest ground under its own corners: on a
+      // hillside the house steps down the slope; uphill walls run into it like a foundation.
+      const mesh = buildHouse(pts, heightFt, { wallColor: bAttr.wallColor, roofType: bAttr.roofType, front, groundAt: (x, y) => at(x, -y) });
       mesh.userData.building = true;
       scene.add(mesh);
     });
