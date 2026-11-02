@@ -189,6 +189,7 @@ async function lawnResponse({ address, location, parcel, parcelSource, query }) 
     method: 'naip',
     buildings: detection.buildings,
     trees: detection.trees,
+    lidar: detection.lidar,
     paths: detection.paths,
     nearbyRoads: detection.nearbyRoads,
     impact: impact(detection.totalSqft, query),

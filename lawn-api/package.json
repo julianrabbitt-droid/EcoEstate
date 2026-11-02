@@ -20,6 +20,7 @@
     "@turf/intersect": "7.4.0",
     "@turf/simplify": "7.4.0",
     "@turf/union": "7.4.0",
+    "copc": "0.0.9",
     "cors": "2.8.5",
     "d3-contour": "4.0.2",
     "dotenv": "16.4.5",

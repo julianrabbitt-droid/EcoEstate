@@ -29,6 +29,8 @@ Check what's configured: `GET http://localhost:3000/health`
 
 Only small windows of the imagery and building files are downloaded per property. Each `GET /v1/lawn` response carries an `x-usage` header (e.g. `geocodio=1`) listing paid calls it made, which the app records per session.
 
+**Lidar.** Where USGS 3DEP airborne lidar covers a home (most of the US; public domain, read from the usgs-lidar-public bucket), measured heights replace the canopy map's estimates: dense returns 2–6.5 ft above ground (shrubs, hedges, clutter) rule lawn out, canopy overhead doesn't, and grass under a canopy is found from the laser's near-infrared brightness on the ground, calibrated per scan against open lawn in view (skipped when the survey's brightness can't tell grass from bare ground). Surveys more than 3 years older than the aerial photo are ignored. The response's `lidar` field says which survey was used.
+
 To check accuracy by eye, `npm run preview -- "123 Main St, City, ST"` writes `previews/<address>.png`: the NAIP photo next to the detected lawn (green), canopy-map trees (purple), texture trees (blue) and the property line (yellow, or orange when estimated). `npm run test-homes -- 100` does the same for a random sample of Palo Alto homes and writes contact sheets plus `results.csv` to `previews/homes/`. Set `CANOPY_VERSION=v1` to compare against the older Meta/WRI canopy map.
 
 ### Known limitations
