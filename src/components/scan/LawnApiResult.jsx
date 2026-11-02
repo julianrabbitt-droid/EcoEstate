@@ -108,7 +108,7 @@ function EditableLine({ corners, onChange }) {
 // stage: a full-screen element the 3D model is drawn into (the Scan page's
 // backdrop), with only the question and numbers here; onModelReady is told once
 // it is drawn.
-export default function LawnApiResult({ data, preview, onConfirm, onFix, onEdit, onRescan, onRemeasure, stage = null, onModelReady }) {
+export default function LawnApiResult({ data, preview, onConfirm, onFix, onEdit, onRescan, onRemeasure, stage = null, onModelReady, viewShift = null }) {
   const center = useMemo(() => [data.location?.lat, data.location?.lon], [data.location]);
   const estimated = data.parcelSource === 'estimated';
   const initialCorners = useMemo(() => geoJsonOuterRings(data.parcel?.geometry)[0] || [], [data.parcel]);
@@ -174,7 +174,7 @@ export default function LawnApiResult({ data, preview, onConfirm, onFix, onEdit,
       <div>
         {createPortal(
           <Suspense fallback={null}>
-            <Garden3DView project={preview} mode="check" fill lawnLabel={lawnLabel} onReady={() => setModelReady(true)} />
+            <Garden3DView project={preview} mode="check" fill viewShift={viewShift} lawnLabel={lawnLabel} onReady={() => setModelReady(true)} />
           </Suspense>,
           stage,
         )}
@@ -196,8 +196,15 @@ export default function LawnApiResult({ data, preview, onConfirm, onFix, onEdit,
         </div>
         {modelReady && (
           <>
-            <LawnImpact lawnSqft={data.lawnSqft} impact={data.impact} />
-            {details}
+            {/* Phones: one line, so the panel stays small and off the property. */}
+            <p className="px-5 text-[13px] text-foreground lg:hidden">
+              <span className="font-display text-[1.3rem]">{num(data.lawnSqft)}</span> sq ft of lawn
+              {data.impact?.gallonsSavedPerYear ? ` · ${num(data.impact.gallonsSavedPerYear)} gal of water a year` : ''}
+            </p>
+            <div className="hidden lg:block">
+              <LawnImpact lawnSqft={data.lawnSqft} impact={data.impact} />
+              {details}
+            </div>
             <div className="flex flex-col gap-2 px-4 py-4 sm:flex-row">
               <Button onClick={onConfirm} className="flex-1 rounded-full whitespace-normal text-center leading-tight">
                 <Check className="mr-1.5 h-4 w-4 shrink-0" />Yes, looks right

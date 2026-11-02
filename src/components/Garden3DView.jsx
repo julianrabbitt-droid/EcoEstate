@@ -977,8 +977,14 @@ function buildPlant(plant, mature, detail = 'normal', { spacing = 0 } = {}) {
 // fill: the view fills its positioned parent (the Scan page's full-screen
 // stage), opens looking straight down like the aerial it replaces, then tilts
 // into 3D once the model is drawn; its buttons float over it.
-export default function Garden3DView({ entries = [], project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady, fill = false }) {
+// viewShift: [x, y] px to move the property by on screen, so panels over the
+// view never cover it (e.g. [-240, 0] when a panel takes the right side).
+export default function Garden3DView({ entries = [], project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady, fill = false, viewShift = null }) {
   const fillRef = useRef(fill);
+  const viewShiftRef = useRef(viewShift);
+  viewShiftRef.current = viewShift;
+  const shiftKey = viewShift ? viewShift.join(',') : '';
+  useEffect(() => { threeRef.current?.applyShift?.(); }, [shiftKey]);
   const checking = mode === 'check';
   const wildlifeRef = useRef(null); // { group, counts, update } while the garden has visitors
   const [visitors, setVisitors] = useState(null);
@@ -1371,10 +1377,20 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       markDirty();
     };
 
+    // Moves the picture (not the camera) so the property sits clear of any panel.
+    const applyShift = () => {
+      const [w, h] = [mount.clientWidth, mount.clientHeight];
+      const [sx, sy] = viewShiftRef.current || [0, 0];
+      if (w && h && (sx || sy)) camera.setViewOffset(w, h, -sx, -sy, w, h);
+      else camera.clearViewOffset();
+      camera.updateProjectionMatrix();
+    };
+    threeRef.current.applyShift = () => { applyShift(); markDirty(); };
+    applyShift();
     const ro = new ResizeObserver(() => {
       if (!mount.clientWidth || !mount.clientHeight) return;
       camera.aspect = mount.clientWidth / mount.clientHeight;
-      camera.updateProjectionMatrix();
+      applyShift();
       renderer.setSize(mount.clientWidth, mount.clientHeight);
       LINE_RESOLUTION.set(mount.clientWidth, mount.clientHeight);
       markDirty();

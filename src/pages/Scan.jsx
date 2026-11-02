@@ -152,8 +152,9 @@ export default function Scan() {
   // Scrolling down fades the aerial into the page's green.
   const [scrollY, setScrollY] = useState(0);
   const [viewH, setViewH] = useState(() => (typeof window === 'undefined' ? 800 : window.innerHeight));
+  const [viewW, setViewW] = useState(() => (typeof window === 'undefined' ? 1280 : window.innerWidth));
   useEffect(() => {
-    const on = () => { setScrollY(window.scrollY); setViewH(window.innerHeight); };
+    const on = () => { setScrollY(window.scrollY); setViewH(window.innerHeight); setViewW(window.innerWidth); };
     on();
     window.addEventListener('scroll', on, { passive: true });
     window.addEventListener('resize', on);
@@ -678,6 +679,7 @@ export default function Scan() {
                 preview={previewProject}
                 stage={stageEl}
                 onModelReady={setModelShown}
+                viewShift={viewW >= 1024 ? [-250, 0] : [0, -Math.round(viewH * 0.16)]}
                 onConfirm={() => confirmLawn()}
                 onFix={editLawn}
                 onEdit={editLawn}
