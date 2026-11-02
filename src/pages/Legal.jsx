@@ -6,7 +6,9 @@ import { usePageMeta } from '@/hooks/usePageMeta';
 // data, update the matching section and EFFECTIVE_DATE (and TERMS_VERSION in
 // server/auth.js, which records which version each person accepted). Operator
 // details are repeated in server/config.js for subscription emails.
-const EFFECTIVE_DATE = 'November 1, 2026';
+const EFFECTIVE_DATE = 'November 2, 2026';
+const googleTerms = <a href="https://maps.google.com/help/terms_maps/" className="underline underline-offset-2" target="_blank" rel="noopener noreferrer">Google Maps/Google Earth Additional Terms of Service</a>;
+const googlePrivacy = <a href="https://policies.google.com/privacy" className="underline underline-offset-2" target="_blank" rel="noopener noreferrer">Google Privacy Policy</a>;
 const CONTACT = 'support@ecoestate.org';
 const OPERATOR = 'Julian Rabbitt-Tomita';
 const ADDRESS = '920 Moreno Avenue, Palo Alto, CA 94303';
@@ -54,7 +56,8 @@ const PRIVACY = [
     title: 'What other people can see',
     list: [
       'Your scans, designs, photos and tracked projects are private to your account unless you choose to share them.',
-      'Community posts and comments show your name and the photos you attach, to other members. If you add a city to a post, it also appears on the community map at the centre of that city, never at your address.',
+      'Community posts and comments are shown to other members as written by “Member”, not under your name, with the photos you attach. If you add a city to a post, it also appears on the community map at the centre of that city, never at your address.',
+      'If you share a project in a post, other members see only a summary: the city, lawn size, plants, and the estimated water, money, cost, rebate, payback and carbon figures. Our server removes anything else before it is stored, so your address, exact location, property outline and account details are never part of a shared project.',
       'If you turn on “Share on community map” for a tracked project, other members see your first name, the project’s progress, and an approximate location (rounded to about 1 km) with the city or neighborhood name, never your street address or exact location. You can turn sharing off at any time.',
       'Messages are visible only to you and the member you are messaging. If a member reports a conversation to us, we may review it to enforce the community rules.',
       'If you subscribe using a friend’s referral code, we show your first name to that friend so they know the referral worked.',
@@ -71,6 +74,8 @@ const PRIVACY = [
       <><b>Resend</b>: delivers our subscription confirmation and reminder emails.</>,
       <><b>Google</b>: if you choose “Continue with Google”, Google shares your name, email and profile picture with us. (Our fonts are served from ecoestate.org, not Google.)</>,
       <><b>Google Street View</b>: when you open a design, we may send the location of the house (not your name or account) to Google to fetch one street photo, used only to match the 3D model’s wall colour. The photo isn’t stored, only the colour.</>,
+      <><b>Google 3D maps</b>: if you turn on Real 3D, your browser loads Google’s 3D map tiles for the area around the property, so Google sees your IP address and that area. Use of Google maps content in EcoEstate is also subject to the {googleTerms} and the {googlePrivacy}.</>,
+      <><b>USGS elevation and lidar</b>: to shape the 3D ground and measure plant heights, the property’s location (not your name or account) is sent to the US Geological Survey’s public elevation service and lidar archive.</>,
       <><b>Rebate lookups</b>: to find the rebates that serve a property, we send its map location (not your name or account) to the US EPA’s water-system service-area map and the US Census Bureau’s geocoder, which return the water utility, ZIP code, city, county and state.</>,
       <><b>School-email check</b>: to see whether your email belongs to a school, we look up only the part after the “@” in a public list of school domains (JetBrains “swot”, served by jsDelivr).</>,
       <><b>Address and map data</b>: the addresses and areas you search are sent to geocoding and mapping services (Geocodio, OpenStreetMap/Nominatim, Esri and county parcel maps). Aerial imagery and tree and building data come from public sources (USDA NAIP via Microsoft Planetary Computer, Meta and WRI canopy data, Overture Maps). Your browser loads map tiles from Esri and plant photos from Wikimedia, which see your IP address.</>,
@@ -142,14 +147,15 @@ const TERMS = [
   {
     title: 'Free features and EcoEstate Pro',
     list: [
-      'Scanning, designs and the 3D view are free. Guests can scan without an account.',
-      <>EcoEstate Pro adds saving and browsing your properties, project tracking, project exports and the community. <b>It costs $10 per month (plus any tax that applies) and renews automatically every month, charging the card you used, until you cancel.</b> If you used a referral code or promo code, your first month costs the discounted amount shown at checkout, and every month after that costs $10. There is no minimum term.</>,
+      'Scanning, the 2D plan, the 3D model and walk-through, savings and rebate estimates and the build plan are free. Guests can scan without an account.',
+      <>EcoEstate Pro adds Real 3D (Google 3D surroundings), designing from a sentence, saving and browsing your properties, project tracking, the community, and priority support. The <Link to="/plans" className="underline underline-offset-2">Plans</Link> page shows what each plan includes. <b>It costs $10 per month (plus any tax that applies) and renews automatically every month, charging the card you used, until you cancel.</b> If you used a referral code or promo code, your first month costs the discounted amount shown at checkout, and every month after that costs $10. There is no minimum term.</>,
       <><b>Cancel anytime online</b>: open your account menu, choose “Manage subscription”, then “Cancel subscription”. You can also email {mail} and we will cancel for you. Canceling stops future charges; Pro stays active until the end of the month you already paid for, and then ends. We don’t give refunds or partial-month credits for canceling mid-month, except where the law requires.</>,
       <>Our <Link to="/refunds" className="underline underline-offset-2">Refund Policy</Link> explains refunds and cancellations in one place.</>,
       'If a payment fails, we and Stripe may retry it for a few weeks. Pro stays on while we retry, and the subscription ends if payment can’t be collected.',
       'We email you a confirmation when you subscribe, and a reminder at least once a year with the price, how often you’re charged and how to cancel.',
       'If we change the price of EcoEstate Pro, we will email you between 7 and 30 days before the new price first applies to your subscription, with the new price, the date it starts and how to cancel. If you don’t want to pay the new price, cancel before that date.',
-      'Students and educators who sign in with a school email address get the Pro features free (no payment details needed). We check the email’s domain against a public list of school domains. We may end this offer, or remove free access for an account that doesn’t qualify or misuses it, with notice to the affected accounts.',
+      'Students and educators who sign in with a school email address get the Pro features free (no payment details needed), except that their saved-properties list shows their latest 10. We check the email’s domain against a public list of school domains. We may end this offer, or remove free access for an account that doesn’t qualify or misuses it, with notice to the affected accounts.',
+      'A city, water district or other organization may sponsor access for the people it serves under a separate agreement. Sponsored access follows these terms, and ends if the sponsorship ends (we will tell affected accounts first).',
     ],
   },
   {
@@ -172,7 +178,7 @@ const TERMS = [
       'Don’t post other people’s private information, or photos you don’t have the right to share.',
       'Don’t post anything illegal, misleading or sexually explicit.',
     ],
-    after: [<>Report anything that breaks these rules to {mail}. We may remove content or suspend accounts that break them.</>],
+    after: [<>Report anything that breaks these rules with the Report button on the post, or to {mail}. We may remove content or suspend accounts that break them.</>],
   },
   {
     title: 'Fair use of the service',
@@ -186,7 +192,10 @@ const TERMS = [
   },
   {
     title: 'Third-party services',
-    body: ['EcoEstate relies on other services, including Clerk for sign-in, Stripe for payments and public map and imagery data. Their own terms apply to your use of them, and we are not responsible for their availability or accuracy.'],
+    body: [
+      'EcoEstate relies on other services, including Clerk for sign-in, Stripe for payments and public map and imagery data. Their own terms apply to your use of them, and we are not responsible for their availability or accuracy.',
+      <>EcoEstate shows Google maps content (Real 3D and Street View-based colours). By using those features you agree to the {googleTerms} and the {googlePrivacy}.</>,
+    ],
   },
   {
     title: 'Disclaimers',

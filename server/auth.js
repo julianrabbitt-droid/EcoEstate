@@ -17,7 +17,7 @@ const normEmail = (e) => String(e || '').trim().toLowerCase();
 
 // Version (effective date) of the Terms and Privacy Policy that sign-up asks
 // people to accept; keep in step with EFFECTIVE_DATE in src/pages/Legal.jsx.
-export const TERMS_VERSION = '2026-11-01';
+export const TERMS_VERSION = '2026-11-02';
 
 // Clerk user id -> app user row, so most requests skip the database lookup.
 const linked = new Map();

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, Leaf, Loader2, MapPin, MessageCircle, Send, Trash2 } from 'lucide-react';
+import { ChevronDown, Flag, Leaf, Loader2, MapPin, MessageCircle, Send, Trash2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ConfirmProvider';
@@ -198,6 +198,14 @@ export default function PostCard({ post, me, onDelete }) {
         {!isMine && me?.id && (
           <Button variant="ghost" size="sm" onClick={messageAuthor} className="ml-auto rounded-full text-muted-foreground">
             <Send className="mr-1.5 h-3.5 w-3.5" /> Message
+          </Button>
+        )}
+        {!isMine && (
+          // Reports go to the owner with the post's id; nothing about the reporter is added.
+          <Button asChild variant="ghost" size="sm" className={`rounded-full text-muted-foreground ${me?.id ? '' : 'ml-auto'}`}>
+            <a href={`mailto:support@ecoestate.org?subject=${encodeURIComponent(`Report post ${post.id}`)}&body=${encodeURIComponent('What breaks the community rules in this post?\n\n')}`}>
+              <Flag className="mr-1.5 h-3.5 w-3.5" /> Report
+            </a>
           </Button>
         )}
       </div>
