@@ -2165,8 +2165,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // Fences the scan found on the lot lines: 6 ft board panels between posts,
     // following the ground.
     if (fences.length) {
-      const boards = new THREE.MeshStandardMaterial({ map: photo('brown_planks_05', 'diffuse', 6.5), color: 0xb89a78, roughness: 0.9, metalness: 0 });
-      const postMat = new THREE.MeshStandardMaterial({ color: 0x6f5640, roughness: 0.9 });
+      const boards = new THREE.MeshStandardMaterial({ color: 0xb08a63, roughness: 0.9, metalness: 0 }); // weathered cedar
+      const postMat = new THREE.MeshStandardMaterial({ color: 0x8a6b4c, roughness: 0.9 });
       for (const line of fences) {
         for (let i = 1; i < line.length; i++) {
           const [ax, az] = [line[i - 1][0] - cx, -(line[i - 1][1] - cy)];
