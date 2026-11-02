@@ -1457,6 +1457,21 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     own.forEach((t) => circle(t.x - cx, -(t.y - cy), (t.radiusFt || 6) + TREE_CUT_PAD_FT));
     tctx.fillStyle = '#ffff00'; // the crown itself
     own.forEach((t) => circle(t.x - cx, -(t.y - cy), t.radiusFt || 6));
+    // With the house modelled, everything of Google's taller than a low wall
+    // on the lot goes too (its trees are modelled from the scan), so nothing
+    // rough stands over the yard; pools, patios and low walls stay.
+    if (houses.length && lotPts) {
+      tctx.fillStyle = '#00ff00';
+      tctx.beginPath();
+      lotPts.forEach(([x, z], i) => {
+        const px = ((x - nx0) / (nx1 - nx0)) * W;
+        const py = (1 - (z - nz0) / (nz1 - nz0)) * W;
+        if (i) tctx.lineTo(px, py);
+        else tctx.moveTo(px, py);
+      });
+      tctx.closePath();
+      tctx.fill();
+    }
     const treeTex = new THREE.CanvasTexture(tc);
     const G = 64;
     const heights = new Float32Array(G * G);
@@ -1778,16 +1793,16 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         ];
         const skirt = drapedGround(toScene(outerPoly), [], at, skirtTex, circles, true, publicWays, cutFills);
         // The strip to the street (front yard to curb), where Google's mesh is cut
-        // away in Real 3D: a clean, evenly mown lawn in full colour (Google's
-        // surroundings are muted), edged with a pale curb line, with sidewalks
+        // away in Real 3D: plain light ground like an architectural model's base
+        // (so the lawn is the only green), edged with a pale curb line, with sidewalks
         // and driveways on it as slabs. Nothing stands between the street and
         // the property except what the scan modelled.
         if (front) {
           const roadsScene = paths.filter((q) => q && q.length >= 3 && ROAD_KINDS.has(q.kind)).map(toScene);
-          const stripTex = turfTexture().clone();
+          const stripTex = groundTexture().clone();
           stripTex.needsUpdate = true;
           const strip = drapedGround(front, [toScene(outerPoly)], at, stripTex, [], false, roadsScene);
-          strip.material.color.set(0xe6f2d6);
+          strip.material.color.set(0xf4f1ea); // neutral, like a model's base: only the lawn is green
           strip.userData.ground = true;
           strip.userData.frontStrip = true; // Real 3D only
           strip.visible = false;
