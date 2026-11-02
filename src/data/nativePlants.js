@@ -30,7 +30,7 @@ export const PLANTS = [
     bloom: 'Mar–May',
     color: '#4f6394',
     accent: '#8b9ac9',
-    blurb: 'Fast evergreen with cobalt flower clusters — the earliest big bee feed of the season.',
+    blurb: 'Fast evergreen with cobalt flower clusters, the earliest big bee feed of the season.',
   },
   {
     id: 'california-fuchsia',
@@ -87,7 +87,7 @@ export const PLANTS = [
     bloom: 'Berries in Nov',
     color: '#3f6b4a',
     accent: '#b8402f',
-    blurb: 'The classic California holly — winter berries feed flocks when little else is ripe.',
+    blurb: 'The classic California holly. Winter berries feed flocks when little else is ripe.',
   },
   {
     id: 'california-sagebrush',
@@ -125,7 +125,7 @@ export const PLANTS = [
     bloom: 'Spring seed heads',
     color: '#b0a068',
     accent: '#d9cb95',
-    blurb: 'California’s state grass — a soft bunchgrass that replaces lawn texture for a fraction of the water.',
+    blurb: 'California’s state grass, a soft bunchgrass that replaces lawn texture for a fraction of the water.',
   },
   {
     id: 'california-poppy',
@@ -144,7 +144,7 @@ export const PLANTS = [
     bloom: 'Feb–Sep',
     color: '#df8a2b',
     accent: '#f4bd52',
-    blurb: 'Reseeds itself into drifts of orange — the cheapest colour a yard can buy.',
+    blurb: 'Reseeds itself into drifts of orange, the cheapest colour a yard can buy.',
   },
   {
     id: 'manzanita',
@@ -296,7 +296,7 @@ export const PLANTS = [
     bloom: 'Mar–Jun',
     color: '#788cad',
     accent: '#a7b6cd',
-    blurb: 'Fixes nitrogen in bare soil — a good first plant for a dead lawn.',
+    blurb: 'Fixes nitrogen in bare soil, a good first plant for a dead lawn.',
   },
   {
     id: 'blue-rush',
@@ -433,7 +433,7 @@ export const PLANTS = [
     bloom: 'Aug–Oct',
     color: '#8a9277',
     accent: '#bcc6a6',
-    blurb: 'The signature shrub of the western sagebrush sea — sage-grouse cover and silver scent.',
+    blurb: 'The signature shrub of the western sagebrush sea, sage-grouse cover and silver scent.',
     regions: ['mountain'],
   },
   {
@@ -453,7 +453,7 @@ export const PLANTS = [
     bloom: 'Summer',
     color: '#a89a6a',
     accent: '#d4c890',
-    blurb: 'Low bunchgrass with eyelash seed heads — a no-mow lawn substitute for dry regions.',
+    blurb: 'Low bunchgrass with eyelash seed heads, a no-mow lawn substitute for dry regions.',
     regions: ['mountain', 'prairie'],
   },
   {
@@ -473,7 +473,7 @@ export const PLANTS = [
     bloom: 'Summer',
     color: '#c2b27a',
     accent: '#e6d8a0',
-    blurb: 'Delicate golden seed heads on sandy soil — a staple native bunchgrass of the high desert.',
+    blurb: 'Delicate golden seed heads on sandy soil, a staple native bunchgrass of the high desert.',
     regions: ['mountain', 'prairie'],
   },
   {
@@ -574,7 +574,7 @@ export const PLANTS = [
     bloom: 'Summer',
     color: '#a98fb0',
     accent: '#c9aed4',
-    blurb: 'Silver foliage erupts in purple blooms every time the humidity rises — the barometer bush.',
+    blurb: 'Silver foliage erupts in purple blooms every time the humidity rises, the barometer bush.',
     regions: ['southcentral'],
   },
   {
@@ -694,7 +694,7 @@ export const PLANTS = [
     bloom: 'Fall berries',
     color: '#3a5a44',
     accent: '#6f8a76',
-    blurb: 'Evergreen leaves and bright winter berries — a dense, wildlife-rich screen for the South.',
+    blurb: 'Evergreen leaves and bright winter berries, a dense, wildlife-rich screen for the South.',
     regions: ['southcentral', 'southeast'],
   },
   {
@@ -735,7 +735,7 @@ export const PLANTS = [
     bloom: 'Fall seed heads',
     color: '#8a8a6a',
     accent: '#c0b890',
-    blurb: 'Blue summer foliage turns copper in fall — the signature bunchgrass of the tallgrass prairie.',
+    blurb: 'Blue summer foliage turns copper in fall, the signature bunchgrass of the tallgrass prairie.',
     regions: ['prairie', 'southcentral', 'midatlantic', 'northeast', 'southeast'],
   },
   {
@@ -795,7 +795,7 @@ export const PLANTS = [
     bloom: 'Fall fragrance',
     color: '#b0a878',
     accent: '#d8d0a0',
-    blurb: 'Fine fountain of foliage with popcorn-scented fall blooms — a refined prairie grass.',
+    blurb: 'Fine fountain of foliage with popcorn-scented fall blooms, a refined prairie grass.',
     regions: ['prairie'],
   },
   {
@@ -875,7 +875,7 @@ export const PLANTS = [
     bloom: 'Jun–Sep',
     color: '#b85a8a',
     accent: '#e08ab0',
-    blurb: 'Pink reflexed petals around a bristly cone — goldfinches raid it in fall.',
+    blurb: 'Pink reflexed petals around a bristly cone. Goldfinches raid it in fall.',
     regions: ['prairie', 'midatlantic', 'southeast'],
   },
   {
@@ -955,7 +955,7 @@ export const PLANTS = [
     bloom: 'Jul–Sep',
     color: '#b85a8a',
     accent: '#e08ab0',
-    blurb: 'Pink milkweed for moist spots — a top monarch host that thrives where it\u2019s not dry.',
+    blurb: 'Pink milkweed for moist spots, a top monarch host that thrives where it\u2019s not dry.',
     regions: ['prairie', 'midatlantic', 'northeast', 'southeast'],
   },
   {
@@ -975,7 +975,7 @@ export const PLANTS = [
     bloom: 'Jul–Sep',
     color: '#7a8a7a',
     accent: '#a8c4a8',
-    blurb: 'Spiky yucca-like leaves and pale green globe flowers — a prairie oddity pollinators love.',
+    blurb: 'Spiky yucca-like leaves and pale green globe flowers, a prairie oddity pollinators love.',
     regions: ['prairie', 'southeast'],
   },
   {
@@ -1015,7 +1015,7 @@ export const PLANTS = [
     bloom: 'May–Jun',
     color: '#5a6ab8',
     accent: '#8a9ad4',
-    blurb: 'Spikes of indigo blue over blue-green foliage — a long-lived prairie anchor.',
+    blurb: 'Spikes of indigo blue over blue-green foliage, a long-lived prairie anchor.',
     regions: ['prairie', 'midatlantic'],
   },
   // --- Southeast ---
@@ -1076,7 +1076,7 @@ export const PLANTS = [
     bloom: 'Apr–Aug',
     color: '#b8362f',
     accent: '#e06a55',
-    blurb: 'Coral trumpet vines that hummingbirds migrate for — a well-behaved native climber.',
+    blurb: 'Coral trumpet vines that hummingbirds migrate for, a well-behaved native climber.',
     regions: ['southeast', 'midatlantic', 'northeast'],
   },
   // --- Mid-Atlantic ---
@@ -1137,7 +1137,7 @@ export const PLANTS = [
     bloom: 'Spring',
     color: '#6a8a5a',
     accent: '#98b886',
-    blurb: 'Early yellow blooms and fragrant leaves — the host plant of the spicebush swallowtail.',
+    blurb: 'Early yellow blooms and fragrant leaves, the host plant of the spicebush swallowtail.',
     regions: ['midatlantic', 'northeast', 'southeast'],
   },
   {
@@ -1157,7 +1157,7 @@ export const PLANTS = [
     bloom: 'Spring',
     color: '#b85a7a',
     accent: '#e08aa8',
-    blurb: 'Magenta blooms that ring the branches before any leaf opens — an eastern spring icon.',
+    blurb: 'Magenta blooms that ring the branches before any leaf opens, an eastern spring icon.',
     regions: ['midatlantic', 'southeast', 'northeast', 'prairie'],
   },
   // --- Northeast ---
@@ -1178,7 +1178,7 @@ export const PLANTS = [
     bloom: 'Spring',
     color: '#a8362b',
     accent: '#e07060',
-    blurb: 'Scarlet fall color and early red blooms — one of the Northeast\u2019s best trees for wildlife.',
+    blurb: 'Scarlet fall color and early red blooms, one of the Northeast\u2019s best trees for wildlife.',
     regions: ['midatlantic', 'northeast', 'southeast', 'prairie'],
   },
   {

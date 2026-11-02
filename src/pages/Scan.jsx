@@ -56,11 +56,11 @@ const STEPS = [
   },
   {
     t: 'Adjust the outline',
-    d: 'Check the lawn map and adjust its outline to fix anything the imagery missed — or trace it yourself, or enter your own size.',
+    d: 'Check the lawn map and adjust its outline to fix anything the imagery missed, or trace it yourself, or enter your own size.',
   },
   {
     t: 'Design the replacement',
-    d: 'Regional native species matched to your location — swapped one by one and grown to maturity in 3D.',
+    d: 'Regional native species matched to your location, swapped one by one and grown to maturity in 3D.',
   },
   {
     t: 'See the payoff',
@@ -316,7 +316,7 @@ export default function Scan() {
             Replace your lawn with <em className="italic text-accent">native plants</em>, save water and money.
           </h1>
           <p className="mt-6 max-w-md text-[15px] leading-relaxed text-muted-foreground">
-            We scan your lawn to measure its size and water use — the starting point for calculating how much water,
+            We scan your lawn to measure its size and water use: the starting point for calculating how much water,
             money and habitat you'd gain by replacing it with native plants. Confirm the scan, fine-tune it, or
             upload your own photos, and we'll show the payoff.
           </p>
@@ -399,7 +399,7 @@ export default function Scan() {
               )}
               {phase === 'idle' && (
                 <div className="border-b border-border/70 bg-secondary/30 px-4 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
-                  Enter an address to scan your lawn, or measure it manually below — either way we'll calculate the
+                  Enter an address to scan your lawn, or measure it manually below. Either way we'll calculate the
                   impact of replacing it with a native garden.
                   {!autoAccess.loading && autoAccess.needsSignIn && (
                     <span className="ml-1 text-foreground">Sign in to run a free Full Auto Scan.</span>
@@ -408,7 +408,7 @@ export default function Scan() {
               )}
               {phase === 'manual' && editSeed && (
                 <div className="border-b border-border/70 bg-accent/10 px-4 py-2.5 text-[11px] leading-relaxed text-foreground">
-                  The auto-detected lawn is drawn below — drag the corners to fine-tune it, or add a new section. Then hit Analyze this lawn.
+                  The auto-detected lawn is drawn below. Drag the corners to fine-tune it, or add a new section. Then hit Analyze this lawn.
                 </div>
               )}
               <div className="border-b border-border/70 px-4 py-3">

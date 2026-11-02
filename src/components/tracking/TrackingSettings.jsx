@@ -49,7 +49,7 @@ export default function TrackingSettings({ tracked, onSave }) {
         <div>
           <Label htmlFor="ts-share" className="text-[13px] font-medium">Share on community map</Label>
           <p className="mt-0.5 max-w-md text-[11.5px] leading-relaxed text-muted-foreground">
-            Other members see your first name, your project’s progress and an approximate location (within about 1 km) with the city — never your street address. Your photos stay private.
+            Other members see your first name, your project’s progress and an approximate location (within about 1 km) with the city, never your street address. Your photos stay private.
           </p>
         </div>
         <Switch id="ts-share" checked={share} onCheckedChange={setShare} />

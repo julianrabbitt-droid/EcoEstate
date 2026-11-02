@@ -7,7 +7,7 @@ const FACTS = [
   'Native gardens support 50× more pollinators than a conventional lawn.',
   'Deep native roots hold soil, filter runoff, and need no synthetic fertilizer.',
   'Turf grass is the single most irrigated "crop" in the United States.',
-  'Mature oaks host over 500 species of caterpillars — food for songbirds.',
+  'Mature oaks host over 500 species of caterpillars, food for songbirds.',
   'Native milkweed is the only plant monarch butterflies can lay eggs on.',
   'Replacing your lawn can cut maintenance time and cost by up to 70%.',
   'Native plants sequester carbon in deep roots that turf never reaches.',
@@ -28,7 +28,7 @@ export default function ScanFacts() {
     <div className="mt-5 mx-auto flex max-w-xs items-start gap-2 rounded-2xl bg-secondary/60 px-4 py-3">
       <Leaf className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
       <p key={index} className="text-[12px] leading-relaxed text-muted-foreground transition-opacity">
-        <span className="font-medium text-foreground">While we wait — </span>
+        <span className="font-medium text-foreground">While we wait: </span>
         {FACTS[index]}
       </p>
     </div>

@@ -189,7 +189,7 @@ export default function ProjectExports({ projectId, project, design }) {
       </div>
       <h2 className="mt-2 font-display text-2xl tracking-tight">Download & share your project</h2>
       <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-muted-foreground">
-        A printable brief and a materials list for your nursery, crew, or volunteer group — drawn from this project's
+        A printable brief and a materials list for your nursery, crew, or volunteer group, drawn from this project's
         current scan and design.
       </p>
       <div className="mt-4 flex flex-wrap gap-2.5">

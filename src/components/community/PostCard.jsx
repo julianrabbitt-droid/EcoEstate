@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Loader2, MessageCircle, Send, Trash2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
+import { useConfirm } from '@/components/ConfirmProvider';
 
 function timeOf(d) {
   try {
@@ -13,6 +14,7 @@ function timeOf(d) {
 }
 
 export default function PostCard({ post, me, onDelete }) {
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const [images, setImages] = useState([]);
   const [showComments, setShowComments] = useState(false);
@@ -76,7 +78,7 @@ export default function PostCard({ post, me, onDelete }) {
 
   const remove = async () => {
     if (deleting) return;
-    if (!window.confirm('Delete this post? Its comments will no longer be shown.')) return;
+    if (!(await confirm({ title: 'Delete this post?', description: 'Its comments will no longer be shown.', confirmLabel: 'Delete post' }))) return;
     setDeleting(true);
     setDeleteError('');
     try {
@@ -141,7 +143,7 @@ export default function PostCard({ post, me, onDelete }) {
             </div>
           ) : (
             <ul className="space-y-2.5">
-              {comments.length === 0 && <li className="text-[11.5px] text-muted-foreground">No comments yet — start the conversation.</li>}
+              {comments.length === 0 && <li className="text-[11.5px] text-muted-foreground">No comments yet. Start the conversation.</li>}
               {comments.map((c) => {
                 const cMine = c.created_by_id === me?.id || me?.role === 'admin';
                 return (

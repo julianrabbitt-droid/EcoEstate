@@ -212,9 +212,9 @@ export default function Analysis() {
                 <p className="font-medium text-destructive">Artificial turf isn't a free pass.</p>
                 <ul className="mt-1.5 list-disc space-y-1 pl-4 text-muted-foreground">
                   <li>It can be 40–60°F hotter than real grass on a sunny day and radiates heat back at the house.</li>
-                  <li>No roots, no infiltration — rain runs off instead of soaking in, which strains storm drains.</li>
+                  <li>No roots, no infiltration: rain runs off instead of soaking in, which strains storm drains.</li>
                   <li>It sheds microplastics and needs infill replaced every few years.</li>
-                  <li>It supports no soil life, no pollinators, and no birds — a dead patch in the yard.</li>
+                  <li>It supports no soil life, no pollinators, and no birds. It’s a dead patch in the yard.</li>
                 </ul>
               </div>
             )}
@@ -292,7 +292,7 @@ export default function Analysis() {
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4">
             <p className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
               <Check className="h-3.5 w-3.5 text-accent" />
-              Everything here is editable later — nothing is locked in.
+              Everything here is editable later. Nothing is locked in.
             </p>
             <Button onClick={save} className="rounded-full">
               <Sprout className="mr-2 h-4 w-4" />

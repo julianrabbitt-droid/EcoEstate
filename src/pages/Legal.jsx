@@ -54,7 +54,7 @@ const PRIVACY = [
     list: [
       'Your scans, designs, photos and tracked projects are private to your account unless you choose to share them.',
       'Community posts and comments show your name and the photos you attach, to other members.',
-      'If you turn on “Share on community map” for a tracked project, other members see your first name, the project’s progress, and an approximate location (rounded to about 1 km) with the city or neighborhood name — never your street address or exact location. You can turn sharing off at any time.',
+      'If you turn on “Share on community map” for a tracked project, other members see your first name, the project’s progress, and an approximate location (rounded to about 1 km) with the city or neighborhood name, never your street address or exact location. You can turn sharing off at any time.',
       'Messages are visible only to you and the member you are messaging. If a member reports a conversation to us, we may review it to enforce the community rules.',
       'If you subscribe using a friend’s referral code, we show your first name to that friend so they know the referral worked.',
     ],
@@ -78,7 +78,7 @@ const PRIVACY = [
   {
     title: 'Do Not Track and cookies',
     body: [
-      <>We don’t track you across other websites and we don’t use advertising or analytics cookies, so we don’t change what we do when your browser sends a Do Not Track or Global Privacy Control signal — there is no cross-site tracking to turn off. The only cookies and browser storage we use are what sign-in needs (set by Clerk) and what the app needs to work, such as saving guest scans and display settings on your device. Our <Link to="/cookies" className="underline underline-offset-2">Cookie Policy</Link> lists each one.</>,
+      <>We don’t track you across other websites and we don’t use advertising or analytics cookies, so we don’t change what we do when your browser sends a Do Not Track or Global Privacy Control signal; there is no cross-site tracking to turn off. The only cookies and browser storage we use are what sign-in needs (set by Clerk) and what the app needs to work, such as saving guest scans and display settings on your device. Our <Link to="/cookies" className="underline underline-offset-2">Cookie Policy</Link> lists each one.</>,
       'We don’t allow other companies to collect information about your activity on EcoEstate over time and across other websites. The services listed above that your browser contacts directly receive your IP address and normal browser information when they deliver content.',
     ],
   },
@@ -161,7 +161,7 @@ const TERMS = [
   },
   {
     title: 'Your content',
-    body: ['You keep ownership of the photos, posts and other content you add. You give EcoEstate a non-exclusive, royalty-free, worldwide license to host, store, copy, resize, display and process it only to run and improve the service — including showing it to the people you share it with and letting our service providers store it. This license ends when you delete the content or your account, except for backup copies that expire on schedule. You confirm you have the rights to post it and that it follows these terms.'],
+    body: ['You keep ownership of the photos, posts and other content you add. You give EcoEstate a non-exclusive, royalty-free, worldwide license to host, store, copy, resize, display and process it only to run and improve the service, including showing it to the people you share it with and letting our service providers store it. This license ends when you delete the content or your account, except for backup copies that expire on schedule. You confirm you have the rights to post it and that it follows these terms.'],
   },
   {
     title: 'Community rules',

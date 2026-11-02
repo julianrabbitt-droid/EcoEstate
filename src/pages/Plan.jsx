@@ -191,7 +191,7 @@ export default function Plan() {
         <h2 className="mt-1.5 font-display text-2xl tracking-tight">Four ways to finish this</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { icon: Hammer, title: 'Do it yourself', body: 'You have the quantities, spacing and sequence — a weekend for most of this yard.' },
+            { icon: Hammer, title: 'Do it yourself', body: 'You have the quantities, spacing and sequence: a weekend for most of this yard.' },
             { icon: ShoppingBasket, title: 'Buy the materials', body: 'Take the bill of materials to a native nursery; most deliver by the pallet.' },
             { icon: Users, title: 'Hire a crew', body: 'Send the brief to an ecological landscape contractor for a fixed quote.' },
             { icon: ClipboardCheck, title: 'Community install', body: 'Volunteer crews convert yards at scheduled planting events.', highlight: true },

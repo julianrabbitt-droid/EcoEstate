@@ -10,6 +10,7 @@ import Invite from '@/pages/Invite';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
+import { ConfirmProvider } from '@/components/ConfirmProvider';
 import AppShell from '@/components/AppShell';
 import ThankYou from './pages/ThankYou';
 import Login from '@/pages/Login';
@@ -124,14 +125,16 @@ function App() {
 
   return (
     <AuthProvider>
-      <QueryClientProvider client={queryClientInstance}>
-        <Router>
-          <ScrollToTop />
-          <CheckoutReturn />
-          <AuthenticatedApp />
-        </Router>
-        <Toaster />
-      </QueryClientProvider>
+      <ConfirmProvider>
+        <QueryClientProvider client={queryClientInstance}>
+          <Router>
+            <ScrollToTop />
+            <CheckoutReturn />
+            <AuthenticatedApp />
+          </Router>
+          <Toaster />
+        </QueryClientProvider>
+      </ConfirmProvider>
     </AuthProvider>
   )
 }

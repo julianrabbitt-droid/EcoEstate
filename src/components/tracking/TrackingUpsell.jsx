@@ -9,7 +9,7 @@ const FEATURES = {
   tracking: {
     title: 'Track your lawn conversion',
     blurb:
-      'My projects turns a scanned property into a living record of the real work: progress photos, plants, spending and water bills — then shows the water and money you save.',
+      'My projects turns a scanned property into a living record of the real work: progress photos, plants, spending and water bills, then shows the water and money you save.',
     benefits: [
       'Connect a scanned property to a real-world project',
       'Log progress updates with photos as you convert the lawn',

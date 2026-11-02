@@ -1327,7 +1327,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           <input
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe your ideal garden — e.g. drought-tolerant pollinator hedge with winter berries"
+            placeholder="Describe your ideal garden, e.g. drought-tolerant pollinator hedge with winter berries"
             className="field h-9 flex-1 text-[12.5px]"
             onKeyDown={(e) => { if (e.key === 'Enter' && !designing) runTypeDesign(); }}
           />

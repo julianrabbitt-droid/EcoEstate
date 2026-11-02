@@ -198,7 +198,7 @@ export default function LawnApiResult({ data, onConfirm, onEdit, onRescan, onRem
           <div className="flex flex-col gap-2 px-4 py-4 sm:flex-row">
             {data.lawnSqft > 0 && (
               <Button onClick={onConfirm} className="flex-1 rounded-full whitespace-normal text-center leading-tight">
-                <Check className="mr-1.5 h-4 w-4 shrink-0" />Looks right — analyze
+                <Check className="mr-1.5 h-4 w-4 shrink-0" />Looks right, analyze
               </Button>
             )}
             <Button variant={data.lawnSqft > 0 ? 'outline' : 'default'} onClick={onEdit} className="flex-1 rounded-full whitespace-normal text-center leading-tight">

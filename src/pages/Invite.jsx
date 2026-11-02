@@ -58,7 +58,7 @@ export default function Invite() {
               <button type="button" onClick={() => copy(info.code, 'code')} className="font-mono font-medium text-foreground underline underline-offset-2">
                 {info.code}
               </button>
-              {copied === 'code' && ' — copied'}
+              {copied === 'code' && ' (copied)'}
             </p>
           </div>
 

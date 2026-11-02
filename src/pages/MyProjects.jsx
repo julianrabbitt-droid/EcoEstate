@@ -9,11 +9,13 @@ import { Button } from '@/components/ui/button';
 import SignedImage from '@/components/tracking/SignedImage';
 import TrackingUpsell from '@/components/tracking/TrackingUpsell';
 import { estimatedWaterSavedPerYear, fmtNum, fmtUsd, percentConverted } from '@/lib/trackingMath';
+import { useConfirm } from '@/components/ConfirmProvider';
 
 // Paid feature: tracked real-world conversions of the user's scanned properties.
 // `?project=<scanned property id>` (from Build / Legacy / My properties) starts
 // tracking that property, or opens its existing tracked project.
 export default function MyProjects() {
+  const confirm = useConfirm();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -29,7 +31,7 @@ export default function MyProjects() {
   // Stops tracking a property: deletes the tracked project with its progress
   // updates. The scanned property itself is kept.
   const removeTracked = async (t) => {
-    if (!window.confirm(`Remove “${t.name || t.address}” from My projects? Its progress updates will be deleted. The scanned property stays in My properties.`)) return;
+    if (!(await confirm({ title: `Remove “${t.name || t.address}” from My projects?`, description: 'Its progress updates will be deleted. The scanned property stays in My properties.', confirmLabel: 'Remove' }))) return;
     setRemoving(t.id);
     setError('');
     try {

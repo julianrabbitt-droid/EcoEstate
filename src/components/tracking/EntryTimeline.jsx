@@ -13,7 +13,7 @@ export default function EntryTimeline({ entries, onDelete }) {
       <div className="rounded-2xl border border-dashed border-border p-10 text-center">
         <p className="text-[14px] font-medium">No updates yet</p>
         <p className="mx-auto mt-1 max-w-sm text-[12.5px] text-muted-foreground">
-          Add your first progress update above — a before photo is a great start.
+          Add your first progress update above. A before photo is a great start.
         </p>
       </div>
     );

@@ -302,7 +302,7 @@ export default function Design() {
           <div className="mt-8">
             <p className="label-xs">Larger plants & trees</p>
             <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
-              Add these only if the yard has room — they anchor a corner or screen a fence and are skipped on small lawns to keep the planting dense.
+              Add these only if the yard has room. They anchor a corner or screen a fence and are skipped on small lawns to keep the planting dense.
             </p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {largePlants.map((plant) => (
@@ -322,7 +322,7 @@ export default function Design() {
           <p className="mt-6 text-center text-[13px] text-muted-foreground">
             {regionPlants.length === 0
               ? 'A verified native plant list is not available for this location yet. Check the botanical sources above; we do not substitute plants from California or another region.'
-              : 'No species match those goals — remove a filter to widen the list.'}
+              : 'No species match those goals. Remove a filter to widen the list.'}
           </p>
         )}
       </section>

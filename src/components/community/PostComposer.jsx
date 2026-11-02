@@ -67,7 +67,7 @@ export default function PostComposer({ onPosted }) {
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        placeholder="Share your progress — e.g. Front yard, month 6"
+        placeholder="Share your progress, e.g. Front yard, month 6"
         className="field h-11"
       />
       <textarea

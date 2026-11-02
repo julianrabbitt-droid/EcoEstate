@@ -7,6 +7,7 @@ import { deleteProject } from '@/lib/projectStore';
 import { useProjects } from '@/hooks/useProjects';
 import { usePremiumAccess } from '@/hooks/usePremiumAccess';
 import TrackingUpsell from '@/components/tracking/TrackingUpsell';
+import { useConfirm } from '@/components/ConfirmProvider';
 
 // My properties is a Pro feature (or free with a school email); scanning
 // and the 3D view stay free, and a scan's own pages open from its link.
@@ -34,12 +35,13 @@ export default function Projects() {
 }
 
 function PropertyList() {
+  const confirm = useConfirm();
   const { projects, loading, reload } = useProjects();
 
   const [deleteError, setDeleteError] = useState('');
 
   const remove = async (project) => {
-    if (!window.confirm(`Delete ${project.address || 'this property'}? Its design and numbers will be removed.`)) return;
+    if (!(await confirm({ title: `Delete ${project.address || 'this property'}?`, description: 'Its design and numbers will be removed. This can’t be undone.', confirmLabel: 'Delete property' }))) return;
     setDeleteError('');
     try {
       await deleteProject(project.id);

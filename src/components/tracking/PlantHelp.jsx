@@ -157,7 +157,7 @@ export default function PlantHelp({ tracked, project, latestEntry }) {
         </div>
 
         <aside className="min-w-0 self-start rounded-xl border border-border p-4">
-          <p className="label-xs">Ask a real expert — free</p>
+          <p className="label-xs">Ask a real expert, free</p>
           <div className="mt-3 flex flex-col gap-2">
             {isCalifornia ? (
               <a

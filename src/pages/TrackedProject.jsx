@@ -12,10 +12,12 @@ import ProgressForm from '@/components/tracking/ProgressForm';
 import TrackingSettings from '@/components/tracking/TrackingSettings';
 import TrackingUpsell from '@/components/tracking/TrackingUpsell';
 import { convertedSqft, sortEntries } from '@/lib/trackingMath';
+import { useConfirm } from '@/components/ConfirmProvider';
 
 // One tracked project: connected property, progress form, impact dashboard,
 // settings and the update timeline.
 export default function TrackedProject() {
+  const confirm = useConfirm();
   const { id } = useParams();
   const { user } = useAuth();
   const { premium, threeD, loading: accessLoading, refresh } = usePremiumAccess();
@@ -71,7 +73,7 @@ export default function TrackedProject() {
   };
 
   const removeEntry = async (entry) => {
-    if (!window.confirm('Delete this progress update?')) return;
+    if (!(await confirm({ title: 'Delete this progress update?', confirmLabel: 'Delete update' }))) return;
     setError('');
     try {
       await base44.entities.ProgressEntry.delete(entry.id);

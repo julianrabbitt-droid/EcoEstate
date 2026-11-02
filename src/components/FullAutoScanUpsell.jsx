@@ -97,7 +97,7 @@ export default function FullAutoScanUpsell() {
         </div>
         <h2 className="mt-2 font-display text-2xl tracking-tight">Sign in to run a free Full Auto Scan</h2>
         <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-muted-foreground">
-          Scanning and the 3D Garden View are free for every signed-in user — the scan detects your lawn automatically
+          Scanning and the 3D Garden View are free for every signed-in user. The scan detects your lawn automatically
           across all four sides of the property. You can still outline your lawn manually below.
         </p>
         <ul className="mt-3 flex flex-col gap-1.5 text-[12px] text-muted-foreground">

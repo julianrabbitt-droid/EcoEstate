@@ -28,7 +28,7 @@ export default function CookieNotice() {
   return (
     <div role="region" aria-label="Cookie notice" className="fixed inset-x-3 bottom-3 z-40 mx-auto max-w-xl rounded-2xl border border-border bg-card p-4 shadow-lg sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2">
       <p className="text-[13px] leading-relaxed text-foreground">
-        We only use cookies needed to sign you in and keep the site working — no ads, analytics or tracking.{' '}
+        We only use cookies needed to sign you in and keep the site working. No ads, analytics or tracking.{' '}
         <Link to="/cookies" className="underline underline-offset-2">Cookie Policy</Link>
       </p>
       <div className="mt-3 flex justify-end">

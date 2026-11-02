@@ -211,7 +211,7 @@ export default function PhotoCompare({ entries = [] }) {
             </div>
           )}
           <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-            The proposed view is sketched from your plant palette as a mulch bed with a planting lattice — no AI image generation.
+            The proposed view is sketched from your plant palette as a mulch bed with a planting lattice. No AI image generation.
           </p>
         </div>
       )}
