@@ -46,22 +46,30 @@ const GOOGLE_TILES_KEY = import.meta.env.VITE_GOOGLE_MAPS_BROWSER_KEY || '';
 const PHOTO_PREF = 'ecoestate.photoReal';
 const M_TO_FT = 3.28084;
 const PHOTO_SINK_FT = 0.2; // Google's ground just outside the lot sits this far below the model's
-const SURROUND_FT = 130; // how far past the property Google's mesh is shown
-const SURROUND_FADE_FT = 45; // and over how many feet it fades out
+const SURROUND_FT = 110; // how far past the property Google's mesh is shown
 const MASK_INSET_FT = 1.5; // the cut-out stops this far inside the lot line
 
 // Google's mesh is cut away over the property (everything on and above its
 // ground, so our model stands there instead) and faded out past the immediate
 // surroundings. Done in the tiles' shaders: a top-down mask of the lot outline,
-// plus a distance fade, discard fragments. Shared by every tile material.
+// plus a clean distance cut, discard fragments. Shared by every tile material.
 const clipUniforms = {
   uEcoMask: { value: new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1) },
   uEcoBox: { value: new THREE.Vector4(0, 0, 1, 1) },
   uEcoCenter: { value: new THREE.Vector2() },
   uEcoRadius: { value: 1e9 },
-  uEcoFade: { value: SURROUND_FADE_FT },
+  // Around each scanned tree near the property, Google's tree is cut away
+  // above the ground (kept below, so sidewalks and grass stay) and ours stands
+  // there instead. Ground height comes from the USGS terrain.
+  uEcoTrees: { value: new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1) },
+  uEcoGround: { value: new THREE.DataTexture(new Float32Array([0]), 1, 1, THREE.RedFormat, THREE.FloatType) },
+  uEcoNearBox: { value: new THREE.Vector4(0, 0, 1, 1) },
 };
 clipUniforms.uEcoMask.value.needsUpdate = true;
+clipUniforms.uEcoTrees.value.needsUpdate = true;
+clipUniforms.uEcoGround.value.needsUpdate = true;
+const TREE_CUT_ABOVE_FT = 1; // Google's mesh around a modelled tree is cut from this height above the ground (our ground fills below)
+const TREE_CUT_PAD_FT = 3; // and this far past its scanned crown
 function clipTileMaterial(m) {
   if (!m || m.userData.ecoClip) return;
   m.userData.ecoClip = true;
@@ -77,13 +85,16 @@ function clipTileMaterial(m) {
       'uniform vec4 uEcoBox;',
       'uniform vec2 uEcoCenter;',
       'uniform float uEcoRadius;',
-      'uniform float uEcoFade;',
+      'uniform sampler2D uEcoTrees;',
+      'uniform sampler2D uEcoGround;',
+      'uniform vec4 uEcoNearBox;',
       sh.fragmentShader.replace('void main() {', `void main() {
   vec2 ecoUv = (vEcoWorld.xz - uEcoBox.xy) / uEcoBox.zw;
   if (ecoUv.x > 0.0 && ecoUv.x < 1.0 && ecoUv.y > 0.0 && ecoUv.y < 1.0 && texture2D(uEcoMask, ecoUv).r > 0.5) discard;
-  float ecoD = length(vEcoWorld.xz - uEcoCenter);
-  float ecoT = (ecoD - (uEcoRadius - uEcoFade)) / uEcoFade;
-  if (ecoT >= 1.0 || (ecoT > 0.0 && fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) < ecoT)) discard;`),
+  if (length(vEcoWorld.xz - uEcoCenter) > uEcoRadius) discard;
+  vec2 ecoNear = (vEcoWorld.xz - uEcoNearBox.xy) / uEcoNearBox.zw;
+  if (ecoNear.x > 0.0 && ecoNear.x < 1.0 && ecoNear.y > 0.0 && ecoNear.y < 1.0 && texture2D(uEcoTrees, ecoNear).r > 0.5
+      && vEcoWorld.y > texture2D(uEcoGround, ecoNear).r + ${TREE_CUT_ABOVE_FT.toFixed(1)}) discard;`),
     ].join('\n');
   };
   m.customProgramCacheKey = () => 'eco-clip';
@@ -135,6 +146,285 @@ const insidePoly = ([x, y], pts) => {
   }
   return inside;
 };
+// Photogrammetry leaves small loose pieces hanging in the air (birds, wires,
+// bits of foliage it couldn't attach). In each loaded tile, pieces of mesh that
+// connect to nothing else are found; a piece is dropped when it is small, sits
+// well above the lowest ground around it, and doesn't reach the tile's edge
+// (where it might carry on into the next tile, like half a roof).
+const FLOATER = { maxSizeFt: 25, minLiftFt: 5, maxTris: 3000, cellFt: 6, maxTileFt: 1500 };
+function removeFloaters(model, toScene) {
+  model.updateMatrixWorld(true);
+  const m = new THREE.Matrix4();
+  const v = new THREE.Vector3();
+  model.traverse((o) => {
+    const g = o.geometry;
+    if (!o.isMesh || !g?.attributes?.position) return;
+    m.multiplyMatrices(toScene, o.matrixWorld);
+    const pos = g.attributes.position;
+    const n = pos.count;
+    const xs = new Float32Array(n);
+    const ys = new Float32Array(n);
+    const zs = new Float32Array(n);
+    for (let k = 0; k < n; k++) {
+      v.fromBufferAttribute(pos, k).applyMatrix4(m);
+      xs[k] = v.x; ys[k] = v.y; zs[k] = v.z;
+    }
+    // Weld vertices that share a position (tiles duplicate them at texture seams).
+    const id = new Int32Array(n);
+    const seen = new Map();
+    for (let k = 0; k < n; k++) {
+      const key = `${Math.round(xs[k] * 20)},${Math.round(ys[k] * 20)},${Math.round(zs[k] * 20)}`;
+      const prev = seen.get(key);
+      if (prev === undefined) { seen.set(key, k); id[k] = k; } else id[k] = prev;
+    }
+    const parent = Int32Array.from({ length: n }, (_, k) => k);
+    const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+    const join = (a, b) => { a = find(id[a]); b = find(id[b]); if (a !== b) parent[a] = b; };
+    const index = g.index ? g.index.array : null;
+    const triCount = index ? index.length / 3 : n / 3;
+    const corner = (t, c) => (index ? index[t * 3 + c] : t * 3 + c);
+    for (let t = 0; t < triCount; t++) { join(corner(t, 0), corner(t, 1)); join(corner(t, 1), corner(t, 2)); }
+
+    // Tile extent, and the lowest point in each horizontal cell (local ground).
+    let [x0, x1, z0, z1] = [Infinity, -Infinity, Infinity, -Infinity];
+    for (let k = 0; k < n; k++) { x0 = Math.min(x0, xs[k]); x1 = Math.max(x1, xs[k]); z0 = Math.min(z0, zs[k]); z1 = Math.max(z1, zs[k]); }
+    // Coarse tiles cover whole districts; floaters only matter in the detailed ones nearby.
+    if (!(x1 - x0 < FLOATER.maxTileFt && z1 - z0 < FLOATER.maxTileFt)) return;
+    const cw = Math.max(1, Math.ceil((x1 - x0) / FLOATER.cellFt));
+    const ch = Math.max(1, Math.ceil((z1 - z0) / FLOATER.cellFt));
+    const low = new Float32Array(cw * ch).fill(Infinity);
+    const cellOf = (x, z) => Math.min(ch - 1, Math.floor((z - z0) / FLOATER.cellFt)) * cw + Math.min(cw - 1, Math.floor((x - x0) / FLOATER.cellFt));
+    for (let k = 0; k < n; k++) { const c = cellOf(xs[k], zs[k]); if (ys[k] < low[c]) low[c] = ys[k]; }
+
+    // Bounds per piece.
+    const box = new Map(); // root -> [x0, x1, y0, y1, z0, z1, tris]
+    for (let t = 0; t < triCount; t++) {
+      const r = find(id[corner(t, 0)]);
+      let b = box.get(r);
+      if (!b) { b = [Infinity, -Infinity, Infinity, -Infinity, Infinity, -Infinity, 0]; box.set(r, b); }
+      for (let c = 0; c < 3; c++) {
+        const k = corner(t, c);
+        b[0] = Math.min(b[0], xs[k]); b[1] = Math.max(b[1], xs[k]);
+        b[2] = Math.min(b[2], ys[k]); b[3] = Math.max(b[3], ys[k]);
+        b[4] = Math.min(b[4], zs[k]); b[5] = Math.max(b[5], zs[k]);
+      }
+      b[6]++;
+    }
+    if (box.size < 2) return;
+    const edge = 0.5;
+    const drop = new Set();
+    for (const [r, b] of box) {
+      if (b[6] > FLOATER.maxTris || Math.max(b[1] - b[0], b[3] - b[2], b[5] - b[4]) > FLOATER.maxSizeFt) continue;
+      if (b[0] - x0 < edge || x1 - b[1] < edge || b[4] - z0 < edge || z1 - b[5] < edge) continue;
+      // Lowest ground within a cell of the piece.
+      let ground = Infinity;
+      const ci0 = Math.max(0, Math.floor((b[0] - x0) / FLOATER.cellFt) - 1);
+      const ci1 = Math.min(cw - 1, Math.floor((b[1] - x0) / FLOATER.cellFt) + 1);
+      const cj0 = Math.max(0, Math.floor((b[4] - z0) / FLOATER.cellFt) - 1);
+      const cj1 = Math.min(ch - 1, Math.floor((b[5] - z0) / FLOATER.cellFt) + 1);
+      for (let j = cj0; j <= cj1; j++) for (let i = ci0; i <= ci1; i++) ground = Math.min(ground, low[j * cw + i]);
+      if (b[2] - ground <= FLOATER.minLiftFt) continue;
+      // Only when there is ground under the whole piece: a clump of canopy with
+      // nothing modelled beneath it would leave a hole to the sky.
+      let covered = true;
+      for (let j = Math.floor((b[4] - z0) / FLOATER.cellFt); covered && j <= Math.min(ch - 1, Math.floor((b[5] - z0) / FLOATER.cellFt)); j++) {
+        for (let i = Math.floor((b[0] - x0) / FLOATER.cellFt); i <= Math.min(cw - 1, Math.floor((b[1] - x0) / FLOATER.cellFt)); i++) {
+          if (!(low[j * cw + i] < b[2] - 3)) { covered = false; break; }
+        }
+      }
+      if (covered) drop.add(r);
+    }
+    if (!drop.size) return;
+    const kept = [];
+    for (let t = 0; t < triCount; t++) {
+      if (drop.has(find(id[corner(t, 0)]))) continue;
+      kept.push(corner(t, 0), corner(t, 1), corner(t, 2));
+    }
+    g.setIndex(kept);
+  });
+}
+
+// Ground heights across the property from the USGS 3D Elevation Program (bare
+// earth, 1 m lidar where available), so the model sits on the real slope
+// instead of a flat slab. Public data, sampled once per project view.
+const USGS_SAMPLES = 'https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/getSamples';
+async function loadTerrain(planBounds, origin, cx, cy) {
+  const { minX, maxX, minY, maxY } = planBounds;
+  const span = Math.max(maxX - minX, maxY - minY, 1);
+  const step = Math.max(3, span / 22);
+  const nx = Math.min(30, Math.ceil((maxX - minX) / step) + 1);
+  const ny = Math.min(30, Math.ceil((maxY - minY) / step) + 1);
+  const sx = (maxX - minX) / Math.max(1, nx - 1);
+  const sy = (maxY - minY) / Math.max(1, ny - 1);
+  const pts = [];
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const x = minX + i * sx;
+      const y = minY + j * sy;
+      pts.push([x / (364000 * origin.cosLat) + origin.minLng, y / 364000 + origin.minLat]);
+    }
+  }
+  const body = new URLSearchParams({
+    geometry: JSON.stringify({ points: pts, spatialReference: { wkid: 4326 } }),
+    geometryType: 'esriGeometryMultipoint',
+    returnFirstValueOnly: 'true',
+    interpolation: 'RSP_BilinearInterpolation',
+    f: 'json',
+  });
+  const res = await fetch(USGS_SAMPLES, { method: 'POST', body, signal: AbortSignal.timeout(12000) });
+  const data = await res.json();
+  const metres = new Float64Array(pts.length).fill(NaN);
+  for (const smp of data?.samples || []) {
+    const v = Number(smp.value);
+    if (Number.isFinite(v) && v > -500 && smp.locationId >= 0 && smp.locationId < pts.length) metres[smp.locationId] = v;
+  }
+  const known = [...metres].filter(Number.isFinite);
+  if (known.length < pts.length * 0.6) return null;
+  const mean = known.reduce((a, b) => a + b, 0) / known.length;
+  const h = Float32Array.from(metres, (v) => (Number.isFinite(v) ? v : mean) * 3.28084);
+  // Bilinear lookup in plan feet relative to the scene centre (cx, cy).
+  const atPlan = (x, y) => {
+    const fx = Math.min(nx - 1, Math.max(0, (x + cx - minX) / (sx || 1)));
+    const fy = Math.min(ny - 1, Math.max(0, (y + cy - minY) / (sy || 1)));
+    const i0 = Math.min(nx - 2, Math.floor(fx));
+    const j0 = Math.min(ny - 2, Math.floor(fy));
+    if (nx < 2 || ny < 2) return h[0];
+    const tx = fx - i0;
+    const ty = fy - j0;
+    const v = (i, j) => h[j * nx + i];
+    return (v(i0, j0) * (1 - tx) + v(i0 + 1, j0) * tx) * (1 - ty) + (v(i0, j0 + 1) * (1 - tx) + v(i0 + 1, j0 + 1) * tx) * ty;
+  };
+  const base = atPlan(0, 0);
+  // Heights in feet relative to the scene centre's ground, at scene (x, z).
+  const at = (x, z) => atPlan(x, -z) - base;
+  let min = Infinity;
+  for (const v of h) min = Math.min(min, v - base);
+  return { at, min };
+}
+
+// A ground surface over the lot that follows the terrain: a grid draped on the
+// heights, trimmed to the lot with holes where the beds are, via an alpha mask.
+// Google's mesh has no ground under tree canopies, so cutting the property (and
+// trees) out of it can leave gaps to the sky; a skirt runs SKIRT_FT past the
+// lot line and under every cut-out tree circle ([[x, z, r]]), set slightly
+// below the real ground there so Google's ground wins wherever it exists.
+const SKIRT_FT = 15;
+const SKIRT_DROP_FT = 0.6; // just past the lot line…
+const SKIRT_DROP_MAX_FT = 2.5; // …sinking to this much lower further out
+const distToOutline = ([x, z], pts) => {
+  let d = Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const [ax, az] = pts[i];
+    const [bx, bz] = pts[(i + 1) % pts.length];
+    const ex = bx - ax;
+    const ez = bz - az;
+    const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez || 1)));
+    d = Math.min(d, Math.hypot(x - ax - t * ex, z - az - t * ez));
+  }
+  return d;
+};
+function drapedGround(outline, holes, at, texture, circles = [], skirt = false, exclude = []) {
+  const xs = [...outline.map((p) => p[0]), ...circles.flatMap(([x, , r]) => [x - r, x + r])];
+  const zs = [...outline.map((p) => p[1]), ...circles.flatMap(([, z, r]) => [z - r, z + r])];
+  const pad = SKIRT_FT + 1;
+  const [x0, x1, z0, z1] = [Math.min(...xs) - pad, Math.max(...xs) + pad, Math.min(...zs) - pad, Math.max(...zs) + pad];
+  const step = Math.max(1.5, Math.max(x1 - x0, z1 - z0) / 120);
+  const nx = Math.ceil((x1 - x0) / step) + 1;
+  const nz = Math.ceil((z1 - z0) / step) + 1;
+  const pos = new Float32Array(nx * nz * 3);
+  const uv = new Float32Array(nx * nz * 2);
+  const col = new Float32Array(nx * nz * 3);
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const k = j * nx + i;
+      const x = x0 + ((x1 - x0) * i) / (nx - 1);
+      const z = z0 + ((z1 - z0) * j) / (nz - 1);
+      const inside = insidePoly([x, z], outline);
+      const drop = inside ? (skirt ? 0.3 : 0) : Math.min(SKIRT_DROP_MAX_FT, SKIRT_DROP_FT + distToOutline([x, z], outline) * 0.3);
+      pos.set([x, at(x, z) - drop, z], k * 3);
+      // Off the lot the skirt mostly shows under canopies: shaded, earthy green.
+      col.set(inside ? [1, 1, 1] : [0.55, 0.6, 0.47], k * 3);
+      uv.set([i / (nx - 1), j / (nz - 1)], k * 2); // v runs with z, matching the mask canvas rows (flipY off)
+    }
+  }
+  const index = [];
+  for (let j = 0; j < nz - 1; j++) {
+    for (let i = 0; i < nx - 1; i++) {
+      const a = j * nx + i;
+      index.push(a, a + nx, a + 1, a + 1, a + nx, a + nx + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setIndex(index);
+  geo.computeVertexNormals();
+  const W = 1024;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = W;
+  const ctx = c.getContext('2d');
+  const toPx = ([x, z]) => [((x - x0) / (x1 - x0)) * W, ((z - z0) / (z1 - z0)) * W];
+  const trace = (pts) => {
+    ctx.beginPath();
+    pts.forEach((p, i) => (i ? ctx.lineTo(...toPx(p)) : ctx.moveTo(...toPx(p))));
+    ctx.closePath();
+  };
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#fff';
+  ctx.lineJoin = 'round';
+  if (skirt) {
+    // The lot plus a ring around it and the tree circles; inside the lot it
+    // sits just under the lot's own ground, so only the outside shows.
+    ctx.lineWidth = (2 * SKIRT_FT * W) / Math.max(x1 - x0, z1 - z0);
+    trace(outline);
+    ctx.fill();
+    ctx.stroke();
+    circles.forEach(([x, z, r]) => {
+      const [px, pz] = toPx([x, z]);
+      ctx.beginPath();
+      ctx.ellipse(px, pz, (r / (x1 - x0)) * W, (r / (z1 - z0)) * W, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  } else {
+    ctx.lineWidth = (2 * 1 * W) / Math.max(x1 - x0, z1 - z0); // 1 ft past the line, tucked under Google's ground
+    trace(outline);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#000';
+    holes.forEach((h) => { trace(h); ctx.fill(); });
+  }
+  // Public streets and sidewalks stay Google's (or the satellite's), never ours.
+  ctx.fillStyle = '#000';
+  exclude.forEach((h) => { trace(h); ctx.fill(); });
+  const alpha = new THREE.CanvasTexture(c);
+  alpha.flipY = false;
+  texture.repeat.set((x1 - x0) / 6, (z1 - z0) / 6);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    map: texture, alphaMap: alpha, alphaTest: 0.5, color: 0xd8d4cc, vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide,
+  }));
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+// Lift every vertex of a mesh (already placed in the scene) onto the terrain.
+function drape(mesh, at) {
+  mesh.updateMatrix();
+  const m = mesh.matrix;
+  const inv = m.clone().invert();
+  const p = mesh.geometry.attributes.position;
+  const v = new THREE.Vector3();
+  for (let k = 0; k < p.count; k++) {
+    v.fromBufferAttribute(p, k).applyMatrix4(m);
+    v.y += at(v.x, v.z);
+    v.applyMatrix4(inv);
+    p.setXYZ(k, v.x, v.y, v.z);
+  }
+  p.needsUpdate = true;
+  mesh.geometry.computeBoundingSphere();
+}
+
 const ROAD_KINDS = new Set(['service', 'living_street', 'residential', 'unclassified', 'tertiary', 'secondary', 'primary']);
 let _asphalt;
 function asphaltTexture() {
@@ -544,6 +834,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const movedRef = useRef({ polys: null, pattern: null, map: new Map() });
   const surroundingsRef = useRef(null); // the latest satellite-surroundings request; older ones are dropped
   const tilesRef = useRef(null); // { tiles, wantUpdate } while the Google 3D view is on
+  const [terrain, setTerrain] = useState(null); // { at(x, z), min } ground heights in feet, or null while flat
+  const groundAtRef = useRef(() => 0);
   const [photoReal, setPhotoReal] = useState(() => Boolean(GOOGLE_TILES_KEY) && readPhotoPref());
   const [photoStatus, setPhotoStatus] = useState('off'); // off | loading | ready | failed
   const [photoCredit, setPhotoCredit] = useState('');
@@ -630,7 +922,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       return new THREE.Vector3(tx, ty, tz).addScaledVector(viewDir, dist);
     };
     const overview = () => ({ pos: camFor(0, 0, 0, maxDim / 2, 3.8), tgt: new THREE.Vector3(0, 0, 0) });
-    const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.1, 1e7);
+    // A near plane of 0.5 ft (not 0.1) keeps depth precise enough that close surfaces don't shimmer.
+    const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.5, 2e5);
     const ov = overview();
     camera.position.copy(ov.pos);
     camera.lookAt(ov.tgt);
@@ -718,12 +1011,13 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           // stride frequency is the same on any property, and the camera settles
           // back to eye height the moment you stop.
           w.bobPhase = (w.bobPhase || 0) + dist * 1.1;
-          camera.position.y = EYE_HEIGHT + Math.sin(w.bobPhase) * 0.22;
+          camera.position.y = groundAtRef.current(camera.position.x, camera.position.z) + EYE_HEIGHT + Math.sin(w.bobPhase) * 0.22;
           markDirty();
         } else {
           w.bobPhase = 0;
-          if (Math.abs(camera.position.y - EYE_HEIGHT) > 0.001) {
-            camera.position.y += (EYE_HEIGHT - camera.position.y) * Math.min(1, dt * 10);
+          const eye = groundAtRef.current(camera.position.x, camera.position.z) + EYE_HEIGHT;
+          if (Math.abs(camera.position.y - eye) > 0.001) {
+            camera.position.y += (eye - camera.position.y) * Math.min(1, dt * 10);
             markDirty();
           }
         }
@@ -751,7 +1045,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         // trees) and our model shows the property, which is cut out of Google's mesh.
         for (const c of scene.children) {
           const u = c.userData;
-          if (u && (u.satellite || u.offLot)) c.visible = !t3;
+          if (u && (u.satellite || (u.offLot && !u.existingTree))) c.visible = !t3;
+          if (u && u.skirt) c.visible = !!t3;
         }
         // Scale render resolution with camera distance: full quality up close, coarser when zoomed far out.
         const dist = camera.position.distanceTo(controls.target);
@@ -801,6 +1096,26 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     groundSamplesRef.current = pts.length > 40 ? pts.filter((_, i) => i % Math.ceil(pts.length / 40) === 0) : pts;
   }, [polys, lot, cx, cy]);
 
+  // Real ground heights for the property and a margin around it (USGS 3DEP).
+  useEffect(() => {
+    setTerrain(null);
+    groundAtRef.current = () => 0;
+    const all = lot && lot.length >= 3 ? lot : [...polys.flat(), ...buildings.flat()];
+    if (!origin || !all.length) return undefined;
+    const xs = all.map((p) => p[0]);
+    const ys = all.map((p) => p[1]);
+    const m = 75; // reaches street trees, which can stand ~20 m from the lot line
+    let stale = false;
+    loadTerrain({ minX: Math.min(...xs) - m, maxX: Math.max(...xs) + m, minY: Math.min(...ys) - m, maxY: Math.max(...ys) + m }, origin, cx, cy)
+      .then((t) => {
+        if (stale || !t) return;
+        groundAtRef.current = t.at;
+        setTerrain(t);
+      })
+      .catch(() => {}); // stays flat
+    return () => { stale = true; };
+  }, [origin, lot, polys, buildings, cx, cy]);
+
   // The property outline that is cut out of Google's mesh: the lot, or a
   // padded box around the lawns and buildings when no lot was scanned.
   useEffect(() => {
@@ -839,6 +1154,23 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     ctx.strokeStyle = '#000';
     ctx.lineWidth = (2 * MASK_INSET_FT * W) / Math.max(maxX - minX, maxZ - minZ, 1);
     ctx.stroke();
+    // Public streets and sidewalks (paths centred off the lot) keep Google's real surface.
+    ctx.fillStyle = '#000';
+    paths.forEach((q) => {
+      if (!q || q.length < 3) return;
+      const mx = q.reduce((a, p) => a + p[0], 0) / q.length;
+      const my = q.reduce((a, p) => a + p[1], 0) / q.length;
+      if (insidePoly([mx, my], pts)) return;
+      ctx.beginPath();
+      q.forEach(([x, y], i) => {
+        const px = ((x - cx - minX) / (maxX - minX || 1)) * W;
+        const py = (1 - (-(y - cy) - minZ) / (maxZ - minZ || 1)) * W;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.closePath();
+      ctx.fill();
+    });
     const tex = new THREE.CanvasTexture(c);
     const previous = clipUniforms.uEcoMask.value;
     clipUniforms.uEcoMask.value = tex;
@@ -846,9 +1178,44 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     clipUniforms.uEcoCenter.value.set(0, 0);
     clipUniforms.uEcoRadius.value = Math.max(...scenePts.map(([x, z]) => Math.hypot(x, z))) + SURROUND_FT;
     if (previous !== tex && previous.image?.width > 1) previous.dispose();
+
+    // Tree cut-outs and the ground under them, over the lot plus a margin.
+    const m = 75;
+    const [nx0, nx1, nz0, nz1] = [minX - m, maxX + m, minZ - m, maxZ + m];
+    const tc = document.createElement('canvas');
+    tc.width = W;
+    tc.height = W;
+    const tctx = tc.getContext('2d');
+    tctx.fillStyle = '#fff';
+    trees.forEach((t) => {
+      const x = t.x - cx;
+      const z = -(t.y - cy);
+      const r = (t.radiusFt || 6) + TREE_CUT_PAD_FT;
+      tctx.beginPath();
+      tctx.ellipse(((x - nx0) / (nx1 - nx0)) * W, (1 - (z - nz0) / (nz1 - nz0)) * W, (r / (nx1 - nx0)) * W, (r / (nz1 - nz0)) * W, 0, 0, Math.PI * 2);
+      tctx.fill();
+    });
+    const treeTex = new THREE.CanvasTexture(tc);
+    const G = 64;
+    const heights = new Float32Array(G * G);
+    const groundAt = terrain ? terrain.at : () => 0;
+    for (let j = 0; j < G; j++) {
+      for (let i = 0; i < G; i++) heights[j * G + i] = groundAt(nx0 + ((nx1 - nx0) * (i + 0.5)) / G, nz0 + ((nz1 - nz0) * (j + 0.5)) / G);
+    }
+    const groundTex = new THREE.DataTexture(heights, G, G, THREE.RedFormat, THREE.FloatType);
+    groundTex.minFilter = THREE.NearestFilter; // float textures can't be filtered everywhere
+    groundTex.magFilter = THREE.NearestFilter;
+    groundTex.needsUpdate = true;
+    const oldTrees = clipUniforms.uEcoTrees.value;
+    const oldGround = clipUniforms.uEcoGround.value;
+    clipUniforms.uEcoTrees.value = treeTex;
+    clipUniforms.uEcoGround.value = groundTex;
+    clipUniforms.uEcoNearBox.value.set(nx0, nz0, nx1 - nx0, nz1 - nz0);
+    if (oldTrees.image?.width > 1) oldTrees.dispose();
+    if (oldGround.image?.width > 1) oldGround.dispose();
     threeRef.current?.markDirty?.();
     return undefined;
-  }, [lot, polys, buildings, cx, cy]);
+  }, [lot, polys, buildings, trees, paths, terrain, cx, cy]);
 
   // Google Photorealistic 3D Tiles around the garden, while the toggle is on.
   // The tileset is placed so the scene origin is the property's centre, east
@@ -902,7 +1269,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         for (const [x, z] of groundSamplesRef.current) {
           ray.set(new THREE.Vector3(x, top, z), down);
           const hit = ray.intersectObject(tiles.group, true)[0];
-          if (hit) heights.push(hit.point.y - holder.position.y);
+          // Google's ground minus ours: one offset lines the two up everywhere.
+        if (hit) heights.push(hit.point.y - holder.position.y - groundAtRef.current(x, z));
         }
         if (heights.length < Math.max(3, groundSamplesRef.current.length / 3)) return;
         heights.sort((a, b) => a - b);
@@ -921,6 +1289,12 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       };
       const onNeedsUpdate = () => { state.wantUpdate = true; markDirty(); };
       const onModel = ({ scene: model }) => {
+        holder.updateMatrixWorld(true);
+        try {
+          removeFloaters(model, tiles.group.matrixWorld);
+        } catch (err) {
+          console.warn('3D tiles: floater cleanup skipped', err?.message); // never block a tile over it
+        }
         model.traverse((o) => { if (o.material) clipTileMaterial(o.material); });
         onNeedsUpdate();
       };
@@ -1013,6 +1387,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // out as holes so the mulch beds are the converted areas, not a slab under
     // them. The outer boundary is the lot when available, else a padded
     // bounding box around the lawns.
+    const at = terrain ? terrain.at : () => 0; // ground height (ft) at scene (x, z)
     const outerPoly = (lot && lot.length >= 3)
       ? lot
       : (() => {
@@ -1024,6 +1399,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           const maxY = Math.max(...all.map((p) => p[1])) + 4;
           return [[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]];
         })();
+    const onLot = (x, y) => !outerPoly || outerPoly.length < 3 || insidePoly([x, y], outerPoly);
     if (outerPoly && outerPoly.length >= 3) {
       const shape = new THREE.Shape();
       outerPoly.forEach((p, i) => {
@@ -1050,16 +1426,31 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const span = Math.max(Math.max(...oxs) - Math.min(...oxs), Math.max(...oys) - Math.min(...oys), 10);
       const gt = groundTexture();
       gt.repeat.set(span / 6, span / 6);
-      const ground = new THREE.Mesh(
-        new THREE.ShapeGeometry(shape),
-        new THREE.MeshStandardMaterial({ map: gt, color: 0xd8d4cc, roughness: 1, metalness: 0, side: THREE.DoubleSide }),
-      );
+      let ground;
+      if (terrain) {
+        const toScene = (poly) => poly.map((p) => [p[0] - cx, -(p[1] - cy)]);
+        // Same circles as the tree cut-outs in Google's mesh (TREE_CUT_PAD_FT past each crown).
+        const circles = trees.map((t) => [t.x - cx, -(t.y - cy), (t.radiusFt || 6) + TREE_CUT_PAD_FT]);
+        const publicWays = paths.filter((q) => q && q.length >= 3 && !onLot(q.reduce((s2, p) => s2 + p[0], 0) / q.length, q.reduce((s2, p) => s2 + p[1], 0) / q.length)).map(toScene);
+        ground = drapedGround(toScene(outerPoly), polys.filter((q) => q && q.length >= 3).map(toScene), at, gt, [], false, publicWays);
+        const skirtTex = gt.clone();
+        skirtTex.needsUpdate = true;
+        const skirt = drapedGround(toScene(outerPoly), [], at, skirtTex, circles, true, publicWays);
+        skirt.userData.ground = true;
+        skirt.userData.skirt = true; // Real 3D only
+        skirt.visible = false;
+        scene.add(skirt);
+      } else {
+        ground = new THREE.Mesh(
+          new THREE.ShapeGeometry(shape),
+          new THREE.MeshStandardMaterial({ map: gt, color: 0xd8d4cc, roughness: 1, metalness: 0, side: THREE.DoubleSide }),
+        );
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+      }
       ground.userData.ground = true;
-      ground.rotation.x = -Math.PI / 2;
-      ground.position.y = 0;
-      ground.receiveShadow = true;
       scene.add(ground);
-      const gpts = outerPoly.map((p) => new THREE.Vector3(p[0] - cx, 0.012, -(p[1] - cy)));
+      const gpts = outerPoly.map((p) => new THREE.Vector3(p[0] - cx, at(p[0] - cx, -(p[1] - cy)) + 0.05, -(p[1] - cy)));
       gpts.push(gpts[0].clone());
       const gline = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(gpts), new THREE.LineBasicMaterial({ color: 0x6b6755 }));
       gline.userData.ground = true;
@@ -1137,7 +1528,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           mesh.userData.satellite = true;
           mesh.renderOrder = -1; // drawn before everything else, so modelled items always cover it
           mesh.rotation.x = -Math.PI / 2;
-          mesh.position.set((ex0 + ex1) / 2 - cx, -1.5, -((ey0 + ey1) / 2 - cy));
+          mesh.position.set((ex0 + ex1) / 2 - cx, (terrain ? terrain.min : 0) - 1.5, -((ey0 + ey1) / 2 - cy));
           scene.add(mesh);
           three.markDirty?.();
         }, () => {});
@@ -1168,6 +1559,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       bed.rotation.x = -Math.PI / 2;
       bed.position.y = MULCH_Y;
       bed.receiveShadow = true;
+      if (terrain) drape(bed, at);
       scene.add(bed);
       bedMeshesRef.current.push(bed);
 
@@ -1179,7 +1571,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const radius = Math.max(...lxs.map((x, i) => Math.hypot(x - bx, lzs[i] - bz)), 3);
       bedsRef.current.push({ x: bx, z: bz, radius });
 
-      const outlinePts = poly.map((p) => new THREE.Vector3(p[0] - cx, MULCH_Y + 0.02, -(p[1] - cy)));
+      const outlinePts = poly.map((p) => new THREE.Vector3(p[0] - cx, at(p[0] - cx, -(p[1] - cy)) + MULCH_Y + 0.02, -(p[1] - cy)));
       outlinePts.push(outlinePts[0].clone());
       const outline = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(outlinePts), new THREE.LineBasicMaterial({ color: 0x4a3322 }));
       outline.userData.bed = true;
@@ -1200,6 +1592,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const front = roadPts.reduce((best, p) => (!best || Math.hypot(p[0] - mx, p[1] - my) < Math.hypot(best[0] - mx, best[1] - my) ? p : best), null);
       const heightFt = poly.heightFt > 0 ? poly.heightFt : Number(bAttr.heightFt) > 0 ? Number(bAttr.heightFt) : null;
       const mesh = buildHouse(pts, heightFt, { wallColor: bAttr.wallColor, roofType: bAttr.roofType, front });
+      // Stand on the lowest ground under the footprint; uphill walls run into the slope like a foundation.
+      mesh.position.y = Math.min(...pts.map(([x, y]) => at(x, -y)));
       mesh.userData.building = true;
       scene.add(mesh);
     });
@@ -1212,8 +1606,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     const curbMat = new THREE.LineBasicMaterial({ color: 0xe8e4da });
     const edgeMat = new THREE.LineBasicMaterial({ color: 0x8a7f6b });
     const labelled = new Set();
-    // Off the lot, Google's real streets and trees take over in Real 3D.
-    const onLot = (x, y) => !outerPoly || outerPoly.length < 3 || insidePoly([x, y], outerPoly);
+    // Off the lot, Google's real streets and trees take over in Real 3D (onLot is defined above).
     paths.forEach((poly) => {
       if (!poly || poly.length < 3) return;
       const road = ROAD_KINDS.has(poly.kind);
@@ -1227,9 +1620,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       slab.rotation.x = -Math.PI / 2;
       slab.position.y = MULCH_Y; // sits on the mulch, so a path crossing a converted lawn stays visible
       slab.receiveShadow = true;
+      if (terrain) drape(slab, at);
       scene.add(slab);
       const edge = new THREE.LineLoop(
-        new THREE.BufferGeometry().setFromPoints(poly.map((p) => new THREE.Vector3(p[0] - cx, MULCH_Y + depth + 0.02, -(p[1] - cy)))),
+        new THREE.BufferGeometry().setFromPoints(poly.map((p) => new THREE.Vector3(p[0] - cx, at(p[0] - cx, -(p[1] - cy)) + MULCH_Y + depth + 0.02, -(p[1] - cy)))),
         road ? curbMat : edgeMat,
       );
       edge.userData.path = true;
@@ -1243,7 +1637,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         if (axis.length >= 40 && !labelled.has(key)) {
           labelled.add(key);
           const label = roadLabel(poly.name, axis);
-          label.position.set(axis.mx - cx, MULCH_Y + depth + 0.05, -(axis.my - cy));
+          label.position.set(axis.mx - cx, at(axis.mx - cx, -(axis.my - cy)) + MULCH_Y + depth + 0.05, -(axis.my - cy));
           label.userData.path = true;
           label.userData.offLot = offLot;
           scene.add(label);
@@ -1254,7 +1648,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // Existing mature trees kept from the scan, sized to their scanned canopy.
     trees.forEach((t) => {
       const mesh = buildExistingTree(t.radiusFt, t.heightFt);
-      mesh.position.set(t.x - cx, MULCH_Y, -(t.y - cy));
+      mesh.position.set(t.x - cx, at(t.x - cx, -(t.y - cy)) + MULCH_Y, -(t.y - cy));
       mesh.userData.existingTree = true;
       mesh.userData.offLot = !onLot(t.x, t.y);
       scene.add(mesh);
@@ -1272,8 +1666,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const k = nth.get(p.speciesId) || 0;
       nth.set(p.speciesId, k + 1);
       const moveKey = `${p.speciesId}:${k}`;
-      const at = moved.get(moveKey) || p;
-      mesh.position.set(at.x - cx, MULCH_Y, -(at.y - cy));
+      const spot = moved.get(moveKey) || p;
+      mesh.position.set(spot.x - cx, at(spot.x - cx, -(spot.y - cy)) + MULCH_Y, -(spot.y - cy));
       mesh.userData = { index: i, speciesId: p.speciesId, plantId: p.plant.id, moveKey, cx, cy };
       plantGroup.add(mesh);
       mesh.traverse((o) => {
@@ -1285,7 +1679,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     });
 
     three.markDirty?.();
-  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin]);
+  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain]);
 
   useEffect(() => {
     moveModeRef.current = moveMode;
@@ -1309,7 +1703,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   useEffect(() => {
     const three = threeRef.current;
     if (!three) return undefined;
-    const { renderer, camera, controls, raycaster, pointer, groundPlane, ring } = three;
+    const { renderer, camera, controls, raycaster, pointer, ring } = three;
     const el = renderer.domElement;
 
     const setPointer = (e) => {
@@ -1346,7 +1740,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           const plant = hits[0].object.userData.plant;
           draggingRef.current = plant;
           ring.visible = true;
-          ring.position.set(plant.position.x, MULCH_Y + 0.02, plant.position.z);
+          ring.position.set(plant.position.x, plant.position.y + 0.02, plant.position.z);
           const radius = Math.max(1.2, (plantById(plant.userData.plantId)?.w || 3) * 0.35);
           ring.scale.set(radius, radius, radius);
           el.style.cursor = 'grabbing';
@@ -1360,11 +1754,12 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       setPointer(e);
       raycaster.setFromCamera(pointer, camera);
       const hit = new THREE.Vector3();
-      if (raycaster.ray.intersectPlane(groundPlane, hit)) {
-        draggingRef.current.position.x = hit.x;
-        draggingRef.current.position.z = hit.z;
-        ring.position.x = hit.x;
-        ring.position.z = hit.z;
+      // Drag across a plane at the plant's own height, then settle it on the ground there.
+      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -draggingRef.current.position.y);
+      if (raycaster.ray.intersectPlane(plane, hit)) {
+        const y = groundAtRef.current(hit.x, hit.z) + MULCH_Y;
+        draggingRef.current.position.set(hit.x, y, hit.z);
+        ring.position.set(hit.x, y + 0.02, hit.z);
       }
     };
     const onUp = (e) => {
@@ -1417,9 +1812,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     w.active = true;
     w.keys.clear();
     const pp = personPosRef.current || { x: 0, z: -(three.maxDim * 0.62) - 4 };
-    camera.position.set(pp.x, EYE_HEIGHT, pp.z);
+    const eye = groundAtRef.current(pp.x, pp.z) + EYE_HEIGHT;
+    camera.position.set(pp.x, eye, pp.z);
     // Look straight ahead (horizontal) toward the garden center, not down at the ground.
-    camera.lookAt(0, EYE_HEIGHT, 0);
+    camera.lookAt(0, eye, 0);
     camera.rotation.order = 'YXZ';
     const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
     w.yaw = e.y;

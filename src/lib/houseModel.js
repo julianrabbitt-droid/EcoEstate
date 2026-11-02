@@ -181,9 +181,12 @@ function roofFaces(type, w, d, eave, rise) {
 
 const WINDOW_GEO = new THREE.PlaneGeometry(3, 4);
 const DOOR_GEO = new THREE.PlaneGeometry(3.4, 7);
-const GLASS = new THREE.MeshStandardMaterial({ color: 0x2f3b45, roughness: 0.25, metalness: 0.3 });
-const FRAME = new THREE.MeshStandardMaterial({ color: 0xf4f1ea, roughness: 0.8 });
-const DOOR = new THREE.MeshStandardMaterial({ color: 0x5a3f2c, roughness: 0.7 });
+// Windows and doors stand slightly proud of the wall and are drawn with a depth
+// bias, so they never fight the wall for the same pixels (shimmer) as the camera moves.
+const proud = (units) => ({ polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: units });
+const GLASS = new THREE.MeshStandardMaterial({ color: 0x2f3b45, roughness: 0.25, metalness: 0.3, ...proud(-4) });
+const FRAME = new THREE.MeshStandardMaterial({ color: 0xf4f1ea, roughness: 0.8, ...proud(-2) });
+const DOOR = new THREE.MeshStandardMaterial({ color: 0x5a3f2c, roughness: 0.7, ...proud(-2) });
 const FRAME_GEO = new THREE.PlaneGeometry(3.6, 4.6);
 /** Shared geometries and materials, so the 3D view's disposal can skip them. */
 export const HOUSE_SHARED = [WINDOW_GEO, DOOR_GEO, GLASS, FRAME, DOOR, FRAME_GEO];
@@ -286,8 +289,8 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front } = {}
       const yaw = Math.atan2(sd.nrm[0], sd.nrm[1]); // plane faces +z before rotation; local z is -n
       for (let k = 1; k <= count; k++) {
         const along = k * step;
-        const lx = sd.o[0] + sd.t[0] * along + sd.nrm[0] * 0.06;
-        const ln = sd.o[1] + sd.t[1] * along + sd.nrm[1] * 0.06;
+        const lx = sd.o[0] + sd.t[0] * along + sd.nrm[0] * 0.12;
+        const ln = sd.o[1] + sd.t[1] * along + sd.nrm[1] * 0.12;
         if (coveredByOther(lx + sd.nrm[0], ln + sd.nrm[1])) continue;
         const isDoor = si === doorSide && k === Math.ceil(count / 2);
         for (let f = 0; f < floors; f++) {
@@ -305,7 +308,7 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front } = {}
           frame.position.set(lx, y, -ln);
           frame.rotation.y = Math.PI - yaw;
           const glass = new THREE.Mesh(WINDOW_GEO, GLASS);
-          glass.position.set(lx + sd.nrm[0] * 0.03, y, -(ln + sd.nrm[1] * 0.03));
+          glass.position.set(lx + sd.nrm[0] * 0.08, y, -(ln + sd.nrm[1] * 0.08));
           glass.rotation.y = Math.PI - yaw;
           block.add(frame, glass);
         }

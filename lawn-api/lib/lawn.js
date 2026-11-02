@@ -58,6 +58,7 @@ export const SETTINGS = {
   streetReachM: 20, // only this far out from the property line
   streetSlackM: 2, // how far off the straight line from property to road a tree may stand
   streetMaxResM: 1, // skipped on campuses and parks measured at a coarse grid
+  neighbourRingM: 6, // trees this close to the property line on any side are included too
 };
 
 function widen([w, s, e, n], metres) {
@@ -98,13 +99,15 @@ function majority(mask, w, h) {
 const ringAreaSqft = (ring) => turfArea({ type: 'Polygon', coordinates: [ring] }) * SQM_TO_SQFT;
 
 /**
- * Trees standing between the property line and the roads that border it,
- * from the canopy map on a grid widened past the property. A spot counts when
- * going from the property to a road through it is barely longer than the
- * shortest way across, so the neighbours' front yards to either side are left out.
+ * Trees just outside the property, from the canopy map on a grid widened past
+ * it: any within neighbourRingM of the property line on any side (their crowns
+ * often hang over it), plus those between the property line and a bordering
+ * road. A road-side spot counts when going from the property to a road through
+ * it is barely longer than the shortest way across, so the neighbours' front
+ * yards to either side are left out. The 3D view models these so it can hide
+ * the real trees there whole instead of slicing them at the property line.
  */
 async function findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBuildings) {
-  if (!nearbyRoads.features.length) return [];
   try {
     const wide = makeGrid(grid.epsg, grid.res, box, SETTINGS.streetReachM + 5);
     const { w, h } = wide;
@@ -115,6 +118,8 @@ async function findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBui
     const reachPx = SETTINGS.streetReachM / wide.res;
     const slackPx = SETTINGS.streetSlackM / wide.res;
     const include = new Uint8Array(w * h);
+    const ringPx = SETTINGS.neighbourRingM / wide.res;
+    for (let k = 0; k < w * h; k++) if (!parcel[k] && !roofs[k] && fromParcel[k] <= ringPx) include[k] = 1;
     for (let label = 1; label <= nearbyRoads.features.length; label++) {
       const fromRoad = distanceTo(Uint8Array.from(roads, (v) => (v === label ? 1 : 0)), w, h);
       let gap = Infinity;
