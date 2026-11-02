@@ -110,7 +110,16 @@ export async function readCanopy(grid, version = process.env.CANOPY_VERSION || '
     if (win[0] >= win[2] || win[1] >= win[3]) continue;
     let band;
     try {
-      [band] = await image.readRasters({ window: win, signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
+      // The tile server drops a read now and then: try twice more, a moment apart.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          [band] = await image.readRasters({ window: win, signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
+          break;
+        } catch (err) {
+          if (attempt >= 2) throw err;
+          await new Promise((done) => setTimeout(done, 700 * (attempt + 1)));
+        }
+      }
     } catch {
       throw new UpstreamError('imagery', 'canopy read');
     }

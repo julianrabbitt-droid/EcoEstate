@@ -26,6 +26,7 @@ export const SETTINGS = {
   // isn't lawn, a roof, a tree or a pool, in patches at least this big.
   paveNdviMax: 0.2, // concrete reads a little green in some surveys; lawn and shrubs are excluded already
   paveMinBrightness: 60, // darker is deep shadow, not pavement
+  pavePatchBrightness: 92, // a patch this dark on average is shaded ground or planting, not pavement
   paveOpenM: 0.6, // specks and seams narrower than about twice this (1.2 m) are dropped; side walks are wider
   paveMinSqft: 80,
   ndviMin: 0.2, // NDVI at or above this counts as green (healthy turf is usually 0.3+)
@@ -715,12 +716,21 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     const [r, g, b] = [naip.red[k], naip.green[k], naip.blue[k]];
     if (ndvi[k] >= SETTINGS.paveNdviMax || (r + g + b) / 3 < SETTINGS.paveMinBrightness) continue;
     if (b > r * 1.15 && b > g * 1.05) continue; // pool water
+    if (g > r * 1.06 && g > b * 1.02) continue; // green-tinted: shaded planting, not pavement
     if (measured?.known[k] && !measured.flat[k]) continue;
     paveMask[k] = 1;
   }
   const paveOpen = Math.max(1, Math.round(SETTINGS.paveOpenM / grid.res));
   const pavePieces = labelRegions(dilate(erode(paveMask, w, h, paveOpen), w, h, paveOpen), w, h);
-  const paveKeep = Float64Array.from(pavePieces.labels, (l) => (l && pavePieces.sizes[l] * pxSqft >= SETTINGS.paveMinSqft ? 1 : 0));
+  // Patches: big enough, and bright enough on average (shade under trees reads
+  // as bare and dark, pavement as bare and light).
+  const patchSum = new Float64Array(pavePieces.sizes.length);
+  for (let k = 0; k < n; k++) {
+    const l = pavePieces.labels[k];
+    if (l) patchSum[l] += (naip.red[k] + naip.green[k] + naip.blue[k]) / 3;
+  }
+  const paveKeep = Float64Array.from(pavePieces.labels, (l) =>
+    l && pavePieces.sizes[l] * pxSqft >= SETTINGS.paveMinSqft && patchSum[l] / pavePieces.sizes[l] >= SETTINGS.pavePatchBrightness ? 1 : 0);
   const [paveMulti] = contours().size([w, h]).thresholds([0.5])(paveKeep);
   const paved = {
     type: 'FeatureCollection',
