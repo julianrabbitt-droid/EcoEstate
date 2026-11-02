@@ -28,14 +28,18 @@ export const CONSOLES = {
 };
 const stripeUrl = (path) => `https://dashboard.stripe.com/${stripeLive() ? '' : 'test/'}${path}`;
 
-// Monthly plan costs, from each provider's current plan. Metered usage is added separately.
+// Monthly plan costs, from each provider's current plan (since: first month
+// charged, for the history). Most of these providers have no billing API, so
+// their plan price is shown; Stripe and Cloudflare report real money below.
+// Metered usage is added separately.
 export const FIXED_COSTS = [
-  { name: 'Render (Free web service)', usd: 0, url: CONSOLES.render },
-  { name: 'Cloudflare (ecoestate.org domain, yearly / 12)', usd: 10.44 / 12, url: CONSOLES.cloudflare },
-  { name: 'Supabase (Free plan)', usd: 0, url: `${CONSOLES.supabase}/settings/billing` },
-  { name: 'Clerk (Free plan)', usd: 0, url: CONSOLES.clerk },
-  { name: 'Resend (Free plan)', usd: 0, url: CONSOLES.resend },
-  { name: 'Google Maps Platform (free trial to Jan 30, 2027; $5 budget alert)', usd: 0, url: CONSOLES.googleBilling },
+  { name: 'Anthropic (Claude subscription)', usd: 100, url: 'https://claude.ai/settings/billing', since: '2026-10' },
+  { name: 'Render (Free web service)', usd: 0, url: CONSOLES.render, since: '2026-10' },
+  { name: 'Cloudflare (ecoestate.org domain, yearly / 12)', usd: 10.44 / 12, url: CONSOLES.cloudflare, since: '2026-10', billingApi: 'cloudflare' },
+  { name: 'Supabase (Free plan)', usd: 0, url: `${CONSOLES.supabase}/settings/billing`, since: '2026-10' },
+  { name: 'Clerk (Free plan)', usd: 0, url: CONSOLES.clerk, since: '2026-10' },
+  { name: 'Resend (Free plan)', usd: 0, url: CONSOLES.resend, since: '2026-10' },
+  { name: 'Google Maps Platform (free trial to Jan 30, 2027; $5 budget alert)', usd: 0, url: CONSOLES.googleBilling, since: '2026-11' },
 ];
 const METERED_CONSOLES = { google_static_map: CONSOLES.google, google_street_view: CONSOLES.google, google_3d_tiles: CONSOLES.google, resend: CONSOLES.resend };
 
@@ -135,11 +139,150 @@ async function stripeMoney() {
   return out;
 }
 
+const monthKey = (d) => new Date(d).toISOString().slice(0, 7);
+function monthsBetween(from, to) {
+  const out = [];
+  let [y, m] = from.split('-').map(Number);
+  const [ty, tm] = to.split('-').map(Number);
+  while ((y < ty || (y === ty && m <= tm)) && out.length < 60) {
+    out.push(`${y}-${String(m).padStart(2, '0')}`);
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return out;
+}
+
+// Real money in from Stripe's balance history: what customers paid, refunds,
+// Stripe's fees and the net that reaches the bank, per month.
+async function stripeMonths() {
+  const s = stripeClient();
+  if (!s) return { error: 'No Stripe key set', months: {} };
+  const months = {};
+  try {
+    const since = Math.floor((Date.now() - 36 * 30 * DAY) / 1000);
+    for await (const t of s.balanceTransactions.list({ created: { gte: since }, limit: 100 })) {
+      if (t.type === 'payout' || t.type === 'transfer' || t.type === 'payout_cancel') continue; // moving money, not earning it
+      const k = monthKey(t.created * 1000);
+      const m = (months[k] ||= { paid: 0, refunded: 0, fees: 0, net: 0 });
+      if (t.type === 'charge' || t.type === 'payment') m.paid += t.amount / 100;
+      if (t.type === 'refund' || t.type === 'payment_refund') m.refunded += -t.amount / 100;
+      m.fees += t.fee / 100;
+      m.net += t.net / 100;
+    }
+    return { months };
+  } catch (e) {
+    return { error: `Stripe balance history: ${e.message}`, months };
+  }
+}
+
+// Cloudflare's own billing history (domain renewals), when an API token with
+// billing read access is set; otherwise the plan line's price stands in.
+async function cloudflareMonths() {
+  const token = process.env.CLOUDFLARE_API_TOKEN;
+  if (!token) return null;
+  try {
+    const r = await fetch('https://api.cloudflare.com/client/v4/user/billing/history?per_page=50', {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.errors?.[0]?.message || `HTTP ${r.status}`);
+    const months = {};
+    for (const item of d.result || []) {
+      if (item.currency && item.currency !== 'USD') continue;
+      const k = monthKey(item.occurred_at);
+      months[k] = (months[k] || 0) + Number(item.amount || 0);
+    }
+    return { months };
+  } catch (e) {
+    return { error: `Cloudflare billing: ${e.message}`, months: {} };
+  }
+}
+
+/** Month-by-month money: revenue (Stripe, real), costs (plans, metered use, Cloudflare when connected), net. */
+export async function moneyHistory() {
+  const [stripe, cloudflare, usage] = await Promise.all([
+    stripeMonths(),
+    cloudflareMonths(),
+    sql`select to_char(date_trunc('month', ts::timestamptz), 'YYYY-MM') month, sum(cost_usd)::float8 usd from usage group by 1`.catch(() => []),
+  ]);
+  const metered = Object.fromEntries(usage.map((r) => [r.month, r.usd]));
+  const now = monthKey(Date.now());
+  const starts = [...FIXED_COSTS.map((c) => c.since), ...Object.keys(stripe.months), ...Object.keys(metered)].filter(Boolean).sort();
+  const months = monthsBetween(starts[0] || now, now).map((month) => {
+    const st = stripe.months[month] || { paid: 0, refunded: 0, fees: 0, net: 0 };
+    let plans = 0;
+    for (const c of FIXED_COSTS) {
+      if (c.since && c.since > month) continue;
+      if (c.billingApi === 'cloudflare' && cloudflare && !cloudflare.error) continue; // real charges below instead
+      plans += c.usd;
+    }
+    const cf = cloudflare && !cloudflare.error ? cloudflare.months[month] || 0 : 0;
+    const costs = plans + cf + (metered[month] || 0);
+    // Revenue after Stripe's fees and refunds (Stripe's net), minus running costs.
+    return { month, revenue: round(st.net), paid: round(st.paid), fees: round(st.fees), refunded: round(st.refunded), costs: round(costs), net: round(st.net - costs) };
+  });
+  let total = 0;
+  for (const m of months) m.cumulative = round((total += m.net));
+  return {
+    months,
+    sources: {
+      stripe: stripe.error ? { ok: false, detail: stripe.error } : { ok: true, detail: 'Real: balance history (payments, refunds, fees)' },
+      cloudflare: !cloudflare ? { ok: false, detail: 'Plan price; add CLOUDFLARE_API_TOKEN (Billing: Read) for real charges' } : cloudflare.error ? { ok: false, detail: cloudflare.error } : { ok: true, detail: 'Real: billing history' },
+      plans: { ok: true, detail: 'Anthropic, Render, Supabase, Clerk, Resend and Google have no billing API: plan prices' },
+      metered: { ok: true, detail: 'Google, Resend and Anthropic API calls recorded by the app at list price' },
+    },
+  };
+}
+
+// ---- Server metrics ----
+// The live server samples its own CPU and memory every 5 minutes (last 24 h);
+// Render's metrics are added when RENDER_API_KEY and RENDER_SERVICE_ID are set.
+const samples = [];
+let lastCpu = process.cpuUsage();
+let lastAt = Date.now();
+function sample() {
+  const cpu = process.cpuUsage(lastCpu);
+  const now = Date.now();
+  const elapsedUs = (now - lastAt) * 1000;
+  lastCpu = process.cpuUsage();
+  lastAt = now;
+  samples.push({
+    t: new Date(now).toISOString(),
+    cpuPct: Math.round(((cpu.user + cpu.system) / elapsedUs) * 1000) / 10,
+    memoryMb: Math.round(process.memoryUsage().rss / 1e6),
+  });
+  samples.splice(0, Math.max(0, samples.length - 288));
+}
+setInterval(sample, 5 * 60_000).unref();
+setTimeout(sample, 10_000).unref();
+
+async function renderMetrics() {
+  const key = process.env.RENDER_API_KEY;
+  const service = process.env.RENDER_SERVICE_ID;
+  if (!key || !service) return null;
+  const end = new Date();
+  const start = new Date(end - DAY);
+  const get = async (kind) => {
+    const q = new URLSearchParams({ resource: service, startTime: start.toISOString(), endTime: end.toISOString(), resolutionSeconds: '900' });
+    const r = await fetch(`https://api.render.com/v1/metrics/${kind}?${q}`, { headers: { authorization: `Bearer ${key}`, accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error(`Render ${kind}: HTTP ${r.status}`);
+    const series = await r.json();
+    return (series?.[0]?.values || []).map((v) => ({ t: v.timestamp, value: v.value }));
+  };
+  try {
+    const [cpu, memory] = await Promise.all([get('cpu'), get('memory')]);
+    return { cpu, memory };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
 /** Everything the dashboard shows. */
 export async function overview() {
   const since30 = new Date(Date.now() - 30 * DAY).toISOString();
   const since7 = new Date(Date.now() - 7 * DAY).toISOString();
-  const [money, usage, users, members, health] = await Promise.all([
+  const [money, usage, users, members, health, history, render] = await Promise.all([
     stripeMoney(),
     sql`select service, sum(units)::float8 units, sum(cost_usd)::float8 usd from usage where ts >= ${since30} group by service order by usd desc`,
     sql`select count(*)::int total,
@@ -149,6 +292,8 @@ export async function overview() {
     sql`select data->>'productId' product, count(*)::int n from records
          where entity = 'Base44Purchase' and data->>'status' = 'paid' group by 1`,
     healthChecks(),
+    moneyHistory(),
+    renderMetrics(),
   ]);
   const meteredUsd = usage.reduce((s, r) => s + r.usd, 0);
   const fixedUsd = FIXED_COSTS.reduce((s, c) => s + c.usd, 0);
@@ -175,6 +320,8 @@ export async function overview() {
       studentUnlocks: members.find((m) => m.product === '3d_view')?.n ?? 0,
     },
     health,
+    history,
+    metrics: { process: [...samples], render },
     alerts: [...recentAlerts],
   };
 }

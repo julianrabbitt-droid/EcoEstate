@@ -34,6 +34,12 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false # optional: Billing Read, for real Cloudflare charges on /admin
+      - key: RENDER_API_KEY
+        sync: false # optional: for Render's CPU and memory graphs on /admin
+      - key: RENDER_SERVICE_ID
+        sync: false # optional: the srv-… id of this service
       - key: ADMIN_EMAILS
         sync: false
       - key: DATABASE_URL

@@ -3,6 +3,39 @@ import { ExternalLink, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { usePageMeta } from '@/hooks/usePageMeta';
+import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+
+// Chart colours: categorical slots 1 and 2 of the validated default palette.
+const REVENUE = '#2a78d6';
+const COSTS = '#eb6834';
+const AXIS = { fontSize: 11, fill: 'hsl(var(--muted-foreground))' };
+const GRID = 'hsl(var(--border))';
+const monthLabel = (m) => new Date(`${m}-15`).toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
+const shortUsd = (n) => `${n < 0 ? '-' : ''}$${Math.abs(n) >= 1000 ? `${(Math.abs(n) / 1000).toFixed(1)}k` : Math.round(Math.abs(n))}`;
+
+function ChartCard({ title, note, children }) {
+  return (
+    <figure className="rounded-xl border border-border p-4">
+      <figcaption className="text-[13px] font-medium">{title}</figcaption>
+      {note && <p className="mt-0.5 text-[12px] text-muted-foreground">{note}</p>}
+      <div className="mt-3 h-56">{children}</div>
+    </figure>
+  );
+}
+
+function MoneyTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="rounded-lg border border-border bg-background px-3 py-2 text-[12px] shadow">
+      <p className="font-medium">{monthLabel(label)}</p>
+      <p>Revenue after fees: {usd(d.revenue)}</p>
+      <p>Costs: {usd(d.costs)}</p>
+      <p className="font-medium">Net: {usd(d.net)}</p>
+      {d.cumulative !== undefined && <p className="text-muted-foreground">Running total: {usd(d.cumulative)}</p>}
+    </div>
+  );
+}
 
 const usd = (n) =>
   n == null ? '—' : `${n < 0 ? '-' : ''}$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -124,6 +157,35 @@ export default function Admin() {
             </ul>
           </section>
 
+          {data.metrics && (
+            <section className="mt-12">
+              <h2 className="text-[17px] font-medium">Server</h2>
+              <p className="mt-1 text-[13px] text-muted-foreground">
+                {data.metrics.render && !data.metrics.render.error
+                  ? 'From Render, last 24 hours.'
+                  : `Sampled by the server every 5 minutes since it last restarted.${data.metrics.render?.error ? ` Render metrics: ${data.metrics.render.error}.` : ' Add RENDER_API_KEY and RENDER_SERVICE_ID in Render for its own graphs.'}`}
+              </p>
+              <div className="mt-4 grid gap-5 lg:grid-cols-2">
+                {[
+                  { key: 'cpu', title: 'CPU', unit: '%', data: data.metrics.render?.cpu?.length ? data.metrics.render.cpu.map((p) => ({ t: p.t, v: Math.round(p.value * 1000) / 10 })) : data.metrics.process.map((p) => ({ t: p.t, v: p.cpuPct })) },
+                  { key: 'mem', title: 'Memory', unit: ' MB', data: data.metrics.render?.memory?.length ? data.metrics.render.memory.map((p) => ({ t: p.t, v: Math.round(p.value / 1e6) })) : data.metrics.process.map((p) => ({ t: p.t, v: p.memoryMb })) },
+                ].map((c) => (
+                  <ChartCard key={c.key} title={c.title} note={c.data.length ? `Latest ${c.data.at(-1).v}${c.unit}` : 'Collecting the first samples…'}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={c.data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                        <CartesianGrid vertical={false} stroke={GRID} />
+                        <XAxis dataKey="t" tickFormatter={(t) => new Date(t).toLocaleTimeString([], { hour: 'numeric' })} tick={AXIS} axisLine={false} tickLine={false} minTickGap={40} />
+                        <YAxis tick={AXIS} axisLine={false} tickLine={false} width={40} />
+                        <Tooltip formatter={(v) => [`${v}${c.unit}`, c.title]} labelFormatter={(t) => new Date(t).toLocaleString()} />
+                        <Line type="monotone" dataKey="v" stroke={REVENUE} strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </ChartCard>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section className="mt-12">
             <h2 className="text-[17px] font-medium">Money</h2>
             <p className="mt-1 text-[13px] text-muted-foreground">
@@ -138,6 +200,45 @@ export default function Admin() {
               <Figure label="Costs per month" value={usd(m.costs.fixedMonthlyUsd + m.costs.metered30dUsd)} note={`${usd(m.costs.fixedMonthlyUsd)} plans + ${usd(m.costs.metered30dUsd)} usage`} />
               <Figure label="Net per month" value={usd(m.netMonthlyUsd)} note="Recurring revenue minus costs" />
             </div>
+            {data.history?.months?.length > 0 && (
+              <div className="mt-8 grid gap-5 lg:grid-cols-2">
+                <ChartCard title="Money by month" note="Revenue after Stripe fees and refunds, and running costs. Hover for net.">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={data.history.months} barGap={2} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                      <CartesianGrid vertical={false} stroke={GRID} />
+                      <XAxis dataKey="month" tickFormatter={monthLabel} tick={AXIS} axisLine={false} tickLine={false} />
+                      <YAxis tickFormatter={shortUsd} tick={AXIS} axisLine={false} tickLine={false} width={48} />
+                      <Tooltip content={<MoneyTooltip />} cursor={{ fill: 'hsl(var(--muted))', opacity: 0.5 }} />
+                      <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                      <Bar dataKey="revenue" name="Revenue" fill={REVENUE} radius={[4, 4, 0, 0]} maxBarSize={28} />
+                      <Bar dataKey="costs" name="Costs" fill={COSTS} radius={[4, 4, 0, 0]} maxBarSize={28} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+                <ChartCard title="Net money over time" note="Running total of revenue minus costs since the first month.">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={data.history.months} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid vertical={false} stroke={GRID} />
+                      <XAxis dataKey="month" tickFormatter={monthLabel} tick={AXIS} axisLine={false} tickLine={false} />
+                      <YAxis tickFormatter={shortUsd} tick={AXIS} axisLine={false} tickLine={false} width={48} />
+                      <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" />
+                      <Tooltip content={<MoneyTooltip />} />
+                      <Line type="monotone" dataKey="cumulative" name="Running net" stroke={REVENUE} strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              </div>
+            )}
+            {data.history?.sources && (
+              <ul className="mt-4 space-y-1 text-[12.5px]">
+                {Object.entries(data.history.sources).map(([k, v]) => (
+                  <li key={k} className="flex gap-2">
+                    <span className={v.ok ? 'text-emerald-700' : 'text-destructive'} aria-hidden>{v.ok ? '●' : '○'}</span>
+                    <span className="text-muted-foreground"><span className="capitalize text-foreground">{k}</span>: {v.detail}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="mt-8 grid gap-8 sm:grid-cols-2">
               <table className="w-full text-[14px]">
                 <caption className="pb-2 text-left text-[13px] font-medium">Plans</caption>
