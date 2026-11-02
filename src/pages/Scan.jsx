@@ -101,7 +101,13 @@ export default function Scan() {
       return financials(p, autoDesign(p));
     };
     const [small, large] = [at(800), at(2000)];
-    return { save: [small.annualSavings, large.annualSavings], cost: [small.totalCost, large.totalCost] };
+    // 30 years of savings with costs rising 3% a year (the Payoff step's assumption).
+    const thirty = (yearly) => Math.round((yearly * (1.03 ** 30 - 1)) / 0.03 / 1000) * 1000;
+    return {
+      save: [small.annualSavings, large.annualSavings],
+      cost: [small.totalCost, large.totalCost],
+      lifetime: [thirty(small.annualSavings), thirty(large.annualSavings)],
+    };
   }, []);
 
   const buildProject = async (over) =>
@@ -381,9 +387,10 @@ export default function Scan() {
               water and upkeep.
             </p>
             <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-              Installing a native garden costs roughly {money(sampleRange.cost[0])}–{money(sampleRange.cost[1])} before rebates, so
-              payback takes years. Your scan shows the numbers for your lawn, your local rebates and the assumptions
-              behind them.
+              Over 30 years, as water and upkeep costs rise, that adds up to about{' '}
+              <span className="text-foreground">{money(sampleRange.lifetime[0])}–{money(sampleRange.lifetime[1])}</span> kept in your
+              pocket: several times the {money(sampleRange.cost[0])}–{money(sampleRange.cost[1])} it costs to install before
+              rebates. Your scan shows the numbers for your own lawn, your local rebates and the assumptions behind them.
             </p>
           </div>
         </div>
