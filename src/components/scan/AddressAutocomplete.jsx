@@ -60,8 +60,16 @@ export default function AddressAutocomplete({ value, onChange, onSelect, placeho
   };
 
   const onKeyDown = (e) => {
-    if ((e.key === 'Enter' && !(open && active >= 0)) || e.key === 'Escape') {
-      // Submitting the typed text (the form handles it) or closing the list.
+    if (e.key === 'Enter') {
+      // An address is always one picked from the list: Enter picks the
+      // highlighted suggestion, or the first; with none yet, the form says so.
+      if (suggestions.length) {
+        e.preventDefault();
+        pick(suggestions[active >= 0 ? active : 0]);
+      }
+      return;
+    }
+    if (e.key === 'Escape') {
       dismissed.current = (value || '').trim();
       setOpen(false);
       return;
@@ -73,9 +81,6 @@ export default function AddressAutocomplete({ value, onChange, onSelect, placeho
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActive((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      pick(suggestions[active]);
     }
   };
 

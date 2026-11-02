@@ -91,6 +91,7 @@ export default function Scan() {
   // The scan of the shown pin starts while the person is still confirming it,
   // so it is usually done by the time they click; a moved pin scans afresh.
   const earlyScan = useRef(null); // { key, promise }
+  const picked = useRef(null); // the suggestion last picked from the address list
   const scanKey = (address, hit) => `${address}|${hit?.lat}|${hit?.lng}|${hit?.osm || ''}`;
   const [editSeed, setEditSeed] = useState(null);
   const [method, setMethod] = useState('satellite');
@@ -252,13 +253,19 @@ export default function Scan() {
     scanAddress(address, { ...hit, lat, lng, ...(moved ? { osm: undefined } : {}) });
   };
 
+  // Only an address picked from the suggestions is scanned, so it is always
+  // one the map knows.
   const handleScan = (e) => {
     e?.preventDefault();
     if (!query.trim()) {
       setNote('Enter an address to scan it.');
       return;
     }
-    locate(query.trim());
+    if (picked.current && picked.current.label === query) {
+      locate(picked.current.label, picked.current);
+      return;
+    }
+    setNote('Choose your address from the suggestions as you type.');
   };
 
   // Re-detect the lawn inside a property line the user adjusted (estimated boundaries).
@@ -424,7 +431,10 @@ export default function Scan() {
             <AddressAutocomplete
               value={query}
               onChange={setQuery}
-              onSelect={(hit) => locate(hit.label || query, hit)}
+              onSelect={(hit) => {
+                picked.current = hit;
+                locate(hit.label || query, hit);
+              }}
               placeholder="Enter your address"
             />
             <Button type="submit" disabled={loading} className="h-12 rounded-full px-6 text-[15px]">
