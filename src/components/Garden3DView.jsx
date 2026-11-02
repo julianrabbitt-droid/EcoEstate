@@ -544,6 +544,51 @@ function drape(mesh, at) {
   mesh.geometry.computeBoundingSphere();
 }
 
+// The strip between the property and its street (front yard to curb: sidewalk,
+// planting strip, street trees), in scene feet. In Real 3D Google's mesh there
+// is replaced by the model, so its rough tree blobs never block the view of the
+// property. It runs from the lot's street-facing corners out to the nearest
+// road's edge (scans saved without roads have none).
+const FRONT_MAX_FT = 90; // a road further than this from the lot isn't its street
+function convexHull(pts) {
+  const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (p.length < 3) return p;
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = (list) => {
+    const h = [];
+    for (const q of list) {
+      while (h.length >= 2 && cross(h[h.length - 2], h[h.length - 1], q) <= 0) h.pop();
+      h.push(q);
+    }
+    h.pop();
+    return h;
+  };
+  return [...half(p), ...half([...p].reverse())];
+}
+function frontStrip(lotPts, roads) {
+  if (!lotPts || lotPts.length < 3 || !roads.length) return null;
+  const nearest = ([x, z]) => {
+    let best = null;
+    for (const road of roads) {
+      for (let i = 0; i < road.length; i++) {
+        const [ax, az] = road[i];
+        const [bx, bz] = road[(i + 1) % road.length];
+        const [ex, ez] = [bx - ax, bz - az];
+        const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez || 1)));
+        const q = [ax + t * ex, az + t * ez];
+        const d = Math.hypot(x - q[0], z - q[1]);
+        if (!best || d < best.d) best = { q, d };
+      }
+    }
+    return best;
+  };
+  const hits = lotPts.map((v) => ({ v, hit: nearest(v) }));
+  const min = Math.min(...hits.map((h) => h.hit.d));
+  if (min > FRONT_MAX_FT) return null;
+  const front = hits.filter((h) => h.hit.d <= Math.min(FRONT_MAX_FT, min + 25));
+  return front.length >= 2 ? convexHull(front.flatMap((h) => [h.v, h.hit.q])) : null;
+}
+
 // Where Google's real ground is, as an offset (ft) from the terrain heights, so
 // in Real 3D the model's beds, plants, house and trees stand on it instead of
 // floating above it or sinking into it. Cast down onto Google's mesh on a grid
@@ -555,8 +600,9 @@ function drape(mesh, at) {
 const GROUND_NEAR_FT = 14; // neighbourhood radius
 const GROUND_WIDE_FT = 40; // the wider check against canopy and roofs
 const GROUND_TALL_FT = 4; // this far above the ground around it is canopy, a roof or a car
+const GROUND_SNAP_FT = 1.2; // a hit this close to the estimate is the ground itself
 async function googleGround(group, rawAt, [x0, x1, z0, z1], alive) {
-  const step = Math.max(6, Math.max(x1 - x0, z1 - z0) / 32);
+  const step = Math.max(4, Math.max(x1 - x0, z1 - z0) / 40);
   const nx = Math.ceil((x1 - x0) / step) + 1;
   const nz = Math.ceil((z1 - z0) / step) + 1;
   const raw = new Float32Array(nx * nz).fill(NaN);
@@ -634,6 +680,11 @@ async function googleGround(group, rawAt, [x0, x1, z0, z1], alive) {
       }
     }
     smooth[k] = Math.max(-15, Math.min(15, n ? sum / n : 0));
+  }
+  // Where Google's surface is open ground (close to the estimate), use exactly
+  // its height, so the model and Google's ground meet without a step.
+  for (let k = 0; k < smooth.length; k++) {
+    if (Number.isFinite(raw[k]) && Math.abs(raw[k] - smooth[k]) < GROUND_SNAP_FT) smooth[k] = raw[k];
   }
   return (x, z) => {
     const fx = Math.min(nx - 1, Math.max(0, (x - x0) / step));
@@ -959,6 +1010,11 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   }, [lot, polys]);
   const cx = (boundsAll.minX + boundsAll.maxX) / 2;
   const cy = (boundsAll.minY + boundsAll.maxY) / 2;
+  const scenePoly = useCallback((poly) => poly.map(([x, y]) => [x - cx, -(y - cy)]), [cx, cy]);
+  const front = useMemo(
+    () => frontStrip(lot && lot.length >= 3 ? scenePoly(lot) : null, paths.filter((q) => q && q.length >= 3 && ROAD_KINDS.has(q.kind)).map(scenePoly)),
+    [lot, paths, scenePoly],
+  );
   const maxDim = Math.max(boundsAll.maxX - boundsAll.minX, boundsAll.maxY - boundsAll.minY, 30);
 
   // Real-world origin (lat/lng) of the scene's local feet space, used to map the
@@ -1160,7 +1216,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         // trees) and our model shows the property, which is cut out of Google's mesh.
         for (const c of scene.children) {
           const u = c.userData;
-          if (u && (u.satellite || (u.offLot && !u.existingTree))) c.visible = !t3;
+          if (u && (u.satellite || (u.offLot && !u.existingTree && !u.inFront))) c.visible = !t3;
+          if (u && u.frontStrip) c.visible = !!t3;
           if (u && u.skirt) c.visible = !!t3;
           if (u && u.lotGround) c.visible = !t3;
         }
@@ -1267,16 +1324,18 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   }, [origin, lot, polys, buildings, cx, cy]);
 
   // What is cut out of Google's mesh: only where our model replaces something:
-  // the house (with a margin for eaves and scan offsets) and the planned beds.
-  // The rest of the yard stays Google's real one (lawn, patios, pools, sheds,
-  // fences), so nothing that straddles the property line gets sliced and the
-  // property blends into its surroundings; a soft dashed line marks it.
+  // the house (with a margin for eaves and scan offsets), the planned beds, and
+  // the strip between the lot and its street (see frontStrip), so no rough tree
+  // blob stands between the street and the property. The rest of the yard stays
+  // Google's real one (lawn, patios, pools, sheds, fences), so nothing that
+  // straddles the property line gets sliced and the property blends into its
+  // surroundings; a soft dashed line marks it.
   useEffect(() => {
     const scene2 = (poly) => poly.map(([x, y]) => [x - cx, -(y - cy)]);
     const houses = buildings.filter((b) => b && b.length >= 3).map(scene2);
     const beds = polys.filter((q) => q && q.length >= 3).map(scene2);
     const lotPts = lot && lot.length >= 3 ? scene2(lot) : null;
-    const all = [...houses.flat(), ...beds.flat(), ...(lotPts || [])];
+    const all = [...houses.flat(), ...beds.flat(), ...(lotPts || []), ...(front || [])];
     if (!all.length) return undefined;
     const pad = HOUSE_CUT_MARGIN_FT + 2;
     const xs = all.map((p) => p[0]);
@@ -1299,6 +1358,11 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       ctx.closePath();
     };
     // Green: the lot (kept in full colour; the surroundings are muted). Red: cut away.
+    if (front) {
+      ctx.fillStyle = '#fff';
+      trace(front);
+      ctx.fill();
+    }
     if (lotPts) {
       ctx.fillStyle = '#00ff00';
       trace(lotPts);
@@ -1356,7 +1420,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     if (oldGround.image?.width > 1) oldGround.dispose();
     threeRef.current?.markDirty?.();
     return undefined;
-  }, [lot, polys, buildings, trees, paths, groundAt, cx, cy]);
+  }, [lot, polys, buildings, trees, paths, groundAt, front, cx, cy]);
 
   // Google Photorealistic 3D Tiles around the garden, while the toggle is on.
   // The tileset is placed so the scene origin is the property's centre, east
@@ -1657,6 +1721,19 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           ...polys.filter((q) => q && q.length >= 3).map((q) => [toScene(q), 2]),
         ];
         const skirt = drapedGround(toScene(outerPoly), [], at, skirtTex, circles, true, publicWays, cutFills);
+        // The strip to the street (front yard to curb), where Google's mesh is cut
+        // away in Real 3D: grass, with the sidewalks and driveways on it as slabs.
+        if (front) {
+          const roadsScene = paths.filter((q) => q && q.length >= 3 && ROAD_KINDS.has(q.kind)).map(toScene);
+          const stripTex = turfTexture().clone();
+          stripTex.needsUpdate = true;
+          const strip = drapedGround(front, [toScene(outerPoly)], at, stripTex, [], false, roadsScene);
+          strip.material.color.set(0xd9e2cc);
+          strip.userData.ground = true;
+          strip.userData.frontStrip = true; // Real 3D only
+          strip.visible = false;
+          scene.add(strip);
+        }
         skirt.userData.ground = true;
         skirt.userData.skirt = true; // Real 3D only
         skirt.visible = false;
@@ -1856,12 +1933,15 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       if (!poly || poly.length < 3) return;
       const road = ROAD_KINDS.has(poly.kind);
       const offLot = !onLot(poly.reduce((s, p) => s + p[0], 0) / poly.length, poly.reduce((s, p) => s + p[1], 0) / poly.length);
+      // Sidewalks and driveway aprons in the strip to the street stay ours in Real 3D.
+      const inFront = Boolean(front) && !road && insidePoly([poly.reduce((s, p) => s + p[0], 0) / poly.length - cx, -(poly.reduce((s, p) => s + p[1], 0) / poly.length - cy)], front);
       const depth = road ? 0.9 : 0.5; // roads stand well clear of the faded satellite ground
       const shape = new THREE.Shape();
       poly.forEach((p, i) => { const x = p[0] - cx; const y = p[1] - cy; if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y); });
       const slab = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false }), road ? roadMat : paverMat);
       slab.userData.path = true;
       slab.userData.offLot = offLot;
+      slab.userData.inFront = inFront;
       slab.rotation.x = -Math.PI / 2;
       slab.position.y = MULCH_Y; // sits on the mulch, so a path crossing a converted lawn stays visible
       slab.receiveShadow = true;
@@ -1873,6 +1953,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       );
       edge.userData.path = true;
       edge.userData.offLot = offLot;
+      edge.userData.inFront = inFront;
       scene.add(edge);
 
       // One label per road piece long enough to read; skip repeats close by.
@@ -1885,6 +1966,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           label.position.set(axis.mx - cx, at(axis.mx - cx, -(axis.my - cy)) + MULCH_Y + depth + 0.05, -(axis.my - cy));
           label.userData.path = true;
           label.userData.offLot = offLot;
+          label.userData.inFront = inFront;
           scene.add(label);
         }
       }
@@ -1931,7 +2013,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     });
 
     three.markDirty?.();
-  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, groundFix, assetsVersion, checking]);
+  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, groundFix, assetsVersion, checking, front]);
 
   useEffect(() => {
     moveModeRef.current = moveMode;
