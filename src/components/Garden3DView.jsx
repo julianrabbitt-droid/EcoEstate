@@ -51,6 +51,7 @@ const GEO = {
 // Raised mulch slab geometry: a 0.35 ft mound with a soft rounded top edge.
 const MULCH_Y = 0.03; // mulch sits a hair above the ground so it reads as a flat 2D layer
 const CURB_FT = 0.5; // the street sits this far below the sidewalk
+const SIDEWALK_FT = 5; // a typical residential sidewalk, along the curb
 const EYE_HEIGHT = 5.5; // walkthrough camera height (ft) above the ground
 
 // Google Photorealistic 3D Tiles: the real house, trees and street around the
@@ -98,8 +99,9 @@ const TREE_CUT_PAD_FT = 2; // and this far past its scanned crown
 // On the property Google keeps only its ground: lawn, paving, pools. Anything
 // standing higher than this (house, trees, fences, cars) goes; the model stands there.
 const LOT_CUT_FT = 1.2;
-// Around the property, Google's trees are cut this far out (they'd stand
-// between the camera and the yard); our models of them stand there instead.
+// Scanned trees this close to the property are ours in Real 3D: Google's tree
+// is cut away (within its crown, so neighbours' houses stay whole) and our
+// model stands there instead.
 const NEAR_CLEAR_FT = 15;
 // Real 3D keeps the property in Google's own colours and mutes what's around it
 // (this much of its colour, this bright) so the property is always easy to find.
@@ -497,7 +499,9 @@ const distToOutline = ([x, z], pts) => {
   }
   return d;
 };
-function drapedGround(outline, holes, at, texture, circles = [], skirt = false, exclude = [], fills = []) {
+// band > 0: only the part within band ft of the excluded shapes' edges (a
+// sidewalk along the street), still inside the outline.
+function drapedGround(outline, holes, at, texture, circles = [], skirt = false, exclude = [], fills = [], band = 0) {
   const xs = [...outline.map((p) => p[0]), ...circles.flatMap(([x, , r]) => [x - r, x + r])];
   const zs = [...outline.map((p) => p[1]), ...circles.flatMap(([, z, r]) => [z - r, z + r])];
   const pad = SKIRT_FT + 1;
@@ -571,6 +575,13 @@ function drapedGround(outline, holes, at, texture, circles = [], skirt = false, 
       ctx.ellipse(px, pz, (r / (x1 - x0)) * W, (r / (z1 - z0)) * W, 0, 0, Math.PI * 2);
       ctx.fill();
     });
+  } else if (band > 0) {
+    ctx.save();
+    trace(outline);
+    ctx.clip();
+    ctx.lineWidth = (2 * band * W) / Math.max(x1 - x0, z1 - z0);
+    exclude.forEach((h) => { trace(h); ctx.stroke(); });
+    ctx.restore();
   } else {
     ctx.lineWidth = (2 * 1 * W) / Math.max(x1 - x0, z1 - z0); // 1 ft past the line, tucked under Google's ground
     trace(outline);
@@ -961,7 +972,11 @@ function buildPlant(plant, mature, detail = 'normal', { spacing = 0 } = {}) {
 // tools), for the person to confirm before designing; it always opens on the
 // model, with Real 3D one click away. lawnLabel: lines of text shown over the
 // largest lawn. onReady: called once the model stands on its terrain.
-export default function Garden3DView({ entries = [], project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady }) {
+// fill: the view fills its positioned parent (the Scan page's full-screen
+// stage), opens looking straight down like the aerial it replaces, then tilts
+// into 3D once the model is drawn; its buttons float over it.
+export default function Garden3DView({ entries = [], project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady, fill = false }) {
+  const fillRef = useRef(fill);
   const checking = mode === 'check';
   const wildlifeRef = useRef(null); // { group, counts, update } while the garden has visitors
   const [visitors, setVisitors] = useState(null);
@@ -1170,6 +1185,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.5, 2e5);
     const ov = overview();
     camera.position.copy(ov.pos);
+    // Full-screen: start straight above, like the aerial view it takes over from.
+    if (fillRef.current) camera.position.set(0, maxDim * 2.6, 0.01);
     camera.lookAt(ov.tgt);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -1518,19 +1535,6 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     };
     if (front) fillTree(front);
     if (lotPts) {
-      // The band around the property: Google's trees there go too.
-      tctx.strokeStyle = '#00ff00';
-      tctx.lineJoin = 'round';
-      tctx.lineWidth = (2 * NEAR_CLEAR_FT * W) / (nx1 - nx0);
-      tctx.beginPath();
-      lotPts.forEach(([x, z], i) => {
-        const px = ((x - nx0) / (nx1 - nx0)) * W;
-        const py = (1 - (z - nz0) / (nz1 - nz0)) * W;
-        if (i) tctx.lineTo(px, py);
-        else tctx.moveTo(px, py);
-      });
-      tctx.closePath();
-      tctx.stroke();
       // Added on top (blue), so the tree marks under it stay.
       tctx.globalCompositeOperation = 'lighter';
       tctx.fillStyle = '#0000ff';
@@ -1953,15 +1957,19 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           const tex = new THREE.CanvasTexture(c);
           tex.colorSpace = THREE.SRGBColorSpace;
           tex.anisotropy = 4;
+          // Laid on the terrain, so on a hillside the street and the neighbours'
+          // yards slope with the property instead of lying flat beneath it.
+          const segs = Math.min(96, Math.max(8, Math.round(Math.max(ex1 - ex0, ey1 - ey0) / 6)));
           const mesh = new THREE.Mesh(
-            new THREE.PlaneGeometry(ex1 - ex0, ey1 - ey0),
+            new THREE.PlaneGeometry(ex1 - ex0, ey1 - ey0, segs, segs),
             new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }),
           );
           mesh.userData.ground = true;
           mesh.userData.satellite = true;
           mesh.renderOrder = -1; // drawn before everything else, so modelled items always cover it
           mesh.rotation.x = -Math.PI / 2;
-          mesh.position.set((ex0 + ex1) / 2 - cx, (terrain ? terrain.min : 0) - 1.5, -((ey0 + ey1) / 2 - cy));
+          mesh.position.set((ex0 + ex1) / 2 - cx, -1, -((ey0 + ey1) / 2 - cy));
+          if (sloped) drape(mesh, at);
           scene.add(mesh);
           three.markDirty?.();
         }, () => {});
@@ -2119,16 +2127,23 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       }
     });
 
-    // The sidewalk and strip between the lot and its street, in the model (so the
-    // property doesn't float apart from the road); Real 3D shows the real ones.
+    // Between the lot and its street, in the model: the property's ground runs
+    // out to a sidewalk along the curb, then the road (Real 3D shows the real ones).
     if (front && outerPoly && outerPoly.length >= 3) {
       const toScene = (poly) => poly.map((p) => [p[0] - cx, -(p[1] - cy)]);
       const streets = paths.filter((q) => q && q.length >= 3 && ROAD_KINDS.has(q.kind) && q.kind !== 'service').map(toScene);
+      const yardTex = groundTexture().clone();
+      yardTex.needsUpdate = true;
+      const yard = drapedGround(front, [toScene(outerPoly)], at, yardTex, [], false, streets);
+      yard.position.y = 0;
+      yard.userData.ground = true;
+      yard.userData.modelOnly = true;
+      scene.add(yard);
       const walkTex = groundTexture().clone();
       walkTex.needsUpdate = true;
-      const walk = drapedGround(front, [toScene(outerPoly)], at, walkTex, [], false, streets);
-      walk.material.color.set(0xe4e0d6);
-      walk.position.y = MULCH_Y;
+      const walk = drapedGround(front, [toScene(outerPoly)], at, walkTex, [], false, streets, [], SIDEWALK_FT);
+      walk.material.color.set(0xeeebe3);
+      walk.position.y = MULCH_Y + 0.04;
       walk.userData.ground = true;
       walk.userData.modelOnly = true;
       scene.add(walk);
@@ -2208,6 +2223,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const done = onReadyRef.current;
       onReadyRef.current = null;
       requestAnimationFrame(() => requestAnimationFrame(() => done()));
+      if (fillRef.current) setTimeout(() => focusOnRef.current?.(-1), 900); // tilt down into 3D
     }
   }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries]);
 
@@ -2506,8 +2522,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   };
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className={fill ? 'absolute inset-0' : ''}>
+      <div className={fill ? 'absolute bottom-5 left-4 z-20 flex flex-wrap items-center gap-2 sm:left-6' : 'flex flex-wrap items-center justify-between gap-3'}>
         <div className={`inline-flex rounded-full border border-border p-0.5 ${checking ? 'hidden' : ''}`}>
           {[{ v: true, l: 'At maturity' }, { v: false, l: 'Newly planted' }].map((o) => (
             <button
@@ -2556,7 +2572,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         </div>
       </div>
 
-      <div className="relative mt-3">
+      <div className={fill ? 'absolute inset-0' : 'relative mt-3'}>
         {showReal ? (
           <span className="pointer-events-none absolute bottom-1.5 right-2 z-10 flex max-w-[85%] items-center gap-1.5 rounded bg-black/55 px-1.5 py-0.5 text-[9.5px] text-white">
             <span className="text-[11px] font-medium tracking-tight">Google</span>
@@ -2587,7 +2603,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           ref={mountRef}
           onDragOver={(e) => { if (!walkMode) e.preventDefault(); }}
           onDrop={handleDrop}
-          className="h-[360px] w-full overflow-hidden rounded-2xl border border-border sm:h-[460px]"
+          className={fill ? 'h-full w-full' : 'h-[360px] w-full overflow-hidden rounded-2xl border border-border sm:h-[460px]'}
         />
         {walkMode && (
           <>
@@ -2607,7 +2623,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         )}
       </div>
 
-      {visitors && Object.values(visitors).some(Boolean) && (
+      {!fill && visitors && Object.values(visitors).some(Boolean) && (
         <p className="mt-2 flex items-center gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
           <Bird className="h-3.5 w-3.5 text-accent" aria-hidden />
           {`Visiting your garden: ${[['butterfly', 'butterflies', 'butterfly'], ['bee', 'native bees', 'native bee'], ['hummingbird', 'hummingbirds', 'hummingbird'], ['songbird', 'songbirds', 'songbird']]
@@ -2616,7 +2632,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
             .join(' · ')}. More come as the biodiversity score rises.`}
         </p>
       )}
-      <p className="mt-2 flex items-center gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
+      <p className={`mt-2 flex items-center gap-1.5 text-[11px] leading-relaxed text-muted-foreground ${fill ? 'hidden' : ''}`}>
         <Sun className="h-3.5 w-3.5 text-accent" />
         {checking
           ? 'Drag to rotate · scroll to zoom. Green is the lawn we found; the dashed line is the property line.'

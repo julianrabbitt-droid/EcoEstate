@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, ChevronDown, Leaf, Loader2 } from 'lucide-react';
-import { MapContainer, TileLayer, useMap } from 'react-leaflet';
+import { ArrowRight, ChevronDown, Loader2 } from 'lucide-react';
+import L from 'leaflet';
+import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { getLawn, getLawnForParcel, locateAddress, measureArea, mergeLawnOutlines } from '@/api/lawnApi';
-import LocationConfirm from '@/components/scan/LocationConfirm';
 import { Button } from '@/components/ui/button';
 import MethodPicker from '@/components/scan/MethodPicker';
 import SatelliteMethod from '@/components/scan/SatelliteMethod';
@@ -11,7 +11,6 @@ import UploadMethod from '@/components/scan/UploadMethod';
 import LawnApiResult from '@/components/scan/LawnApiResult';
 import LawnImpact from '@/components/scan/LawnImpact';
 import AutoScanNotice from '@/components/scan/AutoScanNotice';
-import ScanFacts from '@/components/scan/ScanFacts';
 import { geocodeAddress, geoJsonOuterRings, outlinesToFeatureCollection, zoomForLotSize } from '@/lib/geo';
 import { carryBuildingHeights } from '@/lib/gardenLayout';
 import AddressAutocomplete from '@/components/scan/AddressAutocomplete';
@@ -31,13 +30,37 @@ const DEFAULT_CENTER = [37.4422168, -122.1189345]; // Greer Park, Palo Alto
 const HERO_VIEW = [37.4538, -122.1468];
 const HERO_IMAGERY = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 // Glides the backdrop to the property being scanned (or back to the neighbourhood).
-function Backdrop({ center }) {
+function Backdrop({ center, zoom = 18 }) {
   const map = useMap();
   const [lat, lng] = center;
   useEffect(() => {
-    map.flyTo([lat, lng], 18, { duration: 1.2 });
-  }, [map, lat, lng]);
+    map.flyTo([lat, lng], zoom, { duration: 1.4 });
+  }, [map, lat, lng, zoom]);
   return null;
+}
+const pinIcon = L.divIcon({
+  className: '',
+  html: '<div style="width:26px;height:26px;border-radius:50%;background:#c4673b;border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.5)"></div>',
+  iconSize: [26, 26],
+  iconAnchor: [13, 13],
+});
+// While the location is being checked the aerial view is a map: pan, zoom, and
+// drag the pin (or tap) onto the house.
+function PinLayer({ active, pin, onPin }) {
+  const map = useMap();
+  useEffect(() => {
+    for (const h of [map.dragging, map.scrollWheelZoom, map.touchZoom, map.doubleClickZoom]) (active ? h.enable() : h.disable());
+  }, [map, active]);
+  useMapEvents({ click: (e) => active && onPin([e.latlng.lat, e.latlng.lng]) });
+  if (!active || !pin) return null;
+  return (
+    <Marker
+      position={pin}
+      icon={pinIcon}
+      draggable
+      eventHandlers={{ dragend: (e) => { const ll = e.target.getLatLng(); onPin([ll.lat, ll.lng]); } }}
+    />
+  );
 }
 // The scan in progress, kept for this browser tab, so leaving the Scan page and
 // coming back returns to it. Cleared once the scan is saved as a project.
@@ -119,6 +142,20 @@ export default function Scan() {
   const [pending, setPending] = useState(saved.pending || null); // { address, hit } waiting for "is this your property?"
   const [lawnData, setLawnData] = useState(saved.lawnData || null);
   const lastScan = useRef(saved.lastScan || null); // { address, hit } of the scan last started
+  const [stageEl, setStageEl] = useState(null); // where the 3D model is drawn, full screen
+  const [modelShown, setModelShown] = useState(false);
+  const [pin, setPin] = useState(null); // the pin being checked on the aerial view
+  // Scrolling down fades the aerial into the page's green.
+  const [scrollY, setScrollY] = useState(0);
+  const [viewH, setViewH] = useState(() => (typeof window === 'undefined' ? 800 : window.innerHeight));
+  useEffect(() => {
+    const on = () => { setScrollY(window.scrollY); setViewH(window.innerHeight); };
+    on();
+    window.addEventListener('scroll', on, { passive: true });
+    window.addEventListener('resize', on);
+    return () => { window.removeEventListener('scroll', on); window.removeEventListener('resize', on); };
+  }, []);
+  const aerialOpacity = Math.max(0, 1 - scrollY / (viewH * 0.85));
   const [areaCalc, setAreaCalc] = useState(NO_AREA);
   const areaRequest = useRef(0);
   // The scan of the shown pin starts while the person is still confirming it,
@@ -468,8 +505,21 @@ export default function Scan() {
     if (phase === 'scanning' || phase === 'confirm') import('@/components/Garden3DView').catch(() => {});
   }, [phase]);
 
+  useEffect(() => {
+    if (phase === 'confirm' && pending) setPin([pending.hit.lat, pending.hit.lng]);
+    if (phase !== 'lawn') setModelShown(false);
+  }, [phase, pending]);
+  const startOver = () => {
+    clearSavedScan();
+    setPhase('idle');
+    setPending(null);
+    setLawnData(null);
+    setQuery('');
+    setModelShown(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const searchKey = `${center[0]},${center[1]}`;
-  const showAuto = phase === 'scanning' || phase === 'lawn' || phase === 'confirm' || phase === 'locating';
   const measured = result.source === 'satellite' && areaCalc.lawnSqft !== null ? areaCalc.lawnSqft : result.area;
   const turfDisplay = result.source === 'upload' || result.source === 'satellite' ? measured : measured * 0.76;
 
@@ -492,14 +542,20 @@ export default function Scan() {
   );
 
   return (
-    <div>
-      {/* Every step happens over the same aerial view: a neighbourhood at
-          first, then the property being scanned. Scroll for how it works. */}
-      <section className="relative isolate flex min-h-[calc(100svh-6.5rem)] items-center overflow-hidden md:min-h-[calc(100svh-4rem)]">
-        <div className="pointer-events-none absolute inset-0 -z-10" aria-hidden>
+    <div className="relative isolate">
+      {/* One full-screen stage for the whole scan. Behind everything, fixed: the
+          aerial view, a neighbourhood at first, then the property (the pin is
+          checked on it directly), crossfading into the property's 3D model once
+          it is built; scrolling down fades it into the page's green. */}
+      <div className="pointer-events-none fixed inset-0 -z-10" style={{ background: 'radial-gradient(120% 80% at 50% 0%, #d6dec7 0%, #e4e8da 55%, #eef0e6 100%)' }} aria-hidden={phase !== 'confirm'}>
+        <div
+          className={`absolute inset-0 transition-opacity duration-1000 ${phase === 'confirm' ? 'pointer-events-auto' : ''}`}
+          style={{ opacity: modelShown ? 0 : aerialOpacity, filter: scrollY > 0 ? `blur(${Math.min(6, (scrollY / viewH) * 8).toFixed(1)}px)` : 'none' }}
+        >
           <MapContainer
             center={HERO_VIEW}
             zoom={18}
+            maxZoom={21}
             zoomControl={false}
             attributionControl={false}
             dragging={false}
@@ -510,13 +566,26 @@ export default function Scan() {
             keyboard={false}
             className="h-full w-full"
           >
-            <TileLayer url={HERO_IMAGERY} maxNativeZoom={19} />
-            <Backdrop center={phase === 'idle' ? HERO_VIEW : center} />
+            <TileLayer url={HERO_IMAGERY} maxNativeZoom={19} maxZoom={21} />
+            <Backdrop center={phase === 'idle' ? HERO_VIEW : phase === 'confirm' && pin ? pin : center} zoom={phase === 'idle' ? 18 : 19} />
+            <PinLayer active={phase === 'confirm'} pin={pin} onPin={setPin} />
           </MapContainer>
-          <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/30 to-black/65" />
+          <div className={`pointer-events-none absolute inset-0 ${phase === 'confirm' ? 'bg-gradient-to-b from-black/35 via-transparent to-black/40' : 'bg-gradient-to-b from-black/45 via-black/30 to-black/65'}`} />
         </div>
-        {phase === 'idle' ? (
-          <div className="mx-auto w-full max-w-3xl px-5 py-16 text-center text-white">
+      </div>
+
+      <section className="pointer-events-none relative min-h-[100svh]">
+        {/* The 3D model fills the stage once it is built. */}
+        {phase === 'lawn' && previewProject && (
+          <div
+            ref={setStageEl}
+            className={`absolute inset-0 transition-opacity duration-1000 ${modelShown ? 'pointer-events-auto opacity-100' : 'opacity-0'}`}
+            style={{ background: 'linear-gradient(180deg, #b9cad6 0%, #e8ebe3 100%)' }}
+          />
+        )}
+
+        {phase === 'idle' && (
+          <div className="pointer-events-auto mx-auto flex min-h-[100svh] w-full max-w-3xl flex-col items-center justify-center px-5 pb-20 pt-10 text-center text-white">
             <h1 className="font-display text-[2.7rem] font-normal leading-[1.02] tracking-[-0.015em] drop-shadow sm:text-[4.2rem]">
               Your lawn could be doing more.
             </h1>
@@ -524,7 +593,7 @@ export default function Scan() {
               Enter your address. We find your lawn from above, design a native garden for it in 3D, and show what it
               would save in water and money.
             </p>
-            <div className="mx-auto mt-8 max-w-xl text-left text-foreground">{addressForm(true)}</div>
+            <div className="mt-8 w-full max-w-xl text-left text-foreground">{addressForm(true)}</div>
             {note && <p className="mx-auto mt-3 max-w-xl text-[13px] text-white/90">{note}</p>}
             <p className="mx-auto mt-4 max-w-xl text-[13px] leading-relaxed text-white/80">
               Free with an account.{' '}
@@ -539,44 +608,92 @@ export default function Scan() {
               <span className="font-display text-[1.35rem] text-white">{money(sampleRange.save[0])}–{money(sampleRange.save[1])}</span> a
               year in water and upkeep.
             </p>
+            <a href="#how-it-works" className="absolute bottom-6 left-1/2 flex -translate-x-1/2 flex-col items-center text-[11px] text-white/80 hover:text-white">
+              More below
+              <ChevronDown className="h-5 w-5 animate-bounce" aria-hidden />
+            </a>
           </div>
-        ) : (
-          <div className="mx-auto w-full max-w-2xl px-4 py-8 sm:py-12">
-            <div className="text-foreground">{addressForm(true)}</div>
-            {note && <p className="mt-2 text-[13px] text-white/90">{note}</p>}
-            <div className="mt-4">
-        <div className="overflow-hidden rounded-[26px] border border-border bg-card shadow-[0_30px_70px_-40px_rgba(16,35,28,0.55)]">
-          {showAuto ? (
-            phase === 'locating' ? (
-              <div className="flex flex-col items-center justify-center px-6 py-24 text-center">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                <p className="mt-3 text-[13px] text-muted-foreground">Finding the address…</p>
+        )}
+
+        {phase === 'locating' && (
+          <div className="flex min-h-[100svh] items-center justify-center">
+            <p className="pointer-events-auto flex items-center gap-2 rounded-full bg-black/55 px-5 py-2.5 text-[14px] text-white backdrop-blur">
+              <Loader2 className="h-4 w-4 animate-spin" /> Finding {pending?.address || query || 'the address'}…
+            </p>
+          </div>
+        )}
+
+        {phase === 'confirm' && pending && pin && (
+          // The pin sits on the aerial view itself; this panel just asks.
+          <div className="flex min-h-[100svh] items-end justify-center px-4 pb-8">
+            <div className="pointer-events-auto w-full max-w-xl rounded-3xl border border-white/20 bg-black/55 p-5 text-white shadow-2xl backdrop-blur-md">
+              <p className="font-display text-[1.6rem] leading-tight tracking-tight">Is this your property?</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-white/80">
+                <span className="text-white">{pending.hit.short || shortAddress(pending.hit.label) || pending.address}.</span>{' '}
+                {['range_interpolation', 'nearest_rooftop_match', 'point'].includes(pending.hit.accuracy)
+                  ? 'This pin is an estimate along the street. Drag it onto your house, or tap your house, before we scan.'
+                  : 'Check the pin sits on your house. If not, drag it there or tap your house.'}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button className="rounded-full" onClick={() => confirmLocation(pin)}>
+                  {pin[0] !== pending.hit.lat || pin[1] !== pending.hit.lng ? 'Scan this spot' : 'Yes, scan my property'}
+                </Button>
+                {(pin[0] !== pending.hit.lat || pin[1] !== pending.hit.lng) && (
+                  <Button variant="ghost" className="rounded-full text-white hover:bg-white/10 hover:text-white" onClick={() => setPin([pending.hit.lat, pending.hit.lng])}>
+                    Reset pin
+                  </Button>
+                )}
+                <Button variant="ghost" className="ml-auto rounded-full text-white/80 hover:bg-white/10 hover:text-white" onClick={startOver}>
+                  Different address
+                </Button>
               </div>
-            ) : phase === 'confirm' && pending ? (
-              <LocationConfirm
-                key={`${pending.hit.lat},${pending.hit.lng}`}
-                label={pending.hit.short || shortAddress(pending.hit.label) || pending.address}
-                point={[pending.hit.lat, pending.hit.lng]}
-                estimated={['range_interpolation', 'nearest_rooftop_match', 'point'].includes(pending.hit.accuracy)}
-                onConfirm={confirmLocation}
-                onCancel={() => { setPending(null); setPhase('idle'); }}
+            </div>
+          </div>
+        )}
+
+        {phase === 'scanning' && (
+          <div className="flex min-h-[100svh] flex-col items-center justify-center px-5 text-center text-white">
+            <div className="relative h-40 w-40" aria-hidden>
+              <span className="absolute inset-0 animate-ping rounded-full border-2 border-white/60" />
+              <span className="absolute inset-6 rounded-full border border-white/40" />
+              <span className="absolute inset-[4.5rem] rounded-full bg-[#9fe870] shadow-[0_0_30px_#9fe870]" />
+            </div>
+            <p className="mt-6 font-display text-2xl tracking-tight drop-shadow">Scanning the property…</p>
+            <p className="mt-2 max-w-sm text-[13px] leading-relaxed text-white/85 drop-shadow">
+              Finding the lawn from the aerial survey and lidar, then building your property in 3D.
+            </p>
+          </div>
+        )}
+
+        {phase === 'lawn' && previewProject && (
+          // Over the 3D model: the question and the numbers, at the side (below on phones).
+          <div className="flex min-h-[100svh] items-end justify-end p-3 sm:p-6 lg:items-center">
+            <div className="pointer-events-auto max-h-[78svh] w-full overflow-y-auto rounded-3xl border border-border/60 bg-card/92 shadow-2xl backdrop-blur-md sm:max-w-md">
+              <LawnApiResult
+                data={lawnData}
+                preview={previewProject}
+                stage={stageEl}
+                onModelReady={setModelShown}
+                onConfirm={() => confirmLawn()}
+                onFix={() => confirmLawn({ edit: true })}
+                onEdit={editLawn}
+                onRescan={() => scanAddress(lawnData?.address || query, place)}
+                onRemeasure={remeasureLawn}
               />
-            ) : phase === 'scanning' ? (
-              <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary">
-                  <Leaf className="h-5 w-5 text-accent" />
-                </div>
-                <p className="mt-4 font-display text-lg tracking-tight">Scanning the property…</p>
-                <p className="mt-1 max-w-xs text-[12px] leading-relaxed text-muted-foreground">
-                  Separating the building from the property, then checking its front, back and side grounds for lawn without crossing the estimated boundary. Homes take a few seconds; campuses and parks can take a few minutes.
-                </p>
-                <div className="mt-5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  If no lawn is found, we check other parts of the property before offering drawing.
-                </div>
-                <ScanFacts />
-              </div>
-            ) : (
+              <button type="button" onClick={startOver} className="mx-auto mb-4 block text-[12px] text-muted-foreground underline underline-offset-4 hover:text-foreground">
+                Start over
+              </button>
+            </div>
+          </div>
+        )}
+
+        {(phase === 'manual' || (phase === 'lawn' && !previewProject)) && (
+          <div className="mx-auto w-full max-w-2xl px-4 pb-12 pt-6">
+            <div className="pointer-events-auto text-foreground">{addressForm(true)}</div>
+            {note && <p className="mt-2 text-[13px] text-white/90">{note}</p>}
+            <div className="pointer-events-auto mt-4">
+        <div className="overflow-hidden rounded-[26px] border border-border bg-card shadow-[0_30px_70px_-40px_rgba(16,35,28,0.55)]">
+          {phase === 'lawn' ? (
               <LawnApiResult
                 data={lawnData}
                 preview={previewProject}
@@ -586,7 +703,6 @@ export default function Scan() {
                 onRescan={() => scanAddress(lawnData?.address || query, place)}
                 onRemeasure={remeasureLawn}
               />
-            )
           ) : (
             <>
               {unavailable && (
@@ -663,22 +779,12 @@ export default function Scan() {
           )}
         </div>
             </div>
-            <button
-              type="button"
-              onClick={() => { clearSavedScan(); setPhase('idle'); setPending(null); setLawnData(null); setQuery(''); }}
-              className="mx-auto mt-4 block text-[12px] text-white/80 underline underline-offset-4 hover:text-white"
-            >
+            <button type="button" onClick={startOver} className="pointer-events-auto mx-auto mt-4 block text-[12px] text-white/80 underline underline-offset-4 hover:text-white">
               Start over
             </button>
           </div>
         )}
-        {phase === 'idle' && (
-          <a href="#how-it-works" className="absolute bottom-5 left-1/2 flex -translate-x-1/2 flex-col items-center text-[11px] text-white/80 hover:text-white">
-            More below
-            <ChevronDown className="h-5 w-5 animate-bounce" aria-hidden />
-          </a>
-        )}
-        <span className="absolute bottom-2 right-3 text-[9.5px] text-white/60">Imagery © Esri, Maxar, Earthstar Geographics</span>
+        {!modelShown && <span className="absolute bottom-2 right-3 text-[9.5px] text-white/60">Imagery © Esri, Maxar, Earthstar Geographics</span>}
       </section>
 
       <section id="how-it-works" className="border-t border-border/70 py-16 sm:py-20">

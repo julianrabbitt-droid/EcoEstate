@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import L from 'leaflet';
 import { Circle, GeoJSON, MapContainer, Marker, Polygon, TileLayer, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -104,7 +105,10 @@ function EditableLine({ corners, onChange }) {
 // that line (the lawn is then measured inside it, POST /v1/lawn via
 // onRemeasure) or re-scan. `preview` is the scan in the project's shape, for
 // the 3D view; without it (no lawn found) the 2D plan shows straight away.
-export default function LawnApiResult({ data, preview, onConfirm, onFix, onEdit, onRescan, onRemeasure }) {
+// stage: a full-screen element the 3D model is drawn into (the Scan page's
+// backdrop), with only the question and numbers here; onModelReady is told once
+// it is drawn.
+export default function LawnApiResult({ data, preview, onConfirm, onFix, onEdit, onRescan, onRemeasure, stage = null, onModelReady }) {
   const center = useMemo(() => [data.location?.lat, data.location?.lon], [data.location]);
   const estimated = data.parcelSource === 'estimated';
   const initialCorners = useMemo(() => geoJsonOuterRings(data.parcel?.geometry)[0] || [], [data.parcel]);
@@ -118,6 +122,9 @@ export default function LawnApiResult({ data, preview, onConfirm, onFix, onEdit,
     const giveUp = setTimeout(() => setModelReady(true), 15000);
     return () => clearTimeout(giveUp);
   }, [preview]);
+  useEffect(() => {
+    onModelReady?.(view === '3d' && modelReady);
+  }, [view, modelReady, onModelReady]);
   const lawnLabel = useMemo(
     () => (data.lawnSqft > 0 ? [`${num(data.lawnSqft)} sq ft of lawn`, data.impact?.gallonsSavedPerYear ? `${num(data.impact.gallonsSavedPerYear)} gal of water a year` : null].filter(Boolean) : null),
     [data.lawnSqft, data.impact],
@@ -161,6 +168,58 @@ export default function LawnApiResult({ data, preview, onConfirm, onFix, onEdit,
       {data.dormant?.sqft >= 50 ? ` · includes ${data.dormant.sqft.toLocaleString()} sq ft of lawn that was dry when the survey was flown` : ''}
     </p>
   );
+
+  if (view === '3d' && stage) {
+    return (
+      <div>
+        {createPortal(
+          <Suspense fallback={null}>
+            <Garden3DView project={preview} mode="check" fill lawnLabel={lawnLabel} onReady={() => setModelReady(true)} />
+          </Suspense>,
+          stage,
+        )}
+        <div className="p-5">
+          {!modelReady ? (
+            <p className="flex items-center gap-2 text-[14px] text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Lawn found. Building your property in 3D…
+            </p>
+          ) : (
+            <>
+              <p className="font-display text-[1.6rem] leading-tight tracking-tight">Is this scan right?</p>
+              <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+                Your property as we scanned it: the lawn in green, the house and trees from public map and lidar data.
+                {estimated ? ' There’s no public parcel map here, so the dashed property line is estimated.' : ''}
+                {' '}Drag to look around, or try Real 3D.
+              </p>
+            </>
+          )}
+        </div>
+        {modelReady && (
+          <>
+            <LawnImpact lawnSqft={data.lawnSqft} impact={data.impact} />
+            {details}
+            <div className="flex flex-col gap-2 px-4 py-4 sm:flex-row">
+              <Button onClick={onConfirm} className="flex-1 rounded-full whitespace-normal text-center leading-tight">
+                <Check className="mr-1.5 h-4 w-4 shrink-0" />Yes, looks right
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (estimated || !onFix) {
+                    setView('2d');
+                    if (estimated) setAdjusting(true);
+                  } else onFix();
+                }}
+                className="flex-1 rounded-full whitespace-normal text-center leading-tight"
+              >
+                <Pencil className="mr-1.5 h-4 w-4 shrink-0" />No, fix it
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
 
   if (view === '3d') {
     return (

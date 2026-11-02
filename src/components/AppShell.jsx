@@ -1,5 +1,5 @@
-import { Suspense, useEffect } from 'react';
-import { Link, NavLink, Outlet } from 'react-router-dom';
+import { Suspense, useEffect, useState } from 'react';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Loader2, Sprout } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import AccountMenu from '@/components/AccountMenu';
@@ -19,6 +19,17 @@ const NAV = [
 ];
 
 export default function AppShell() {
+  // On the Scan page the header floats over the full-screen aerial view
+  // (clear, white text) until the page is scrolled past it.
+  const { pathname } = useLocation();
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const on = () => setScrolled(window.scrollY > window.innerHeight * 0.6);
+    on();
+    window.addEventListener('scroll', on, { passive: true });
+    return () => window.removeEventListener('scroll', on);
+  }, []);
+  const overlay = pathname === '/' && !scrolled;
   // A tester link opened before signing in is claimed as soon as they are.
   const { isAuthenticated } = useAuth();
   useEffect(() => {
@@ -34,7 +45,7 @@ export default function AppShell() {
       >
         Skip to content
       </a>
-      <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur-md">
+      <header className={cn('sticky top-0 z-40 border-b transition-colors duration-500', overlay ? 'border-transparent bg-gradient-to-b from-black/45 to-transparent' : 'border-border/70 bg-background/85 backdrop-blur-md')}>
         {/* Phones: logo and account on top, the menu on its own scrollable row
             beneath. Wider screens: one row. */}
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-y-1 px-5 py-2 md:h-16 md:flex-nowrap md:py-0">
@@ -42,7 +53,7 @@ export default function AppShell() {
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground transition group-hover:scale-105">
               <Sprout className="h-4 w-4" strokeWidth={1.8} />
             </span>
-            <span className="font-display text-[19px] tracking-tight">EcoEstate</span>
+            <span className={cn('font-display text-[19px] tracking-tight', overlay && 'text-white drop-shadow')}>EcoEstate</span>
           </Link>
           <nav className="order-3 -mx-2 flex w-[calc(100%+1rem)] items-center gap-1 overflow-x-auto px-1 pb-1 text-sm md:order-2 md:mx-0 md:w-auto md:overflow-visible md:p-0" style={{ scrollbarWidth: 'none' }}>
             {NAV.map(({ to, label, end: exact }) => (
@@ -53,7 +64,9 @@ export default function AppShell() {
                 className={({ isActive }) =>
                   cn(
                     'shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 transition',
-                    isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'
+                    overlay
+                      ? isActive ? 'bg-white/20 text-white backdrop-blur' : 'text-white/85 hover:text-white'
+                      : isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'
                   )
                 }
               >
@@ -82,7 +95,7 @@ export default function AppShell() {
       <AuthModal />
       <FeedbackButton />
 
-      <footer className="border-t border-border/70 py-8">
+      <footer className="relative border-t border-border/70 bg-background py-8">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-5 text-xs text-muted-foreground sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1">
             <p>EcoEstate · native landscape conversion</p>
