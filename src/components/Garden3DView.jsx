@@ -95,6 +95,9 @@ clipUniforms.uEcoGround.value.needsUpdate = true;
 const TREE_CUT_CORE_FT = 2.5; // Google's ground can sit a foot or two off the USGS terrain; pools and decks must survive
 const TREE_CUT_ABOVE_FT = 4;
 const TREE_CUT_PAD_FT = 2; // and this far past its scanned crown
+// On the property Google keeps only its ground: lawn, paving, pools. Anything
+// standing higher than this (house, trees, fences, cars) goes; the model stands there.
+const LOT_CUT_FT = 1.2;
 // Real 3D keeps the property in Google's own colours and mutes what's around it
 // (this much of its colour, this bright) so the property is always easy to find.
 const SURROUND_SATURATION = 0.6;
@@ -176,6 +179,8 @@ function clipTileMaterial(m) {
     vec4 ecoTree = texture2D(uEcoTrees, ecoNear); // green: crown plus margin; red: the crown itself
     float ecoAbove = ecoTree.r > 0.5 ? ${TREE_CUT_CORE_FT.toFixed(1)} : ${TREE_CUT_ABOVE_FT.toFixed(1)};
     if (ecoTree.g > 0.5 && vEcoWorld.y > texture2D(uEcoGround, ecoNear).r + ecoAbove) discard;
+    // Blue: the property, where only Google's ground-level surfaces stay.
+    if (ecoTree.b > 0.5 && vEcoWorld.y > texture2D(uEcoGround, ecoNear).r + ${LOT_CUT_FT.toFixed(1)}) discard;
   }`),
     ].join('\n');
   };
@@ -1082,10 +1087,16 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const cx = (boundsAll.minX + boundsAll.maxX) / 2;
   const cy = (boundsAll.minY + boundsAll.maxY) / 2;
   const scenePoly = useCallback((poly) => poly.map(([x, y]) => [x - cx, -(y - cy)]), [cx, cy]);
-  // In Real 3D only the trees on the lot or in the strip to the street are ours;
-  // the neighbours' stay Google's.
+  // In Real 3D a tree is ours (Google's is cut away whole and our model stands
+  // there) when any of its crown reaches the property or the strip to the
+  // street, so no tree is left sliced at the line; the neighbours' stay Google's.
   const ownTree = useCallback(
-    (t) => (lot && lot.length >= 3 ? insidePoly([t.x, t.y], lot) : true) || (Boolean(frontRef.current) && insidePoly([t.x - cx, -(t.y - cy)], frontRef.current)),
+    (t) => {
+      const reach = (t.radiusFt || 6) + TREE_CUT_PAD_FT;
+      const touches = (poly, pt) => insidePoly(pt, poly) || distToOutline(pt, poly) <= reach;
+      if (!lot || lot.length < 3) return true;
+      return touches(lot, [t.x, t.y]) || (Boolean(frontRef.current) && touches(frontRef.current, [t.x - cx, -(t.y - cy)]));
+    },
     [lot, cx, cy],
   );
   const frontRef = useRef(null);
@@ -1490,9 +1501,6 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     own.forEach((t) => circle(t.x - cx, -(t.y - cy), (t.radiusFt || 6) + TREE_CUT_PAD_FT));
     tctx.fillStyle = '#ffff00'; // the crown itself
     own.forEach((t) => circle(t.x - cx, -(t.y - cy), t.radiusFt || 6));
-    // With the house modelled, everything of Google's taller than a low wall
-    // on the lot goes too (its trees are modelled from the scan), so nothing
-    // rough stands over the yard; pools, patios and low walls stay.
     const fillTree = (pts) => {
       tctx.fillStyle = '#00ff00';
       tctx.beginPath();
@@ -1505,8 +1513,22 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       tctx.closePath();
       tctx.fill();
     };
-    if (houses.length && lotPts) fillTree(lotPts);
     if (front) fillTree(front);
+    if (lotPts) {
+      // Added on top (blue), so the tree marks under it stay.
+      tctx.globalCompositeOperation = 'lighter';
+      tctx.fillStyle = '#0000ff';
+      tctx.beginPath();
+      lotPts.forEach(([x, z], i) => {
+        const px = ((x - nx0) / (nx1 - nx0)) * W;
+        const py = (1 - (z - nz0) / (nz1 - nz0)) * W;
+        if (i) tctx.lineTo(px, py);
+        else tctx.moveTo(px, py);
+      });
+      tctx.closePath();
+      tctx.fill();
+      tctx.globalCompositeOperation = 'source-over';
+    }
     const treeTex = new THREE.CanvasTexture(tc);
     const G = 64;
     const heights = new Float32Array(G * G);
