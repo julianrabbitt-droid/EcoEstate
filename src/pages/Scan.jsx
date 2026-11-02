@@ -57,11 +57,11 @@ const STEPS = [
   },
   {
     t: 'See the payoff',
-    d: 'Rebates, water savings, payback and habitat value, then a materials list and a crew to install it.',
+    d: 'Rebates from the programs that serve your address, water and money saved, payback, and how water, carbon and habitat add up over 10 or 30 years.',
   },
   {
-    t: 'Track the long-term',
-    d: 'Watch the garden mature over 30 years — canopy, habitat and carbon accumulating as the ecosystem takes hold.',
+    t: 'Build it',
+    d: 'A planting plan, materials list and local nurseries and crews to install it.',
   },
 ];
 
@@ -97,7 +97,7 @@ export default function Scan() {
 
   const buildProject = async (over) =>
     createProject({
-      address: place?.label?.split(',').slice(0, 3).join(', ') || query.trim() || 'Greer Park, Palo Alto',
+      address: place?.label?.split(',').slice(0, 3).join(', ') || query.trim() || 'Your property',
       zip: place?.zip || '',
       city: place?.city || '',
       state: place?.state || '',
@@ -172,7 +172,11 @@ export default function Scan() {
 
   const handleScan = (e) => {
     e?.preventDefault();
-    scanAddress(query.trim() || 'Greer Park, Palo Alto');
+    if (!query.trim()) {
+      setNote('Enter an address to scan it.');
+      return;
+    }
+    scanAddress(query.trim());
   };
 
   // Re-detect the lawn inside a property line the user adjusted (estimated boundaries).
@@ -302,7 +306,7 @@ export default function Scan() {
         <div className="lg:sticky lg:top-24">
           <span className="label-xs">Scan your lawn</span>
           <h1 className="mt-5 font-display text-[2.3rem] font-normal leading-[1.05] tracking-tight text-foreground sm:text-[2.7rem]">
-            Replace your lawn with <em className="italic text-accent">native plants</em>, save thousands.
+            Replace your lawn with <em className="italic text-accent">native plants</em>, save water and money.
           </h1>
           <p className="mt-6 max-w-md text-[15px] leading-relaxed text-muted-foreground">
             We scan your lawn to measure its size and water use — the starting point for calculating how much water,
@@ -315,7 +319,7 @@ export default function Scan() {
               value={query}
               onChange={setQuery}
               onSelect={(hit) => scanAddress(hit.label || query, hit)}
-              placeholder="Try Greer Park, Palo Alto"
+              placeholder="Enter address"
             />
             <Button type="submit" disabled={loading} className="h-12 rounded-full px-6 text-[15px]">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Scan property<ArrowRight className="ml-2 h-4 w-4" /></>}
@@ -338,7 +342,7 @@ export default function Scan() {
             {[
               [money(sampleFin.annualSavings), 'saved per year'],
               [`${num(sampleFin.gallonsSaved)} gal`, 'water cut annually'],
-              [money(sampleFin.rebate), 'typical rebate'],
+              ['Up to $5/sq ft', 'in local rebates, where offered'],
               [`${Math.max(1, Math.round(sampleFin.payback))} yr`, 'to pay back'],
             ].map(([v, l]) => (
               <div key={l}>
@@ -348,7 +352,8 @@ export default function Scan() {
             ))}
           </dl>
           <p className="mt-3 max-w-md text-[11px] leading-relaxed text-muted-foreground">
-            Based on a typical 1,200 sq ft lawn. Your actual savings are computed from your scan.
+            Savings and payback are modeled for a typical 1,200 sq ft lawn, before any rebate. Your scan uses your
+            lawn and the programs that serve your address.
           </p>
         </div>
 

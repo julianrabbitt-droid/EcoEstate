@@ -1,6 +1,7 @@
 import { Check, Droplets, Plus, Sun } from 'lucide-react';
 import { money } from '@/lib/landscapeMath';
 import { cn } from '@/lib/utils';
+import { photoCredit } from '@/hooks/usePlantPhotos';
 
 export default function PlantCard({ plant, selected, onToggle, photo }) {
   return (
@@ -10,14 +11,17 @@ export default function PlantCard({ plant, selected, onToggle, photo }) {
         selected ? 'border-primary/40 shadow-[0_12px_30px_-24px_rgba(16,35,28,0.7)]' : 'border-border hover:border-primary/25'
       )}
     >
-      <div className="h-32 w-full overflow-hidden bg-secondary">
+      <div className="relative h-32 w-full overflow-hidden bg-secondary">
         {photo ? (
-          <img
-            src={photo}
-            alt={plant.common}
-            loading="lazy"
-            className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]"
-          />
+          <>
+            <img
+              src={photo}
+              alt={plant.common}
+              loading="lazy"
+              className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]"
+            />
+            <PhotoCredit id={plant.id} />
+          </>
         ) : (
           <div
             className="h-full w-full"
@@ -71,5 +75,22 @@ export default function PlantCard({ plant, selected, onToggle, photo }) {
         </button>
       </div>
     </div>
+  );
+}
+// License credit for a Wikimedia Commons photo (author and license, linked).
+function PhotoCredit({ id }) {
+  const credit = photoCredit(id);
+  if (!credit) return null;
+  const text = `Photo: ${credit.artist} · ${credit.license}`;
+  return (
+    <span className="absolute bottom-0 right-0 max-w-full truncate rounded-tl-md bg-black/60 px-1.5 py-0.5 text-[9.5px] text-white">
+      {credit.url ? (
+        <a href={credit.url} target="_blank" rel="noreferrer" className="hover:underline" title={text}>
+          {text}
+        </a>
+      ) : (
+        text
+      )}
+    </span>
   );
 }

@@ -68,7 +68,8 @@ const PRIVACY = [
       <><b>Render</b>: hosting for the website and servers.</>,
       <><b>Stripe</b>: payments and subscriptions.</>,
       <><b>Resend</b>: delivers our subscription confirmation and reminder emails.</>,
-      <><b>Google</b>: if you choose “Continue with Google”, Google shares your name, email and profile picture with us. Your browser also loads our fonts from Google Fonts, which sees your IP address.</>,
+      <><b>Google</b>: if you choose “Continue with Google”, Google shares your name, email and profile picture with us. (Our fonts are served from ecoestate.org, not Google.)</>,
+      <><b>Rebate lookups</b>: to find the rebates that serve a property, we send its map location (not your name or account) to the US EPA’s water-system service-area map and the US Census Bureau’s geocoder, which return the water utility, ZIP code, city, county and state.</>,
       <><b>School-email check</b>: to see whether your email belongs to a school, we look up only the part after the “@” in a public list of school domains (JetBrains “swot”, served by jsDelivr).</>,
       <><b>Address and map data</b>: the addresses and areas you search are sent to geocoding and mapping services (Geocodio, OpenStreetMap/Nominatim, Esri and county parcel maps). Aerial imagery and tree and building data come from public sources (USDA NAIP via Microsoft Planetary Computer, Meta and WRI canopy data, Overture Maps). Your browser loads map tiles from Esri and plant photos from Wikimedia, which see your IP address.</>,
     ],
@@ -77,7 +78,7 @@ const PRIVACY = [
   {
     title: 'Do Not Track and cookies',
     body: [
-      'We don’t track you across other websites and we don’t use advertising or analytics cookies, so we don’t change what we do when your browser sends a Do Not Track or Global Privacy Control signal — there is no cross-site tracking to turn off. The only cookies and browser storage we use are what sign-in needs (set by Clerk) and saving guest scans and display settings on your device.',
+      <>We don’t track you across other websites and we don’t use advertising or analytics cookies, so we don’t change what we do when your browser sends a Do Not Track or Global Privacy Control signal — there is no cross-site tracking to turn off. The only cookies and browser storage we use are what sign-in needs (set by Clerk) and what the app needs to work, such as saving guest scans and display settings on your device. Our <Link to="/cookies" className="underline underline-offset-2">Cookie Policy</Link> lists each one.</>,
       'We don’t allow other companies to collect information about your activity on EcoEstate over time and across other websites. The services listed above that your browser contacts directly receive your IP address and normal browser information when they deliver content.',
     ],
   },
@@ -85,14 +86,15 @@ const PRIVACY = [
     title: 'How long we keep it',
     body: [
       <>We keep your account data while your account is open. If you cancel Pro without deleting your account, your data stays so you can come back.</>,
-      <>To delete your account, email {mail} from the address on your account. Within 30 days we delete your profile, saved properties, tracked projects, photos and other uploads, posts, comments and the messages you sent, and close your sign-in account. We keep records the law or fraud prevention requires, such as payment and tax records (kept by us and by Stripe for up to 7 years) and proof that you agreed to the subscription terms. Deleted data can remain in backups and server logs (which include IP addresses) for up to 30 days before it is overwritten.</>,
+      <>To delete your account, choose “Delete account” in your account menu; it happens right away. You can also email {mail} from the address on your account, and within 30 days we delete your profile, saved properties, tracked projects, photos and other uploads, posts, comments and the messages you sent, and close your sign-in account. We keep records the law or fraud prevention requires, such as payment and tax records (kept by us and by Stripe for up to 7 years) and proof that you agreed to the subscription terms. Deleted data can remain in backups and server logs (which include IP addresses) for up to 30 days before it is overwritten.</>,
     ],
   },
   {
     title: 'Your choices and rights',
     list: [
       'In the app you can edit or delete your saved properties, tracked projects and community posts, and turn map sharing off at any time.',
-      <>To delete a comment or message, or to get a copy of your data, correct it or delete it, email {mail}. We will confirm the request came from your account email and respond within 30 days. You may use an authorized agent.</>,
+      'You can delete your whole account yourself from “Delete account” in your account menu.',
+      <>To delete a comment or message, or to get a copy of your data or correct it, email {mail}. We will confirm the request came from your account email and respond within 30 days. You may use an authorized agent.</>,
       'You can cancel EcoEstate Pro at any time from “Manage subscription” in your account menu.',
       'California residents, and people elsewhere with privacy laws, may have rights to know, access, correct and delete personal information, and not to be treated differently for using those rights. Whether or not those laws apply to us, we honor these requests from everyone.',
     ],
@@ -141,6 +143,7 @@ const TERMS = [
       'Scanning, designs and the 3D view are free. Guests can scan without an account.',
       <>EcoEstate Pro adds saving and browsing your properties, project tracking, project exports and the community. <b>It costs $10 per month (plus any tax that applies) and renews automatically every month, charging the card you used, until you cancel.</b> If you used a referral code or promo code, your first month costs the discounted amount shown at checkout, and every month after that costs $10. There is no minimum term.</>,
       <><b>Cancel anytime online</b>: open your account menu, choose “Manage subscription”, then “Cancel subscription”. You can also email {mail} and we will cancel for you. Canceling stops future charges; Pro stays active until the end of the month you already paid for, and then ends. We don’t give refunds or partial-month credits for canceling mid-month, except where the law requires.</>,
+      <>Our <Link to="/refunds" className="underline underline-offset-2">Refund Policy</Link> explains refunds and cancellations in one place.</>,
       'If a payment fails, we and Stripe may retry it for a few weeks. Pro stays on while we retry, and the subscription ends if payment can’t be collected.',
       'We email you a confirmation when you subscribe, and a reminder at least once a year with the price, how often you’re charged and how to cancel.',
       'If we change the price of EcoEstate Pro, we will email you between 7 and 30 days before the new price first applies to your subscription, with the new price, the date it starts and how to cancel. If you don’t want to pay the new price, cancel before that date.',
@@ -197,7 +200,7 @@ const TERMS = [
   },
   {
     title: 'Ending your account',
-    body: [<>You can stop using EcoEstate at any time and ask us to delete your account at {mail}. We may suspend or close accounts that break these terms. Sections that by their nature should continue (such as disclaimers, limits of liability and indemnity) continue after your account ends.</>],
+    body: [<>You can stop using EcoEstate at any time and delete your account from your account menu, or ask us to at {mail}. We may suspend or close accounts that break these terms. Sections that by their nature should continue (such as disclaimers, limits of liability and indemnity) continue after your account ends.</>],
   },
   {
     title: 'Changes to these terms',
@@ -214,6 +217,68 @@ const TERMS = [
   {
     title: 'Contact',
     body: [<>{OPERATOR}, doing business as EcoEstate · {ADDRESS} · {mail}. See also our {privacyLink} and these {termsLink}.</>],
+  },
+];
+
+const COOKIES = [
+  {
+    title: 'The short version',
+    body: [
+      'EcoEstate uses only the cookies and browser storage it needs to work. There are no advertising, analytics or social-media tracking cookies, and nothing that follows you to other websites, so there is nothing to opt out of.',
+    ],
+  },
+  {
+    title: 'Cookies',
+    list: [
+      <><b>Sign-in (Clerk)</b>: <code>__session</code>, <code>__client_uat</code> and similar cookies keep you signed in securely. Set when you sign in; they expire when you sign out or after your session ends. Strictly necessary.</>,
+      <><b>Security (Cloudflare)</b>: our sign-in and hosting providers may set a short-lived bot-protection cookie such as <code>__cf_bm</code>. Strictly necessary.</>,
+    ],
+  },
+  {
+    title: 'Storage in your browser',
+    body: ['These stay on your device; most are never sent to us:'],
+    list: [
+      <><code>understory.projects.v1</code>: scans you make as a guest, so they aren’t lost before you sign in.</>,
+      <><code>ecoestate_ref</code>: a friend’s referral code you arrived with, so the discount applies at checkout.</>,
+      <><code>ecoestate_session_id</code> (this tab only): a random id sent with requests so we can see what each visit costs us in map and address lookups and stop abuse. It isn’t linked to other sites and disappears when you close the tab.</>,
+      <><code>ecoestate_premium_pending</code>, <code>ecoestate_auth_prompt_dismissed</code>, <code>ecoestate_minimap_size</code>, <code>ecoestate_cookie_notice</code>: small settings, like whether you closed a prompt or this notice.</>,
+    ],
+  },
+  {
+    title: 'Third-party content',
+    body: ['Map tiles (Esri) and plant photos (Wikimedia) load directly in your browser, so those services see your IP address, as with any image on the web. Payment pages are hosted by Stripe under its own policy.'],
+  },
+  {
+    title: 'Your choices',
+    body: [<>You can clear cookies and site data in your browser at any time; you’ll be signed out and guest scans will be lost. Questions: {mail}. See also our {privacyLink}.</>],
+  },
+];
+
+const REFUNDS = [
+  {
+    title: 'EcoEstate Pro',
+    list: [
+      'EcoEstate Pro costs $10 a month (plus any tax) and renews automatically every month until you cancel. There is no minimum term.',
+      'Cancel anytime online: account menu → “Manage subscription” → “Cancel subscription”, or email us and we’ll cancel for you.',
+      'When you cancel, you won’t be charged again. Pro stays on until the end of the month you already paid for, then ends.',
+      'Payments are non-refundable, and we don’t give partial-month credits for canceling mid-month, except where the law requires a refund.',
+    ],
+  },
+  {
+    title: 'When we will refund you',
+    list: [
+      'If you were charged by mistake, charged twice, or charged after you canceled, email us and we will refund the charge.',
+      'If a problem on our side stopped Pro from working for a significant part of a month, email us and we will credit or refund that month.',
+      'Refunds go back to the card you paid with, usually within 5–10 business days after we approve them.',
+    ],
+  },
+  {
+    title: 'Referral and promo discounts',
+    body: ['Discounts and referral credits have no cash value and can’t be refunded. If a referred friend’s payment is refunded, the referral credit it earned may be removed.'],
+  },
+  {
+    title: 'How to ask',
+    body: [<>Email {mail} from the address on your account with the date and amount of the charge. See also our {termsLink}.</>],
   },
 ];
 
@@ -255,6 +320,14 @@ function LegalPage({ label, title, sections }) {
 
 export function Privacy() {
   return <LegalPage label="Legal" title="Privacy Policy" sections={PRIVACY} />;
+}
+
+export function Cookies() {
+  return <LegalPage label="Legal" title="Cookie Policy" sections={COOKIES} />;
+}
+
+export function Refunds() {
+  return <LegalPage label="Legal" title="Refund Policy" sections={REFUNDS} />;
 }
 
 export function Terms() {

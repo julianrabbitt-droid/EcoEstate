@@ -4,6 +4,10 @@ import { base44 } from '@/api/base44Client';
 // Module-level cache so photos fetched once for a species are reused across
 // pages and re-renders. Wikipedia thumbnails are stable URLs, so caching is safe.
 const cache = new Map(); // id -> url | null
+const credits = new Map(); // id -> { artist, license, url } for the photo's license credit
+
+/** Author and license of a plant's photo, once it has loaded. */
+export const photoCredit = (id) => credits.get(id) || null;
 
 export function usePlantPhotos(plants = []) {
   const [photos, setPhotos] = useState(() => {
@@ -26,7 +30,11 @@ export function usePlantPhotos(plants = []) {
       .invoke('getPlantPhotos', { plants: needed.map((p) => ({ id: p.id, scientific: p.scientific })) })
       .then((res) => {
         const got = (res.data && res.data.photos) || {};
-        needed.forEach((p) => { cache.set(p.id, got[p.id] || null); });
+        const credited = (res.data && res.data.credits) || {};
+        needed.forEach((p) => {
+          cache.set(p.id, got[p.id] || null);
+          if (credited[p.id]) credits.set(p.id, credited[p.id]);
+        });
         if (cancelled) return;
         const m = {};
         plants.forEach((p) => { const u = cache.get(p.id); if (u) m[p.id] = u; });

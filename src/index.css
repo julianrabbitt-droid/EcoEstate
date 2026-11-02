@@ -1,4 +1,8 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Inter+Tight:wght@300;400;500;600&display=swap');
+/* Fonts are served from this site (SIL Open Font License), so visitors'
+   browsers don't contact Google Fonts. */
+@import '@fontsource-variable/fraunces/opsz.css';
+@import '@fontsource-variable/fraunces/opsz-italic.css';
+@import '@fontsource-variable/inter-tight/index.css';
 
 @tailwind base;
 @tailwind components;
@@ -18,7 +22,7 @@
     --secondary-foreground: 156 30% 16%;
     --muted: 42 26% 92%;
     --muted-foreground: 152 9% 38%;
-    --accent: 17 52% 51%;
+    --accent: 17 52% 44%; /* 4.5:1+ for text on the page and cards (WCAG AA) */
     --accent-foreground: 40 38% 97%;
     --destructive: 0 65% 48%;
     --destructive-foreground: 0 0% 100%;
@@ -31,9 +35,9 @@
     --chart-4: 38 58% 58%;
     --chart-5: 198 22% 46%;
     --radius: 0.85rem;
-    --font-heading: 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
-    --font-body: 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
-    --font-display: 'Fraunces', ui-serif, Georgia, serif;
+    --font-heading: 'Inter Tight Variable', 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
+    --font-body: 'Inter Tight Variable', 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
+    --font-display: 'Fraunces Variable', 'Fraunces', ui-serif, Georgia, serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;

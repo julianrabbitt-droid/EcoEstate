@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ChevronDown, Crown, Gift, GraduationCap, Leaf, LogIn, LogOut, RefreshCw, User } from 'lucide-react';
+import { ChevronDown, Crown, Gift, GraduationCap, Leaf, LogIn, LogOut, RefreshCw, Trash2, User } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,6 +40,22 @@ export default function AccountMenu() {
   const [checkingOut, setCheckingOut] = useState(false);
   // "Upgrade to Pro" first shows the renewal terms, then goes to checkout.
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // "Delete account" asks the person to type DELETE first.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteText, setDeleteText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await base44.auth.deleteMe();
+      toast({ title: 'Your account was deleted', description: 'Your data is gone. Payment records are kept as the law requires.' });
+      await base44.auth.logout('/');
+    } catch (e) {
+      setDeleting(false);
+      toast({ variant: 'destructive', title: 'Couldn’t delete your account', description: e?.message || 'Please try again or email support@ecoestate.org.' });
+    }
+  };
 
   const planLabel = premium ? 'Pro' : threeD ? 'Student' : 'Free';
   const PlanIcon = premium ? Crown : threeD ? GraduationCap : Leaf;
@@ -79,7 +95,7 @@ export default function AccountMenu() {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="h-9 gap-1.5 rounded-full px-2 sm:px-3">
+          <Button variant="ghost" className="h-9 gap-1.5 rounded-full px-2 sm:px-3" aria-label="Account menu">
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[11px] font-medium text-primary-foreground">
               {user?.full_name ? initials(user.full_name) : <User className="h-3.5 w-3.5" />}
             </span>
@@ -130,8 +146,11 @@ export default function AccountMenu() {
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh access
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleSignOut} className="gap-2 text-destructive focus:text-destructive">
+          <DropdownMenuItem onClick={handleSignOut} className="gap-2">
             <LogOut className="h-4 w-4" /> Sign out
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setDeleteOpen(true)} className="gap-2 text-destructive focus:text-destructive">
+            <Trash2 className="h-4 w-4" /> Delete account
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -148,6 +167,36 @@ export default function AccountMenu() {
             </Button>
             <Button className="rounded-full" onClick={handleUpgrade} disabled={checkingOut}>
               {checkingOut ? 'Opening checkout…' : 'Continue to checkout'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={deleteOpen} onOpenChange={(open) => !deleting && (setDeleteOpen(open), setDeleteText(''))}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete your account?</DialogTitle>
+            <DialogDescription>
+              This permanently deletes your saved properties, tracked projects, photos, posts, comments and the messages
+              you sent, cancels any Pro subscription, and closes your sign-in. Payment records are kept as the law
+              requires. This can’t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="text-[13px]" htmlFor="confirm-delete">
+            Type <span className="font-mono font-medium">DELETE</span> to confirm
+          </label>
+          <input
+            id="confirm-delete"
+            value={deleteText}
+            onChange={(e) => setDeleteText(e.target.value)}
+            autoComplete="off"
+            className="h-10 rounded-xl border border-border bg-background px-3 text-[14px] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" className="rounded-full" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" className="rounded-full" onClick={handleDelete} disabled={deleting || deleteText !== 'DELETE'}>
+              {deleting ? 'Deleting…' : 'Delete my account'}
             </Button>
           </DialogFooter>
         </DialogContent>

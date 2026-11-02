@@ -6,7 +6,6 @@ const STEPS = [
   { key: 'design', label: 'Design', path: (id) => `/project/${id}/design` },
   { key: 'impact', label: 'Payoff', path: (id) => `/project/${id}/impact` },
   { key: 'plan', label: 'Build', path: (id) => `/project/${id}/plan` },
-  { key: 'legacy', label: 'Legacy', path: (id) => `/project/${id}/legacy` },
 ];
 
 export default function StepNav({ projectId, current, project }) {

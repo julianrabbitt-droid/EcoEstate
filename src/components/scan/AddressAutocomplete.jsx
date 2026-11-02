@@ -76,7 +76,7 @@ export default function AddressAutocomplete({ value, onChange, onSelect, placeho
         onKeyDown={onKeyDown}
         onFocus={() => suggestions.length && setOpen(true)}
         placeholder={placeholder}
-        className="h-12 w-full rounded-full border border-border bg-card pl-11 pr-10 text-[15px] shadow-sm outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+        className="h-12 w-full rounded-full border border-border bg-card pl-11 pr-10 text-[15px] shadow-sm outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/40"
       />
       {fetching && (
         <Loader2 className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />

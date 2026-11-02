@@ -5,6 +5,8 @@
 // The frontend sends the resolved plant traits (it already holds the catalog)
 // so this function stays pure and needs no LLM and no plant database of its own.
 
+import { rebatesFor } from '../../shared/rebates.ts';
+
 const ASSUMPTIONS = {
   installPerSqFt: 2.4,
   irrigationPerSqFt: 0.9,
@@ -20,31 +22,20 @@ const MULCH_DEPTH_FT = 0.25;
 const MULCH_BAG_CUFT = 2;
 const PLANT_DENSITY = 0.4;
 
-const PROGRAMS = [
-  { id: 'turf-rebate', name: 'Turf replacement rebate', provider: 'Metropolitan Water District / SoCal Water$mart', perSqft: 2, capSqft: 5000, category: 'Turf removal', stacks: false, region: 'Southern California', desc: 'Paid per square foot of living turf removed and replaced with water-wise planting.', url: 'https://socalwatersmart.com' },
-  { id: 'district-turf', name: 'District grass conversion credit', provider: 'Cal Water and local water districts', perSqft: 1.5, capSqft: 3000, category: 'Turf removal', stacks: false, region: 'Statewide, district dependent', desc: 'Retail water districts fund their own conversion credits; most do not stack with the regional rebate.', url: 'https://www.calwater.com/conservation/rebates/' },
-  { id: 'drip', name: 'Drip irrigation conversion', provider: 'Local water district', perSqft: 0.3, capAmount: 300, category: 'Irrigation', stacks: true, region: 'District dependent', desc: 'Rebate for replacing spray heads with pressure-regulated drip on the converted area.', url: 'https://www.calwater.com/conservation/rebates/' },
-  { id: 'rain-barrel', name: 'Rain barrel rebate', provider: 'Municipal stormwater program', perUnit: 75, units: 2, category: 'Water capture', stacks: true, region: 'Municipal', desc: 'Two barrels typically covered per household; check your city stormwater program.', url: 'https://www.waterboards.ca.gov/' },
-  { id: 'shade-tree', name: 'Free shade tree', provider: 'Our City Forest / local tree nonprofit', perUnit: 100, units: 1, category: 'Tree planting', stacks: true, region: 'Santa Clara County and partner cities', desc: 'A free 15-gallon native or shade tree, with planting help at a community event.', url: 'https://ourcityforest.org' },
-];
+// Rebates come from the programs that actually serve the property (see
+// shared/rebates.ts); without a location there are none to count.
+const NO_INCENTIVES = { rows: [], best: null, extras: [], total: 0, place: null };
 
-function programAmount(program, turfSqft) {
-  if (program.perSqft) {
-    const eligibleSqft = program.capSqft ? Math.min(turfSqft, program.capSqft) : turfSqft;
-    const gross = eligibleSqft * program.perSqft;
-    return Math.round(program.capAmount ? Math.min(gross, program.capAmount) : gross);
+async function incentivesFor(location, turfSqft) {
+  const lat = Number(location?.lat);
+  const lon = Number(location?.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return NO_INCENTIVES;
+  try {
+    return await rebatesFor(lat, lon, turfSqft);
+  } catch (e) {
+    console.warn('computeLandscape: rebate lookup failed', e?.message);
+    return NO_INCENTIVES;
   }
-  if (program.perUnit) return program.perUnit * (program.units || 1);
-  return program.flat || 0;
-}
-
-function incentiveEstimates(turfSqft) {
-  const rows = PROGRAMS.map((p) => ({ ...p, amount: programAmount(p, turfSqft) }));
-  const single = rows.filter((r) => !r.stacks).sort((a, b) => b.amount - a.amount);
-  const best = single[0] || null;
-  const extras = rows.filter((r) => r.stacks);
-  const total = extras.reduce((sum, r) => sum + r.amount, 0) + (best ? best.amount : 0);
-  return { rows, best, extras, total: Math.round(total) };
 }
 
 function clearanceOf(plant) {
@@ -97,7 +88,7 @@ export default async function (req) {
     const irrigation = Math.round(turfSqft * ASSUMPTIONS.irrigationPerSqFt);
     const mulchCost = Math.round(turfSqft * ASSUMPTIONS.mulchPerSqFt);
     const totalCost = cost + install + irrigation + mulchCost;
-    const incentives = incentiveEstimates(turfSqft);
+    const incentives = await incentivesFor(body?.location, turfSqft);
     const rebate = incentives.total;
     const outOfPocket = Math.max(0, totalCost - rebate);
     const gallonsBefore = Math.round(turfSqft * ASSUMPTIONS.turfGallonsPerSqFt);

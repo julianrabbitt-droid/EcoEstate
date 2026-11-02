@@ -63,6 +63,7 @@ function EditableLine({ corners, onChange }) {
           key={`c-${i}-${pt[0]}-${pt[1]}`}
           position={pt}
           icon={cornerIcon}
+          alt={`Property line corner ${i + 1}, drag to move`}
           draggable
           eventHandlers={{ dragend: (e) => onChange(corners.map((p, j) => (j === i ? latLng(e) : p))) }}
         />
@@ -75,6 +76,7 @@ function EditableLine({ corners, onChange }) {
             key={`m-${i}-${mid[0]}-${mid[1]}`}
             position={mid}
             icon={midpointIcon}
+            alt={`Add a corner between ${i + 1} and ${((i + 1) % corners.length) + 1}`}
             draggable
             eventHandlers={{ dragend: (e) => onChange([...corners.slice(0, i + 1), latLng(e), ...corners.slice(i + 1)]) }}
           />

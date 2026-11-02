@@ -10,6 +10,7 @@ import { ADMIN_EMAILS } from './config.js';
 import { publicUser, users } from './db.js';
 import { HttpError } from './entities.js';
 import { autoUnlockStudent } from './student.js';
+import { deleteAccount } from './accountDeletion.js';
 
 const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
 const normEmail = (e) => String(e || '').trim().toLowerCase();
@@ -124,4 +125,16 @@ authRouter.patch('/me', wrap(async (req, res) => {
   const updated = await users.update(row.id, { full_name: full_name ?? undefined, data: { ...(row.data || {}), ...rest } });
   for (const [k, v] of linked) if (v.row.id === row.id) linked.delete(k);
   res.json(publicUser(updated));
+}));
+
+// Self-service account deletion (Privacy Policy). The body must confirm it:
+// { confirm: 'DELETE' }. Payment records are kept as the law requires.
+authRouter.delete('/me', wrap(async (req, res) => {
+  if (!req.user) throw new HttpError(401, 'Authentication required');
+  if (req.body?.confirm !== 'DELETE') throw new HttpError(400, 'Type DELETE to confirm.');
+  const row = await users.byId(req.user.id);
+  if (!row) throw new HttpError(404, 'Account not found');
+  const result = await deleteAccount(row, { log: (line) => console.log(`[delete-account ${row.id}] ${line}`) });
+  for (const [k, v] of linked) if (v.row.id === row.id) linked.delete(k);
+  res.json({ deleted: true, ...result });
 }));

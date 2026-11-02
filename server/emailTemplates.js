@@ -42,8 +42,11 @@ function layout({ preview, heading, body }) {
         ${body}
       </td></tr>
       <tr><td style="padding:22px 4px 0;font-family:${SANS};font-size:12px;line-height:1.6;color:${BRAND.muted};">
-        EcoEstate helps you replace your lawn with native plants.<br>
-        <a href="https://${SITE}" style="color:${BRAND.muted};text-decoration:underline;">${SITE}</a>
+        You’re receiving this account or billing notice because you have an EcoEstate account. We don’t send marketing email.
+        To stop subscription notices, cancel Pro in <a href="https://${SITE}/my-projects" style="color:${BRAND.muted};text-decoration:underline;">Manage subscription</a>;
+        to stop all email, <a href="https://${SITE}/privacy" style="color:${BRAND.muted};text-decoration:underline;">delete your account</a> from the account menu.<br>
+        EcoEstate · Julian Rabbitt-Tomita, doing business as EcoEstate · 920 Moreno Avenue, Palo Alto, CA 94303 ·
+        <a href="mailto:support@ecoestate.org" style="color:${BRAND.muted};text-decoration:underline;">support@ecoestate.org</a>
       </td></tr>
     </table>
   </td></tr>
@@ -136,7 +139,8 @@ export function proSubscriptionEmail({ kind = 'welcome', firstMonthUsd = null, t
     `Terms: https://${SITE}/terms${termsVersion ? ` (version ${termsVersion})` : ''}`,
   ];
   const footer = [operator, address, 'support@ecoestate.org'].filter(Boolean).join(' · ');
-  const text = `${lines.join('\n\n')}\n\n${footer}\n`;
+  const why = 'You’re receiving this required subscription notice because you have EcoEstate Pro. We don’t send marketing email. To stop these notices, cancel Pro in Manage subscription.';
+  const text = `${lines.join('\n\n')}\n\n${footer}\n${why}\n`;
   const html = layout({
     preview: welcome ? 'Your subscription details and how to cancel.' : 'Your subscription details and how to cancel.',
     heading: welcome ? 'Your Pro subscription is active' : 'Your Pro subscription renews monthly',

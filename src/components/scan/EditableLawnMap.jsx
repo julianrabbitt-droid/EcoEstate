@@ -315,6 +315,7 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
           <Marker
             position={propCenter}
             icon={pinIcon()}
+            alt="Property center, drag to move"
             draggable
             eventHandlers={{ dragend: (e) => setPropCenter([e.target.getLatLng().lat, e.target.getLatLng().lng]) }}
           >
@@ -330,6 +331,7 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
               key={`lv-${j}`}
               position={pt}
               icon={vertexIcon(true)}
+              alt={`Property line corner ${j + 1}, drag to move`}
               draggable
               eventHandlers={{ dragend: (e) => setLotVertex(j, [e.target.getLatLng().lat, e.target.getLatLng().lng]) }}
             />

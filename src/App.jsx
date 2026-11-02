@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate, useLocation, useParams } from 'react-router-dom';
 import { AuthenticateWithRedirectCallback } from '@clerk/clerk-react';
 import PageNotFound from './lib/PageNotFound';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -15,20 +15,25 @@ import ThankYou from './pages/ThankYou';
 import Login from '@/pages/Login';
 import { loginPath } from '@/lib/authReturnTo';
 import Register from '@/pages/Register';
-import { Privacy, Terms } from '@/pages/Legal';
+import { Cookies, Privacy, Refunds, Terms } from '@/pages/Legal';
 // Add page imports here
 import Scan from '@/pages/Scan';
 import Analysis from '@/pages/Analysis';
 import Design from '@/pages/Design';
 import Impact from '@/pages/Impact';
 import Plan from '@/pages/Plan';
-import Legacy from '@/pages/Legacy';
 import Projects from '@/pages/Projects';
 import Social from '@/pages/Social';
 import MyProjects from '@/pages/MyProjects';
 import TrackedProject from '@/pages/TrackedProject';
 
 // Community and Messages now live under Social; old links keep working.
+// The old Legacy step now lives in Payoff.
+function ToPayoff() {
+  const { id } = useParams();
+  return <Navigate to={`/project/${id}/impact`} replace />;
+}
+
 function ToSocial({ tab }) {
   const { search } = useLocation();
   const params = new URLSearchParams(search);
@@ -92,9 +97,11 @@ const AuthenticatedApp = () => {
         <Route path="/project/:id/design" element={<Design />} />
         <Route path="/project/:id/impact" element={<Impact />} />
         <Route path="/project/:id/plan" element={<Plan />} />
-        <Route path="/project/:id/legacy" element={<Legacy />} />
+        <Route path="/project/:id/legacy" element={<ToPayoff />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
+        <Route path="/cookies" element={<Cookies />} />
+        <Route path="/refunds" element={<Refunds />} />
         <Route element={<ProtectedRoute unauthenticatedElement={<ToLogin />} />}>
           <Route path="/projects" element={<Projects />} />
           <Route path="/my-projects" element={<MyProjects />} />

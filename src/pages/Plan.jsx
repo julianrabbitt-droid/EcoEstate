@@ -10,6 +10,7 @@ import { plantById } from '@/data/nativePlants';
 import { designOrDefault, financials, money, num } from '@/lib/landscapeMath';
 import { buildSchedule } from '@/lib/buildSchedule';
 import ProjectExports from '@/components/ProjectExports';
+import { useRebates } from '@/hooks/useRebates';
 
 const STEPS = [
   ['Mark the beds', 'Spray the outline of the new beds with marking paint, then strip turf or sheet-mulch it with cardboard.'],
@@ -23,6 +24,7 @@ export default function Plan() {
   const { id } = useParams();
   const location = useLocation();
   const { project, loading } = useProject(id, location.state);
+  const rebates = useRebates(project);
   const [copied, setCopied] = useState(false);
   // Local organizations: start with the 5 closest (city-tier) matches, then
   // widen the range — county, region, statewide — 20 more at a time.
@@ -70,7 +72,7 @@ export default function Plan() {
     }
   };
   const RANGE_LABEL = ['in your city', 'across your county', 'across your region', 'across California'][orgTier];
-  const fin = financials(project, design);
+  const fin = financials(project, design, rebates);
   const mulchYards = Math.max(1, Math.round((fin.turfSqft * 0.25) / 27));
 
   const rows = [
@@ -124,8 +126,8 @@ export default function Plan() {
             Print plan
           </Button>
           <Button asChild className="rounded-full">
-            <Link to={`/project/${id}/legacy`}>
-              See the 30-year legacy
+            <Link to={`/my-projects?project=${id}`}>
+              Track this property
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
           </Button>
@@ -306,8 +308,8 @@ export default function Plan() {
 
       <div className="mt-8 flex justify-end">
         <Button asChild className="rounded-full">
-          <Link to={`/project/${id}/legacy`}>
-            See the 30-year legacy
+          <Link to={`/my-projects?project=${id}`}>
+            Track this property
             <ArrowRight className="ml-2 h-4 w-4" />
           </Link>
         </Button>

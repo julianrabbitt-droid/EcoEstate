@@ -9,10 +9,10 @@ import simplify from '@turf/simplify';
 import { contours } from 'd3-contour';
 import { readCanopy } from './canopy.js';
 import { ApiError } from './errors.js';
-import { buildingsInBox } from './buildings.js';
+import { buildingsInBox, segmentsInBox } from './buildings.js';
 import { forEachPixel, makeGrid, polygonsOf, rasterize, rasterizeLabels } from './grid.js';
 import { findNaip, readNaip } from './naip.js';
-import { osmLawnShapes } from './osmLawns.js';
+import { osmLawnShapes, PATH_WIDTH_M } from './osmLawns.js';
 import { dilate, erode, labelRegions, localStats } from './raster.js';
 import { regionShape } from './shapes.js';
 import { separateLayers } from './layers.js';
@@ -123,10 +123,19 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     }),
     // A little wider than the property, to include the roads that border it.
     osmLawnShapes(widen(box, NEARBY.extendM + NEARBY.withinM)),
-  ]).then(([a, b, c, osm]) => {
+    // Overture's copy of the same roads and paths, read from files rather than
+    // a shared server, for when OpenStreetMap's servers are slow or down.
+    segmentsInBox(widen(box, NEARBY.extendM + NEARBY.withinM)).catch((err) => {
+      console.warn(`road segments unavailable: ${err.message}`);
+      return [];
+    }),
+  ]).then(([a, b, c, osm, segments]) => {
     // null = OpenStreetMap features still downloading (see osmLawns.js).
     templates = osm === null ? null : osm.lawns;
-    mappedPaths = osm?.paths ?? [];
+    // Overture adds driveways and service roads OpenStreetMap's live copy may
+    // lack (and stands in while its servers are down); use the fuller set.
+    const overture = segments.map((p) => ({ ...p, widthM: PATH_WIDTH_M[p.kind] ?? 2 }));
+    mappedPaths = (osm?.paths?.length ?? 0) >= overture.length ? osm.paths : overture;
     return [a, b, c];
   });
   // Buildings on the parcel first (their labels are used for roof heights),

@@ -96,6 +96,8 @@ const entities = new Proxy({}, { get: (_, name) => (typeof name === 'string' ? e
 const auth = {
   me: () => request('GET', '/auth/me'),
   updateMe: (data) => request('PATCH', '/auth/me', data),
+  // Permanently deletes the signed-in account (body must confirm with 'DELETE').
+  deleteMe: () => request('DELETE', '/auth/me', { confirm: 'DELETE' }),
   async isAuthenticated() {
     if (!(await getAccessToken())) return false;
     try {

@@ -21,7 +21,7 @@ const CACHE_DAYS = 30;
 const cache = new LRU(100); // bbox key -> { lawns, paths } (the recent ones; all are kept on disk across restarts)
 
 // Typical paved width (m) when a path has no width tag.
-const PATH_WIDTH_M = {
+export const PATH_WIDTH_M = {
   footway: 2, path: 1.8, cycleway: 3, pedestrian: 5, steps: 2, bridleway: 2.5, track: 3,
   service: 4.5, living_street: 5.5, residential: 7, unclassified: 6.5, tertiary: 8, secondary: 10, primary: 12,
 };
@@ -83,7 +83,11 @@ async function fetchFrom(endpoint, query) {
     signal: AbortSignal.timeout(90000),
   });
   if (!r.ok) throw new Error(`Overpass returned ${r.status}`);
-  return parse(await r.json());
+  const data = await r.json();
+  // An overloaded server can answer 200 with no elements and a "runtime
+  // error" remark; that's a failure, not an empty area, so it's never cached.
+  if (/error|timed out|timeout/i.test(data.remark || '')) throw new Error(`Overpass: ${data.remark}`);
+  return parse(data);
 }
 
 /**

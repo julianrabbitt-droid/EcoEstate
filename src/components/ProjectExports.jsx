@@ -9,6 +9,7 @@ import { plantById } from '@/data/nativePlants';
 import { financials, money, num } from '@/lib/landscapeMath';
 import { savedReferral, startCheckout } from '@/lib/checkout';
 import RenewalTerms from '@/components/RenewalTerms';
+import { useRebates } from '@/hooks/useRebates';
 
 // Pro project export: a printable PDF brief and a materials spreadsheet,
 // plus a share action. Gated behind EcoEstate Pro ($10/month) — not the free
@@ -20,7 +21,8 @@ export default function ProjectExports({ projectId, project, design }) {
   const [error, setError] = useState('');
   const [shared, setShared] = useState(false);
 
-  const fin = financials(project, design || []);
+  const rebates = useRebates(project);
+  const fin = financials(project, design || [], rebates);
   const turfSqft = fin.turfSqft || 0;
   const mulchYards = Math.max(1, Math.round((turfSqft * 0.25) / 27));
   const rows = [

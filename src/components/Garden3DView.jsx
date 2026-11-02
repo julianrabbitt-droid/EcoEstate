@@ -1255,6 +1255,9 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       </div>
 
       <div className="relative mt-3">
+        <span className="pointer-events-none absolute bottom-1.5 right-2 z-10 rounded bg-black/50 px-1.5 py-0.5 text-[9.5px] text-white">
+          Imagery © Esri, Maxar, Earthstar Geographics
+        </span>
         <div
           ref={mountRef}
           onDragOver={(e) => { if (!walkMode) e.preventDefault(); }}

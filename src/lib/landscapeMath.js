@@ -1,6 +1,5 @@
 import { plantById } from '@/data/nativePlants';
 import { defaultMixForProject, plantsForProject } from '@/data/regions';
-import { incentiveEstimates } from '@/data/incentives';
 
 export const ASSUMPTIONS = {
   installPerSqFt: 2.4,
@@ -52,7 +51,9 @@ export function mulchTotals(entries = []) {
   return { cuft: Math.round(cuft), bags: Math.ceil(cuft / MULCH_BAG_CUFT) };
 }
 
-export function financials(project, entries = []) {
+// `incentives` are the rebates that serve the property (useRebates / the
+// findRebates function); without them no rebate is counted.
+export function financials(project, entries = [], incentives = null) {
   const turfSqft = project?.breakdown?.turf || 0;
   const totals = plantTotals(entries);
   const install = Math.round(turfSqft * ASSUMPTIONS.installPerSqFt);
@@ -60,8 +61,8 @@ export function financials(project, entries = []) {
   const mulch = Math.round(turfSqft * ASSUMPTIONS.mulchPerSqFt);
   const totalCost = totals.cost + install + irrigation + mulch;
 
-  const incentives = incentiveEstimates(turfSqft);
-  const rebate = incentives.total;
+  incentives ??= { rows: [], best: null, extras: [], total: 0, place: null };
+  const rebate = incentives.total || 0;
   const outOfPocket = Math.max(0, totalCost - rebate);
 
   const gallonsBefore = Math.round(turfSqft * ASSUMPTIONS.turfGallonsPerSqFt);

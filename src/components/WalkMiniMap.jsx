@@ -99,7 +99,7 @@ export default function WalkMiniMap({ project, getPersonGeo }) {
       style={{ width: size.w, height: size.h }}
     >
       <div className="flex items-center justify-between bg-background/70 px-1.5 py-0.5 text-[8px] uppercase tracking-wide text-muted-foreground">
-        <span>Your location</span>
+        <span>Your location · © Esri</span>
         <span className="text-accent">●</span>
       </div>
       <div className="h-[calc(100%-16px)] w-full">

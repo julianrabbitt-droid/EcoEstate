@@ -3,6 +3,7 @@ import { Sprout } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import AccountMenu from '@/components/AccountMenu';
 import AuthModal from '@/components/AuthModal';
+import CookieNotice from '@/components/CookieNotice';
 
 export default function AppShell() {
   const { pathname } = useLocation();
@@ -10,6 +11,12 @@ export default function AppShell() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-full focus:bg-primary focus:px-4 focus:py-2 focus:text-[13px] focus:text-primary-foreground"
+      >
+        Skip to content
+      </a>
       <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur-md">
         {/* Phones: logo and account on top, the menu on its own scrollable row
             beneath. Wider screens: one row. */}
@@ -77,22 +84,31 @@ export default function AppShell() {
         </div>
       </header>
 
-      <main className="flex-1">
+      <main id="main" tabIndex={-1} className="flex-1 focus:outline-none">
         <Outlet />
       </main>
 
       <AuthModal />
 
       <footer className="border-t border-border/70 py-8">
-        <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-2 px-5 text-xs text-muted-foreground sm:flex-row">
-          <span>EcoEstate · native landscape conversion</span>
-          <span className="flex flex-wrap items-center justify-center gap-x-3">
-            <span>Estimates are modeled, not engineering or legal advice.</span>
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-5 text-xs text-muted-foreground sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <p>EcoEstate · native landscape conversion</p>
+            <p>
+              Julian Rabbitt-Tomita, doing business as EcoEstate · Palo Alto, CA ·{' '}
+              <a href="mailto:support@ecoestate.org" className="underline-offset-2 hover:underline">support@ecoestate.org</a>
+            </p>
+            <p>Estimates are modeled, not engineering, financial or legal advice.</p>
+          </div>
+          <nav aria-label="Legal" className="flex flex-wrap gap-x-4 gap-y-1">
             <Link to="/privacy" className="underline-offset-2 hover:underline">Privacy</Link>
             <Link to="/terms" className="underline-offset-2 hover:underline">Terms</Link>
-          </span>
+            <Link to="/refunds" className="underline-offset-2 hover:underline">Refunds</Link>
+            <Link to="/cookies" className="underline-offset-2 hover:underline">Cookies</Link>
+          </nav>
         </div>
       </footer>
+      <CookieNotice />
     </div>
   );
 }
