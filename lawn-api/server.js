@@ -46,6 +46,7 @@ app.use('/v1', (req, res, next) => {
 
 // Lawn detections by parcel ID, so repeat lookups don't re-read imagery. Swap for Redis/DB in production.
 const lawnCache = new LRU(200);
+const PENDING_CACHE_MS = 15 * 60 * 1000;
 // Scans in progress by parcel ID: identical requests share one scan.
 const inFlight = new Map();
 
@@ -191,14 +192,16 @@ function validPolygons(geometry) {
 
 async function lawnResponse({ address, location, parcel, parcelSource, query }) {
   let detection = lawnCache.get(parcel.id);
+  // A scan made without OpenStreetMap's lawn shapes (its servers down) is
+  // reused for a while, then redone in case they're back.
+  if (detection?.templatesPending && Date.now() - detection.cachedAt > PENDING_CACHE_MS) detection = null;
   const cached = Boolean(detection);
   if (!detection) {
     if (!inFlight.has(parcel.id)) {
       const scan = limited(() => detectLawn(parcel.geometry))
         .then((result) => {
-          // Without the mapped lawn shapes (still downloading) or with canopy
-          // tiles that failed to load, let the next scan redo it.
-          if (!result.templatesPending && !result.canopyIncomplete) lawnCache.set(parcel.id, result);
+          // With canopy tiles that failed to load, let the next scan redo it.
+          if (!result.canopyIncomplete) lawnCache.set(parcel.id, { ...result, cachedAt: Date.now() });
           return result;
         })
         .finally(() => inFlight.delete(parcel.id));

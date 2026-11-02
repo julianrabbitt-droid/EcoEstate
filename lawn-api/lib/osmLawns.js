@@ -96,6 +96,10 @@ async function fetchFrom(endpoint, query) {
  * aren't available within a few seconds (cached for the next call once the
  * download finishes).
  */
+// After both servers fail, scans stop waiting on them for a while (Overture's
+// roads and paths stand in), instead of losing a few seconds every time.
+const DOWN_MS = 10 * 60 * 1000;
+let downUntil = 0;
 export async function osmLawnShapes([w, s, e, n], { waitMs = WAIT_MS } = {}) {
   const key = [w, s, e, n].map((v) => v.toFixed(4)).join(',');
   if (!cache.has(key)) {
@@ -121,9 +125,10 @@ out geom;`;
         return shapes;
       })
       .finally(() => inFlight.delete(key));
-    request.catch(() => {}); // a failed background download just means no shapes this time
+    request.catch(() => { downUntil = Date.now() + DOWN_MS; }); // a failed background download just means no shapes this time
     inFlight.set(key, request);
   }
+  if (Date.now() < downUntil) return null; // still tried in the background, but not waited for
   const timeout = new Promise((resolve) => setTimeout(() => resolve(null), waitMs));
   return Promise.race([inFlight.get(key).catch(() => null), timeout]);
 }
