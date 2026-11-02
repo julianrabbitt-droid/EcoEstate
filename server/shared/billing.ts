@@ -20,7 +20,8 @@ const COUPON_ID = 'ECOESTATE_REFERRAL_5_OFF';
 // Local development uses a test key against the same database as the live
 // site, so Stripe ids and purchases are kept apart by mode: a test customer id
 // never reaches a live checkout, and a test purchase never unlocks Pro live.
-export const stripeLive = () => String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_live_');
+// Live keys are secret (sk_live_) or restricted (rk_live_) keys.
+export const stripeLive = () => /^(sk|rk)_live_/.test(String(process.env.STRIPE_SECRET_KEY || ''));
 const customerField = () => (stripeLive() ? 'stripeCustomerId' : 'stripeTestCustomerId');
 
 // Creates a record that a unique index keeps to one per key; when a parallel

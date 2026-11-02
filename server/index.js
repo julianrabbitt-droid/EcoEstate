@@ -22,6 +22,8 @@ app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // Which commit is running (Render sets RENDER_GIT_COMMIT), to confirm deploys.
+  if (process.env.RENDER_GIT_COMMIT) res.setHeader('X-App-Version', process.env.RENDER_GIT_COMMIT.slice(0, 7));
   next();
 });
 

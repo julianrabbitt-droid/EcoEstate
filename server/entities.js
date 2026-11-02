@@ -92,7 +92,7 @@ const MEMBER_PRODUCTS = new Set(['premium', '3d_view']);
 // A test-mode Stripe purchase (made against the shared database during local
 // development) only counts while the server itself uses a test key.
 export function purchaseCounts(p) {
-  return p?.livemode !== false || !String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_live_');
+  return p?.livemode !== false || !/^(sk|rk)_live_/.test(String(process.env.STRIPE_SECRET_KEY || ''));
 }
 
 export async function isPremiumMember(user) {
