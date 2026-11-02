@@ -166,7 +166,21 @@ async function rowsInBox(collectionPath, box, columns) {
     for (const [i, rg] of metadata.row_groups.entries()) {
       const [xmin, xmax, ymin, ymax] = ix.map((j, k) => Number(rg.columns[j].meta_data.statistics[k % 2 ? 'max_value' : 'min_value']));
       if (!overlaps({ xmin, xmax, ymin, ymax }, box)) continue;
-      reads.push(() => parquetReadObjects({ file, metadata, columns, rowStart: starts[i], rowEnd: starts[i] + Number(rg.num_rows), compressors }));
+      reads.push(async () => {
+        // Bounding boxes first (small), then the other columns only for the
+        // run of rows that can match: rows are sorted by place, so it is short.
+        const rowEnd = starts[i] + Number(rg.num_rows);
+        const boxes = await parquetReadObjects({ file, metadata, columns: ['bbox'], rowStart: starts[i], rowEnd, compressors });
+        let [first, last] = [-1, -1];
+        boxes.forEach((row, k) => {
+          if (row.bbox && overlaps(row.bbox, box)) {
+            if (first < 0) first = k;
+            last = k;
+          }
+        });
+        if (first < 0) return [];
+        return parquetReadObjects({ file, metadata, columns, rowStart: starts[i] + first, rowEnd: starts[i] + last + 1, compressors });
+      });
     }
   }
   const out = [];

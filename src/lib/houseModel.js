@@ -3,12 +3,14 @@ import { photo } from '@/lib/photoTextures';
 
 // Conventional low-poly buildings from scanned footprints. Scanned outlines are
 // noisy (jagged edges, slivers, odd angles), so each one is squared up to its
-// main direction and rebuilt from at most a few rectangles, each with walls,
+// main direction and rebuilt from rectangles that follow its wings and bays, each with walls,
 // a hip, gable or flat roof with eaves, windows on every floor and, on the main
 // block, a front door facing the street. Plan coordinates are feet with x east
 // and y north; the returned group uses the 3D view's frame (z = -north).
 
-const MAX_BLOCKS = 4;
+const MAX_BLOCKS = 10;
+const BLOCK_MIN_SQFT = 30; // smaller leftovers (scan slivers) are dropped…
+const BLOCK_MIN_SHARE = 0.02; // …as are pieces under this share of the footprint
 const STORY_FT = 10;
 const MIN_EAVE_FT = 8.5;
 const OVERHANG_FT = 1.2;
@@ -102,8 +104,8 @@ export function blocksFor(points) {
   while (blocks.length < MAX_BLOCKS) {
     const r = largestRect(grid, w, h);
     const sqft = r.area * cell * cell;
-    // Small leftovers (bay windows, scan slivers) are dropped so the result reads as a conventional building.
-    if (!r.area || sqft < Math.max(60, total * (blocks.length ? 0.1 : 0))) break;
+    // Wings and bays are kept so the model has the scanned shape; only slivers are dropped.
+    if (!r.area || sqft < Math.max(BLOCK_MIN_SQFT, total * (blocks.length ? BLOCK_MIN_SHARE : 0))) break;
     for (let j = r.j0; j < r.j1; j++) for (let i = r.i0; i < r.i1; i++) grid[j * w + i] = 0;
     const lx = x0 + ((r.i0 + r.i1) / 2) * cell;
     const ly = y0 + ((r.j0 + r.j1) / 2) * cell;
