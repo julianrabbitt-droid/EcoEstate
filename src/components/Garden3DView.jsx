@@ -50,6 +50,7 @@ const GEO = {
 
 // Raised mulch slab geometry: a 0.35 ft mound with a soft rounded top edge.
 const MULCH_Y = 0.03; // mulch sits a hair above the ground so it reads as a flat 2D layer
+const CURB_FT = 0.5; // the street sits this far below the sidewalk
 const EYE_HEIGHT = 5.5; // walkthrough camera height (ft) above the ground
 
 // Google Photorealistic 3D Tiles: the real house, trees and street around the
@@ -223,8 +224,8 @@ function mulchTexture() {
   return _mulch;
 }
 const polyArea = (q) => Math.abs(q.reduce((a, p, i) => { const n = q[(i + 1) % q.length]; return a + p[0] * n[1] - n[0] * p[1]; }, 0)) / 2;
-// A label card standing over a lawn (always facing the camera, drawn on top),
-// sized to read at the property's overview distance.
+// A small label card over a lawn (always facing the camera, drawn on top):
+// readable at the overview distance without covering the property.
 function lawnTag(lines, maxDim) {
   const W = 640;
   const H = 72 + 52 * (lines.length - 1) + 28;
@@ -246,7 +247,7 @@ function lawnTag(lines, maxDim) {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false }));
-  const w = Math.max(18, maxDim * 0.45);
+  const w = Math.max(8, Math.min(22, maxDim * 0.16));
   sprite.scale.set(w, (w * H) / W, 1);
   sprite.renderOrder = 20;
   sprite.userData.lift = (w * H) / W / 2;
@@ -2053,8 +2054,19 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       // Driveways, patios and walks the scan found as bare paving: flat on the
       // ground, in the model only (Real 3D shows the real ones).
       const paved = poly.kind === 'paved';
-      const offLot = !onLot(poly.reduce((s, p) => s + p[0], 0) / poly.length, poly.reduce((s, p) => s + p[1], 0) / poly.length);
-      const depth = road ? 0.9 : paved ? 0.06 : 0.5; // roads stand well clear of the faded satellite ground
+      const pmx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
+      const pmy = poly.reduce((s, p) => s + p[1], 0) / poly.length;
+      const offLot = !onLot(pmx, pmy);
+      // Off the lot only the street it faces and the walks between: other roads
+      // and the neighbours' paths are left out of the model.
+      if (offLot && outerPoly && outerPoly.length >= 3) {
+        const inStrip = front && insidePoly([pmx - cx, -(pmy - cy)], front);
+        const near = Math.min(...poly.map((p) => distToOutline(p, outerPoly)));
+        if (!inStrip && !(road && near <= FRONT_MAX_FT)) return;
+      }
+      // Laid flat like the real thing: walks and paving level with the ground,
+      // the road a curb's height below it.
+      const depth = road ? 0.15 : 0.06;
       const shape = new THREE.Shape();
       poly.forEach((p, i) => { const x = p[0] - cx; const y = p[1] - cy; if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y); });
       const slab = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false }), road ? roadMat : paved ? concreteMat : paverMat);
@@ -2062,12 +2074,13 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       slab.userData.offLot = offLot;
       slab.userData.modelOnly = paved;
       slab.rotation.x = -Math.PI / 2;
-      slab.position.y = MULCH_Y; // sits on the mulch, so a path crossing a converted lawn stays visible
+      slab.position.y = road ? -CURB_FT : MULCH_Y; // walks sit on the mulch, so a path crossing a converted lawn stays visible
       slab.receiveShadow = true;
       if (sloped) drape(slab, at);
       scene.add(slab);
+      const top = (road ? -CURB_FT : MULCH_Y) + depth;
       const edge = new THREE.LineLoop(
-        new THREE.BufferGeometry().setFromPoints(poly.map((p) => new THREE.Vector3(p[0] - cx, at(p[0] - cx, -(p[1] - cy)) + MULCH_Y + depth + 0.02, -(p[1] - cy)))),
+        new THREE.BufferGeometry().setFromPoints(poly.map((p) => new THREE.Vector3(p[0] - cx, at(p[0] - cx, -(p[1] - cy)) + top + 0.02, -(p[1] - cy)))),
         road ? curbMat : edgeMat,
       );
       edge.userData.path = true;
@@ -2082,7 +2095,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         if (axis.length >= 40 && !labelled.has(key)) {
           labelled.add(key);
           const label = roadLabel(poly.name, axis);
-          label.position.set(axis.mx - cx, at(axis.mx - cx, -(axis.my - cy)) + MULCH_Y + depth + 0.05, -(axis.my - cy));
+          label.position.set(axis.mx - cx, at(axis.mx - cx, -(axis.my - cy)) + top + 0.05, -(axis.my - cy));
           label.userData.path = true;
           label.userData.offLot = offLot;
           scene.add(label);
@@ -2108,7 +2121,10 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // Existing mature trees kept from the scan, sized to their scanned canopy.
     // Each stands on the lowest ground under its crown (never on a roof, wall or
     // lump in Google's mesh) and keeps its scanned height above that ground.
-    trees.forEach((t) => {
+    // Only the property's own trees are drawn: the view from the street to the
+    // front lawn stays clear, and neighbours' trees are left to the
+    // satellite ground (or to Google's mesh in Real 3D).
+    trees.filter((t) => onLot(t.x, t.y)).forEach((t) => {
       const mesh = buildExistingTree(t.radiusFt, t.heightFt);
       const [tx, tz] = [t.x - cx, -(t.y - cy)];
       const reach = Math.max(2, (t.radiusFt || 6) * 0.5);
