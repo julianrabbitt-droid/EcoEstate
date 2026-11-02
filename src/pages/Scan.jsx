@@ -16,6 +16,13 @@ import AddressAutocomplete from '@/components/scan/AddressAutocomplete';
 import { createProject } from '@/lib/projectStore';
 import { autoDesign, financials, money, num } from '@/lib/landscapeMath';
 import { useAutoScanAccess } from '@/hooks/useAutoScanAccess';
+// "920, Moreno Avenue, Palo Alto, Santa Clara County, …" -> "920 Moreno Avenue, Palo Alto".
+function shortAddress(label) {
+  const parts = String(label || '').split(',').map((p) => p.trim()).filter(Boolean);
+  if (/^\d+[a-z]?$/i.test(parts[0] || '') && parts[1]) parts.splice(0, 2, `${parts[0]} ${parts[1]}`);
+  return parts.slice(0, 2).join(', ');
+}
+
 const DEFAULT_CENTER = [37.4422168, -122.1189345]; // Greer Park, Palo Alto
 const NO_AREA = { lawnSqft: null, impact: null, updating: false, error: '' };
 const US_ONLY = {
@@ -97,7 +104,7 @@ export default function Scan() {
 
   const buildProject = async (over) =>
     createProject({
-      address: place?.label?.split(',').slice(0, 3).join(', ') || query.trim() || 'Your property',
+      address: shortAddress(place?.label) || query.trim() || 'Your property',
       zip: place?.zip || '',
       city: place?.city || '',
       state: place?.state || '',
@@ -501,10 +508,10 @@ export default function Scan() {
               property.
             </p>
             <a
-              href="mailto:julianrabbitt@gmail.com"
+              href="mailto:support@ecoestate.org"
               className="mt-4 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-[13px] font-medium text-primary-foreground transition hover:bg-primary/90"
             >
-              julianrabbitt@gmail.com
+              support@ecoestate.org
             </a>
           </div>
         </div>

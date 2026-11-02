@@ -40,6 +40,17 @@ export default function AppShell() {
               New scan
             </NavLink>
             <NavLink
+              to="/why-native"
+              className={({ isActive }) =>
+                cn(
+                  'shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 transition',
+                  isActive ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'
+                )
+              }
+            >
+              Why native
+            </NavLink>
+            <NavLink
               to="/projects"
               className={({ isActive }) =>
                 cn(

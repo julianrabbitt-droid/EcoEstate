@@ -82,11 +82,11 @@ export default function PlantHelp({ tracked, project, latestEntry }) {
           <p className="label-xs">1. Which plant?</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {choices.map((p) => (
-              <button key={p.id} type="button" onClick={() => setPlantId(p.id)} className={pill(plantId === p.id)}>
+              <button key={p.id} type="button" onClick={() => setPlantId(p.id)} aria-pressed={plantId === p.id} className={pill(plantId === p.id)}>
                 {p.common}
               </button>
             ))}
-            <button type="button" onClick={() => setPlantId(OTHER)} className={pill(plantId === OTHER)}>
+            <button type="button" onClick={() => setPlantId(OTHER)} aria-pressed={plantId === OTHER} className={pill(plantId === OTHER)}>
               Other plant
             </button>
           </div>
@@ -94,7 +94,7 @@ export default function PlantHelp({ tracked, project, latestEntry }) {
           <p className="label-xs mt-5">2. What do you see?</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {SYMPTOMS.map((s) => (
-              <button key={s.id} type="button" onClick={() => setSymptomId(s.id)} className={pill(symptomId === s.id)}>
+              <button key={s.id} type="button" onClick={() => setSymptomId(s.id)} aria-pressed={symptomId === s.id} className={pill(symptomId === s.id)}>
                 {s.label}
               </button>
             ))}

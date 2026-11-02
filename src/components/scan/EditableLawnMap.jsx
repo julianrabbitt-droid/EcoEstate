@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { Circle, MapContainer, Marker, Polygon, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -90,6 +90,7 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
   const [picking, setPicking] = useState(false);
   const [type, setType] = useState('lawn');
   const [placingTree, setPlacingTree] = useState(false);
+  const lastAdded = useRef(null); // { kind: 'tree', id } — what Undo takes back when nothing is selected
   const [trees, setTrees] = useState(
     () => (initialTrees || []).filter((t) => Array.isArray(t?.latLng)).map((t, i) => ({ id: `tseed${i}`, latLng: t.latLng, radiusFt: Math.max(2, Number(t.radiusFt) || 6), heightFt: t.heightFt ?? null })),
   );
@@ -151,6 +152,7 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
 
   const placeTree = (latlng) => {
     const id = newId();
+    lastAdded.current = { kind: 'tree', id };
     setTrees((prev) => [...prev, { id, latLng: latlng, radiusFt: 6 }]);
     setActiveTree(id);
     setActive(null);
@@ -175,13 +177,24 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
       setLot((prev) => (!prev || prev.length <= 1 ? null : prev.slice(0, -1)));
       return;
     }
-    if (!activeShape) return;
-    const np = activeShape.points.slice(0, -1);
+    // Nothing selected: undo the most recent change (the last tree placed, or
+    // the last corner of the last shape traced).
+    const recentTree = lastAdded.current?.kind === 'tree' && trees.some((t) => t.id === lastAdded.current.id);
+    if (!activeShape && recentTree) {
+      const treeId = lastAdded.current.id;
+      setTrees((prev) => prev.filter((t) => t.id !== treeId));
+      setActiveTree(null);
+      lastAdded.current = null;
+      return;
+    }
+    const target = activeShape || [...shapes].reverse().find((sh) => sh.points.length);
+    if (!target) return;
+    const np = target.points.slice(0, -1);
     if (np.length === 0) {
-      setShapes((prev) => prev.filter((s) => s.id !== active));
+      setShapes((prev) => prev.filter((s) => s.id !== target.id));
       setActive(null);
     } else {
-      setShapes((prev) => prev.map((s) => (s.id === active ? { ...s, points: np } : s)));
+      setShapes((prev) => prev.map((s) => (s.id === target.id ? { ...s, points: np } : s)));
     }
   };
 
@@ -245,7 +258,7 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
         <Button size="sm" variant={editingLot ? 'default' : 'outline'} onClick={toggleEditLot} className="rounded-full" disabled={picking || placingTree}>
           <PenLine className="mr-1.5 h-3.5 w-3.5" /> {editingLot ? 'Editing line…' : 'Edit property line'}
         </Button>
-        <Button size="sm" variant="ghost" onClick={undo} className="rounded-full text-muted-foreground" disabled={picking || placingTree || (editingLot ? !lot : !activeShape)}>
+        <Button size="sm" variant="ghost" onClick={undo} className="rounded-full text-muted-foreground" disabled={picking || placingTree || (editingLot ? !lot : !activeShape && !trees.length && !shapes.some((sh) => sh.points.length))}>
           <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Undo
         </Button>
         <Button size="sm" variant="ghost" onClick={removeActive} className="rounded-full text-muted-foreground" disabled={picking || placingTree || (editingLot ? !lot : (!activeShape && !activeTree))}>

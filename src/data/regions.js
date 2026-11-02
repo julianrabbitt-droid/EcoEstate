@@ -9,7 +9,7 @@ export const REGIONS = {
     name: 'California',
     ecoregion: 'California chaparral, oak woodland & coastal scrub',
     states: 'CA',
-    source: { label: 'Calscape — California Native Plant Society', url: 'https://calscape.cnps.org/' },
+    source: { label: 'Calscape — California Native Plant Society', url: 'https://calscape.org/' },
     defaultDesign: [
       { speciesId: 'purple-needlegrass', share: 0.18 },
       { speciesId: 'deer-grass', share: 0.12 },
@@ -42,7 +42,7 @@ export const REGIONS = {
     name: 'South-Central Plains',
     ecoregion: 'Texas hill country, gulf prairie & cross timbers',
     states: 'TX, OK, AR, LA',
-    source: { label: 'Lady Bird Johnson Wildflower Center — Texas natives', url: 'https://www.wildflower.org/collection/state:TX/' },
+    source: { label: 'Lady Bird Johnson Wildflower Center — Texas natives', url: 'https://www.wildflower.org/collections/' },
     defaultDesign: [
       { speciesId: 'gulf-muhly', share: 0.18 },
       { speciesId: 'little-bluestem', share: 0.16 },
@@ -230,7 +230,7 @@ export const REGIONS = {
     name: 'Northern Europe & Scandinavia',
     ecoregion: 'Boreal forest, subarctic meadow & coastal heath',
     states: 'Norway, Sweden, Denmark, Finland, Iceland, Estonia, Latvia, Lithuania',
-    source: { label: 'Nordic native flora — Natural History Museum', url: 'https://www.nhm.uio.no/english/research/collections/vascular-plants/' },
+    source: { label: 'Nordic native flora — Natural History Museum', url: 'https://www.nhm.uio.no/english/' },
     defaultDesign: [
       { speciesId: 'ling-heather', share: 0.18 },
       { speciesId: 'bilberry', share: 0.15 },

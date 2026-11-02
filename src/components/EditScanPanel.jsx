@@ -8,6 +8,16 @@ import { carryBuildingHeights } from '@/lib/gardenLayout';
 import { zoomForLotSize } from '@/lib/geo';
 import { num } from '@/lib/landscapeMath';
 
+// Same lawn outlines, to about a centimetre (the map re-emits the seeded shapes).
+function sameOutlines(a, b) {
+  const key = (rings) => JSON.stringify((rings || []).map((r) => r.map(([y, x]) => [y.toFixed(7), x.toFixed(7)])));
+  try {
+    return key(a) === key(b);
+  } catch {
+    return false;
+  }
+}
+
 // Lets a user reopen the drawing tool and re-trace the lawn even after the scan
 // is confirmed. Seeds the map with the project's existing lawn, building, tree
 // and lot outlines, then writes the new geometry back to the project.
@@ -28,12 +38,15 @@ export default function EditScanPanel({ project, onApplied }) {
   const apply = async () => {
     if (!canApply || saving) return;
     setSaving(true);
-    // Overlapping or touching lawns are saved as one group (one shared mulch bed).
-    const merged = await mergeLawnOutlines(result.boundary);
-    const turf = merged ? Math.round(merged.lawnSqft) : newTurf;
+    // Unchanged lawns keep the scan's measurement (re-measuring a simplified
+    // outline would shift it even though nothing was edited). Edited lawns:
+    // overlapping or touching ones are saved as one group (one shared mulch bed).
+    const sameLawns = sameOutlines(result.boundary, project.boundary);
+    const merged = sameLawns ? null : await mergeLawnOutlines(result.boundary);
+    const turf = sameLawns ? Math.round(project.breakdown?.turf || newTurf) : merged ? Math.round(merged.lawnSqft) : newTurf;
     const next = await updateProject(project.id, {
       center: result.center || center,
-      boundary: merged?.outlines || result.boundary || [],
+      boundary: sameLawns ? project.boundary : merged?.outlines || result.boundary || [],
       features: result.features || [],
       buildings: result.buildings || [],
       buildingHeightsFt: carryBuildingHeights(result.buildings, project.buildings, project.buildingHeightsFt),
