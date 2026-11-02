@@ -26,7 +26,7 @@ export const SETTINGS = {
   // isn't lawn, a roof, a tree or a pool, in patches at least this big.
   paveNdviMax: 0.2, // concrete reads a little green in some surveys; lawn and shrubs are excluded already
   paveMinBrightness: 60, // darker is deep shadow, not pavement
-  paveOpenM: 0.9, // specks and thin seams narrower than about twice this are dropped
+  paveOpenM: 0.6, // specks and seams narrower than about twice this (1.2 m) are dropped; side walks are wider
   paveMinSqft: 80,
   ndviMin: 0.2, // NDVI at or above this counts as green (healthy turf is usually 0.3+)
   // Aerial photos are flown mid-morning to early afternoon, never with the sun
