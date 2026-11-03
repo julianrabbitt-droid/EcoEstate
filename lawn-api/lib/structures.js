@@ -114,7 +114,7 @@ export function describeBuildings(buildings, labels, canopy, naip = null, lidarR
       return {
         type: 'Feature',
         geometry: b.geometry,
-        properties: { id: b.id, heightFt: Math.round(heightM * M_TO_FT), heightSource: source, areaSqft: Math.round(b.areaM2 * SQM_TO_SQFT), ...look(roofs[i]), ...mapped },
+        properties: { id: b.id, heightFt: Math.round(heightM * M_TO_FT), heightSource: source, areaSqft: Math.round(b.areaM2 * SQM_TO_SQFT), ...(b.completed ? { completed: true } : {}), ...look(roofs[i]), ...mapped },
       };
     }),
   };

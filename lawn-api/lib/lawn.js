@@ -162,22 +162,47 @@ function majority(mask, w, h) {
 
 const ringAreaSqft = (ring) => turfArea({ type: 'Polygon', coordinates: [ring] }) * SQM_TO_SQFT;
 // Mapped footprints often miss what was added to a house: a rear addition, an
-// attached garage, a covered patio. Where the survey classes buildings, the
-// building returns just beside a footprint (on the parcel, not on another
-// building, at least FOOTPRINT_ADD_MIN_M2) are added to it, so the model has
-// the house's whole shape. Changes `buildings` in place (geometry, areaM2).
+// attached garage, a covered patio. The building returns just beside a
+// footprint (on the parcel, not on another building, at least
+// FOOTPRINT_ADD_MIN_M2) are added to it, so the model has the house's whole
+// shape. Changes `buildings` in place (geometry, areaM2).
+// Many surveys (Los Angeles 2023, San Diego and Orange 2019, SLO 2018, King
+// County 2021) class nothing but the ground: there a building return is a
+// solid one (the pulse's only return; leaves split it, on 8 checked homes
+// 79-96% of roof pulses came back whole and 26-56% of tree pulses) at least
+// FOOTPRINT_ADD_MIN_HEIGHT_M up, where the photo shows nothing green.
 const FOOTPRINT_ADD_MIN_M2 = 11; // ~120 sq ft
-function completeFootprints(grid, buildings, nearby, parcel, pts) {
-  if (!buildings.length || !pts.cls.some((c) => c === LIDAR_CLASS.building)) return;
+const FOOTPRINT_ADD_MIN_HEIGHT_M = 2.5;
+const SOLID_SHARE = 0.75; // of a cell's tall returns, whole pulses
+function completeFootprints(grid, buildings, nearby, parcel, pts, naip) {
+  if (!buildings.length) return;
   const { w, h, res } = grid;
   const n = w * h;
+  const classed = pts.cls.some((c) => c === LIDAR_CLASS.building);
+  const ground = classed ? null : lidarHeights(grid, pts).ground;
   const seen = new Uint8Array(n);
+  const tall = classed ? null : new Uint16Array(n);
+  const whole = classed ? null : new Uint16Array(n);
   for (let k = 0; k < pts.count; k++) {
-    if (pts.cls[k] !== LIDAR_CLASS.building) continue;
+    if (pts.cls[k] !== (classed ? LIDAR_CLASS.building : 1)) continue;
     const [X, Y] = grid.fromLonLat([pts.x[k], pts.y[k]]);
     const i = Math.floor((X - grid.x0) / res);
     const j = Math.floor((grid.y0 - Y) / res);
-    if (i >= 0 && j >= 0 && i < w && j < h) seen[j * w + i] = 1;
+    if (i < 0 || j < 0 || i >= w || j >= h) continue;
+    const c = j * w + i;
+    if (classed) seen[c] = 1;
+    else if (pts.z[k] - ground[c] >= FOOTPRINT_ADD_MIN_HEIGHT_M) {
+      tall[c]++;
+      if (pts.nret[k] === 1) whole[c]++;
+    }
+  }
+  if (!classed) {
+    for (let c = 0; c < n; c++) {
+      const r = naip.red[c];
+      const nir = naip.nir[c];
+      const leafy = naip.filled[c] && r + nir && (nir - r) / (nir + r) >= SETTINGS.ndviMin;
+      seen[c] = tall[c] >= 2 && whole[c] >= SOLID_SHARE * tall[c] && !leafy ? 1 : 0;
+    }
   }
   const built = erode(dilate(seen, w, h, 1), w, h, 1); // close the gaps between returns
   const ownIds = new Set(buildings.map((b) => b.id));
@@ -667,7 +692,7 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   // Buildings on the parcel first (their labels are used for roof heights),
   // then neighbours whose roofs overhang it.
   const ownBuildings = buildingsOnParcel(nearbyBuildings, parcelGeometry);
-  if (buildingLidar) completeFootprints(grid, ownBuildings, nearbyBuildings, parcel, buildingLidar);
+  if (buildingLidar) completeFootprints(grid, ownBuildings, nearbyBuildings, parcel, buildingLidar, naip);
   // A survey from before the house was built saw bare, graded ground where it
   // stands, and a yard that's gone too: the photo decides the yard then.
   if (lidar && ownBuildings.length && surveyPredates(ownBuildings[0], lidar)) lidar = null;
