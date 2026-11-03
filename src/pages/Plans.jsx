@@ -31,7 +31,7 @@ const FEATURES = [
   {
     group: 'Design it',
     rows: [
-      ['Real 3D: your real house from Google 3D, with your garden around it', PAID],
+      ['Real 3D: your property in its real neighborhood from Google 3D, with photo-scanned plants', PAID],
       ['Design from a sentence ("drought-tolerant pollinator hedge")', PAID],
       ['Saved properties', { student: 'Latest 10', pro: 'Unlimited', city: 'Unlimited' }],
       ['Export the plan: printable PDF and shopping list', RESIDENTS],
@@ -42,6 +42,8 @@ const FEATURES = [
     rows: [
       ['Track your project as it grows, with plant care and problem help', PAID],
       ['Community: share your garden, comment, message, projects on the map', PAID],
+      ['Host a community install: volunteers sign up to help plant your garden', PAID],
+      ['Join community installs near you and keep a record of your volunteer hours', ALL],
       ['Priority support and early access to new features', RESIDENTS],
     ],
   },

@@ -19,6 +19,7 @@ import { autoDesign, financials, money } from '@/lib/landscapeMath';
 import { useAutoScanAccess } from '@/hooks/useAutoScanAccess';
 import { usePageMeta } from '@/hooks/usePageMeta';
 import { smoothNavigate } from '@/lib/smoothNavigate';
+import NearbyInstalls from '@/components/NearbyInstalls';
 // "920, Moreno Avenue, Palo Alto, Santa Clara County, …" -> "920 Moreno Avenue, Palo Alto".
 function shortAddress(label) {
   const parts = String(label || '').split(',').map((p) => p.trim()).filter(Boolean);
@@ -897,6 +898,23 @@ export default function Scan() {
               </li>
             ))}
           </ol>
+        </div>
+      </section>
+
+      {/* Planting days other people are hosting: one click from the front page. */}
+      <section className="border-t border-border/70 py-14">
+        <div className="mx-auto w-full max-w-6xl px-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="label-xs">Community installs · free to join</p>
+              <h2 className="mt-1.5 font-display text-[2rem] leading-tight tracking-tight">No lawn of your own? <em className="italic text-primary">Plant someone else’s.</em></h2>
+              <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-muted-foreground">
+                Join a neighbor’s planting day: confirmed service hours for school, real planting skills, and a garden full of habitat at the end of it.
+              </p>
+            </div>
+            <Link to="/installs" className="text-[14px] font-medium underline underline-offset-4">All planting days</Link>
+          </div>
+          <NearbyInstalls near={Array.isArray(center) && center !== DEFAULT_CENTER ? center : null} className="mt-6" />
         </div>
       </section>
 

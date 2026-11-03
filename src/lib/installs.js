@@ -38,3 +38,33 @@ export function installWhen(i, { long = false } = {}) {
 
 // Jobs a planting day usually has, offered when hosting one.
 export const INSTALL_TASKS = ['Removing turf', 'Sheet mulching', 'Spreading mulch', 'Laying drip line', 'Planting', 'Watering in', 'Hauling and cleanup'];
+
+// Miles between two [lat, lon] points (great circle).
+export function milesBetween(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return null;
+  const rad = Math.PI / 180;
+  const [dLat, dLon] = [(b[0] - a[0]) * rad, (b[1] - a[1]) * rad];
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dLon / 2) ** 2;
+  return 3958.8 * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+// Installs sorted nearest first from a [lat, lon] point (each with `miles`),
+// soonest first when there's no point or no location for an install.
+export function byDistance(installs, from) {
+  return (installs || [])
+    .map((i) => ({ ...i, miles: from && i.mapPoint ? milesBetween(from, i.mapPoint) : null }))
+    .sort((x, y) => (x.miles ?? Infinity) - (y.miles ?? Infinity) || String(x.date).localeCompare(String(y.date)));
+}
+
+// What a planting day does for the planet: the lawn it converts saves about
+// this many gallons a year (turf at 46 gal/sq ft, natives at 13.5).
+export const gallonsSavedPerYear = (lawnSqft) => Math.round((Number(lawnSqft) || 0) * 32.5);
+
+// Volunteer milestones, by confirmed hours.
+export const VOLUNTEER_MILESTONES = [
+  { hours: 4, name: 'First planting', note: 'Your first confirmed planting day' },
+  { hours: 10, name: 'Seedling', note: '10 hours: a regular in the garden' },
+  { hours: 25, name: 'Sapling', note: '25 hours: enough to lead a crew' },
+  { hours: 50, name: 'Valley oak', note: '50 hours: a pillar of local habitat' },
+  { hours: 100, name: 'Coast redwood', note: '100 hours: a year of service' },
+];

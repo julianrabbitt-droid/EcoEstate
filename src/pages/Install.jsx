@@ -7,6 +7,17 @@ import CityStamp from '@/components/CityStamp';
 import { useAuth } from '@/lib/AuthContext';
 import { getInstall, helpersOf, installAction, installWhen, mySignups, spotsLeft } from '@/lib/installs';
 
+// What helping gives you, at a glance beside the sign-up.
+function VolunteerGains() {
+  return (
+    <ul className="mt-2.5 flex flex-wrap gap-1.5 text-[11.5px]">
+      {['Confirmed service hours', 'Printable record for school and applications', 'Hands-on planting skills', 'A host who can vouch for you'].map((t) => (
+        <li key={t} className="rounded-full bg-primary/10 px-2.5 py-1 text-primary">{t}</li>
+      ))}
+    </ul>
+  );
+}
+
 const STATUS = { open: 'Taking helpers', full: 'Full', done: 'Planted', cancelled: 'Called off' };
 const todayLocal = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60e3).toISOString().slice(0, 10);
 
@@ -200,12 +211,14 @@ export default function Install() {
               ) : !isAuthenticated ? (
                 <>
                   <p className="text-[15px] font-medium">Help on the day</p>
-                  <p className="mt-1 text-[12.5px] text-muted-foreground">{left} spot{left === 1 ? '' : 's'} left. Sign in to sign up and get your hours confirmed.</p>
+                  <p className="mt-1 text-[12.5px] text-muted-foreground">{left} spot{left === 1 ? '' : 's'} left. Free to join: sign in to sign up and get your hours confirmed.</p>
+                  <VolunteerGains />
                   <Button onClick={navigateToLogin} className="mt-3 rounded-full">Sign in to sign up</Button>
                 </>
               ) : (
                 <form onSubmit={join} className="space-y-3">
-                  <p className="text-[15px] font-medium">Help on the day <span className="text-[12.5px] font-normal text-muted-foreground">· {left} spot{left === 1 ? '' : 's'} left</span></p>
+                  <p className="text-[15px] font-medium">Help on the day <span className="text-[12.5px] font-normal text-muted-foreground">· {left} spot{left === 1 ? '' : 's'} left · free</span></p>
+                  <VolunteerGains />
                   <div>
                     <label className={label} htmlFor="j-name">Your name</label>
                     <input id="j-name" className="field" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} maxLength={80} required />

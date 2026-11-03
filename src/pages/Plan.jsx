@@ -4,6 +4,8 @@ import { useProject } from '@/hooks/useProjects';
 import { ArrowRight, Box, CalendarDays, ClipboardCheck, Hammer, HandHeart, LayoutGrid, Printer, ShoppingBasket, Users } from 'lucide-react';
 import { StageAside, StageOverlay, StageTitle, useStage, useStagePanels, useWide } from '@/components/ProjectStage';
 import HostInstallForm from '@/components/HostInstallForm';
+import NearbyInstalls from '@/components/NearbyInstalls';
+import { usePremiumAccess } from '@/hooks/usePremiumAccess';
 import { useAuth } from '@/lib/AuthContext';
 import { base44 } from '@/api/base44Client';
 import { installWhen, spotsLeft } from '@/lib/installs';
@@ -49,6 +51,7 @@ export default function Plan() {
   );
   // This property's community install, if its owner is hosting one.
   const [install, setInstall] = useState(undefined);
+  const { member } = usePremiumAccess(); // hosting a new install is part of Pro; joining is free
   const [hostForm, setHostForm] = useState(false);
   useEffect(() => {
     if (!user?.id || !project) return;
@@ -370,6 +373,13 @@ export default function Plan() {
         </div>
         {!isAuthenticated ? (
           <Button onClick={navigateToLogin} className="mt-4 rounded-full">Sign in to host</Button>
+        ) : !member && !hostForm && (!install || install.status === 'cancelled' || install.status === 'done') ? (
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-border/70 bg-card/80 p-4">
+            <p className="max-w-md text-[12.5px] text-muted-foreground">
+              Hosting a planting day is part of <span className="font-medium text-foreground">Pro</span>, free for students with a school email. Joining someone else’s is always free.
+            </p>
+            <Button asChild className="rounded-full"><Link to="/plans"><HandHeart className="mr-1.5 h-4 w-4" />Host with Pro</Link></Button>
+          </div>
         ) : hostForm || (!install || install.status === 'cancelled' || install.status === 'done') ? (
           hostForm ? (
             <div className="surface mt-5 bg-card/85 p-5">
@@ -384,9 +394,13 @@ export default function Plan() {
             <Button onClick={() => setHostForm(true)} className="mt-4 rounded-full"><HandHeart className="mr-1.5 h-4 w-4" />Host a community install</Button>
           )
         ) : null}
-        <p className="mt-4 text-[12px] text-muted-foreground">
-          Want to help at someone else’s? <Link to="/installs" className="underline underline-offset-2">See planting days near you</Link>.
-        </p>
+        <div className="mt-6 border-t border-primary/15 pt-4">
+          <p className="flex flex-wrap items-baseline justify-between gap-2 text-[12.5px]">
+            <span className="font-medium">Or help at a planting day near you, free</span>
+            <Link to="/installs" className="text-muted-foreground underline underline-offset-2">See them all</Link>
+          </p>
+          <NearbyInstalls near={Array.isArray(project?.center) ? project.center : null} exclude={install?.id} className="mt-2.5" />
+        </div>
       </section>
 
       <section className="mt-8 surface p-5">

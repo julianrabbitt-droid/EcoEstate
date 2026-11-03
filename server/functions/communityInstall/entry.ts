@@ -1,10 +1,13 @@
 import { createClientFromRequest } from '../../sdk.js';
 import { sendEmail } from '../../email.js';
 import { APP_URL } from '../../config.js';
+import { hasPremiumFeatures } from '../../shared/entitlements.ts';
 
 // Community installs: a homeowner hosts a planting day for their lawn
 // conversion and people sign up to help, for the experience, the environment
-// and volunteer hours the host confirms afterwards. Everything that changes an
+// and volunteer hours the host confirms afterwards. Posting a new one is part
+// of Pro (or the free student unlock); joining, messaging and logging hours
+// are free for everyone, and a host keeps running a day already posted. Everything that changes an
 // install's sign-ups goes through here, so the counts stay right and nobody
 // sees an address or email they shouldn't:
 //   start   { projectId, title, date, startTime, hours, spots, ... } host: create, or update their open one
@@ -102,6 +105,9 @@ export default async function (req) {
       };
       const { items } = await db.CommunityInstall.filter({ projectId, created_by_id: user.id }, { limit: 20 });
       const current = (items || []).find((i) => i.status === 'open' || i.status === 'full');
+      if (!current && !(await hasPremiumFeatures(base44, user.id))) {
+        return fail(402, 'Hosting a community install is part of Pro (free for students with a school email). Joining one is free.');
+      }
       if (current) {
         const moved = current.date !== data.date || current.startTime !== data.startTime;
         const status = (current.joined || 0) >= data.spots ? 'full' : 'open';
