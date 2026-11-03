@@ -19,6 +19,7 @@ import { autoDesign, financials, money } from '@/lib/landscapeMath';
 import { useAutoScanAccess } from '@/hooks/useAutoScanAccess';
 import { usePageMeta } from '@/hooks/usePageMeta';
 import { smoothNavigate } from '@/lib/smoothNavigate';
+import { loginPath } from '@/lib/authReturnTo';
 import { projectFromScan, scannedStructures } from '@/lib/scanProject';
 import NearbyInstalls from '@/components/NearbyInstalls';
 // "920, Moreno Avenue, Palo Alto, Santa Clara County, …" -> "920 Moreno Avenue, Palo Alto".
@@ -630,13 +631,19 @@ export default function Scan() {
               Your lawn could be <em>doing more.</em>
             </h1>
             <p className="mx-auto mt-5 max-w-xl text-[16.5px] leading-relaxed text-white/90 drop-shadow">
+              <span className="font-medium text-white">Native plants grew where you live long before lawns did.</span> They feed the
+              local bees, butterflies and birds, and once settled need a fraction of the water grass does.
+            </p>
+            <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-white/85 drop-shadow">
               Enter your address. We find your lawn from above, design a native garden for it in 3D, and show what it
               would save in water and money.
             </p>
             <div className="mt-8 w-full max-w-xl text-left text-foreground">{addressForm(true)}</div>
             {note && <p className="mx-auto mt-3 max-w-xl text-[13px] text-white/90">{note}</p>}
             <p className="mx-auto mt-4 max-w-xl text-[13px] leading-relaxed text-white/80">
-              Free with an account.{' '}
+              Free to try, no account needed.{' '}
+              <Link to={loginPath()} className="font-medium text-white underline underline-offset-4">Sign in</Link> any time to keep
+              and track your properties.{' '}
               <button type="button" onClick={() => setPhase('manual')} className="font-medium text-white underline underline-offset-4">
                 Outline it by hand
               </button>
@@ -931,7 +938,8 @@ export default function Scan() {
           </Button>
         </div>
         <p className="mx-auto mt-12 w-full max-w-6xl px-5 text-[13px] leading-relaxed text-muted-foreground">
-          Scanning, design and the 3D model are free with an account. Pro ($10/month) adds Real 3D, design from a
+          Scanning, design and the 3D model are free, no account needed; a free account keeps your properties on
+          every device. Pro ($10/month) adds Real 3D, design from a
           sentence, project tracking, exports and the community; students and educators get all of it except exports
           free with a school email.{' '}
           <Link to="/plans" className="text-foreground underline underline-offset-4">Compare plans</Link>. Questions?{' '}

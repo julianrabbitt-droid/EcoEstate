@@ -33,7 +33,8 @@ function initials(name = '') {
   return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase();
 }
 
-export default function AccountMenu() {
+// overlay: the header sits over the home page's aerial photo (light text).
+export default function AccountMenu({ overlay = false }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, isAuthenticated } = useAuth();
@@ -86,7 +87,12 @@ export default function AccountMenu() {
 
   if (!isAuthenticated) {
     return (
-      <Button variant="outline" onClick={() => navigate(loginPath(location))} className="h-9 rounded-full px-4 text-[13px]">
+      <Button
+        variant="outline"
+        onClick={() => navigate(loginPath(location))}
+        title="Sign in to keep and track your properties"
+        className={`h-9 rounded-full px-4 text-[13px] ${overlay ? 'border-white/60 bg-white/10 text-white backdrop-blur hover:bg-white/20 hover:text-white' : ''}`}
+      >
         <LogIn className="mr-1.5 h-4 w-4" /> Sign in
       </Button>
     );

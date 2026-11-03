@@ -4,7 +4,6 @@ import { smoothLinkClick } from '@/lib/smoothNavigate';
 import { Loader2, Sprout } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import AccountMenu from '@/components/AccountMenu';
-import AuthModal from '@/components/AuthModal';
 import CookieNotice from '@/components/CookieNotice';
 import FeedbackButton, { openFeedback } from '@/components/FeedbackButton';
 import ErrorBoundary from '@/components/ErrorBoundary';
@@ -123,7 +122,7 @@ export default function AppShell() {
             ))}
           </nav>
           <div className="order-2 md:order-3">
-            <AccountMenu />
+            <AccountMenu overlay={overlay} />
           </div>
         </div>
       </header>
@@ -146,7 +145,6 @@ export default function AppShell() {
         </Suspense>
       </main>
 
-      <AuthModal />
       <FeedbackButton />
 
       <footer className="relative border-t border-border/70 bg-background py-8">

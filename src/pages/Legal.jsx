@@ -252,7 +252,7 @@ const COOKIES = [
       <><code>understory.projects.v1</code>: scans you make as a guest, so they aren’t lost before you sign in.</>,
       <><code>ecoestate_ref</code>: a friend’s referral code you arrived with, so the discount applies at checkout.</>,
       <><code>ecoestate_session_id</code> (this tab only): a random id sent with requests so we can see what each visit costs us in map and address lookups and stop abuse. It isn’t linked to other sites and disappears when you close the tab.</>,
-      <><code>ecoestate_premium_pending</code>, <code>ecoestate_auth_prompt_dismissed</code>, <code>ecoestate_minimap_size</code>, <code>ecoestate_cookie_notice</code>: small settings, like whether you closed a prompt or this notice.</>,
+      <><code>ecoestate_premium_pending</code>, <code>ecoestate_minimap_size</code>, <code>ecoestate_cookie_notice</code>: small settings, like whether you closed a prompt or this notice.</>,
     ],
   },
   {
