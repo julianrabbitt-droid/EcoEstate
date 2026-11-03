@@ -17,6 +17,7 @@ import { osmLawnShapes, PATH_WIDTH_M } from './osmLawns.js';
 import { dilate, distanceTo, erode, labelRegions, localStats } from './raster.js';
 import { regionShape } from './shapes.js';
 import { separateLayers } from './layers.js';
+import { blank, png } from '../scripts/render.mjs';
 import { buildingsOnParcel, describeBuildings, describeNearbyRoads, describePaths, detectTrees, NEARBY } from './structures.js';
 
 const SQM_TO_SQFT = 10.7639;
@@ -813,6 +814,19 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
       .filter((f) => f.properties.areaSqft >= SETTINGS.paveMinSqft),
   };
 
+  // The aerial photo of the property, so the 3D model's ground looks like the
+  // real yard: a small PNG of the grid (public-domain NAIP) and its corners.
+  let groundImage = null;
+  try {
+    const img = blank(w, h);
+    for (let k = 0; k < n; k++) img.rgb.set([naip.red[k], naip.green[k], naip.blue[k]], k * 3);
+    const [west, north] = grid.toLonLat([grid.x0, grid.y0]);
+    const [east, south] = grid.toLonLat([grid.x0 + w * grid.res, grid.y0 - h * grid.res]);
+    if (w * h <= 250000) groundImage = { png: png(img).toString('base64'), west, south, east, north };
+  } catch (err) {
+    console.warn(`ground image skipped: ${err.message}`);
+  }
+
   const onParcelNotRoof = Uint8Array.from(parcel, (v, k) => (v && !roofLabels[k] ? 1 : 0));
   const nearbyRoads = describeNearbyRoads(mappedPaths, parcelGeometry);
   const fences = measured ? findFences(grid, parcelGeometry, measured, nearbyRoads) : { type: 'FeatureCollection', features: [] };
@@ -837,6 +851,7 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     paths: layers.paths,
     paved,
     fences,
+    groundImage,
     nearbyRoads,
   };
   if (debug) result.debug = { grid, naip, canopy, ndvi, parcel, green, trees, rough, roofs: roofLabels, measured, newerTurf, underCanopy, tall, grassInt, prevNaip, usable };

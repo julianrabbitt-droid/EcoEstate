@@ -105,7 +105,9 @@ function scannedStructures(d) {
     .filter((p) => p.polygonLatLng);
   // Fences on the lot lines (from lidar), as [lat, lng] lines.
   const fences = (d?.fences?.features || []).map((f) => f.geometry.coordinates.map(([lon, lat]) => [lat, lon]));
-  return { buildings, buildingHeightsFt, buildingRoofs, trees, paths, fences };
+  // The yard from above (public-domain NAIP), for the model's ground.
+  const groundImage = d?.groundImage ? { url: `data:image/png;base64,${d.groundImage.png}`, west: d.groundImage.west, south: d.groundImage.south, east: d.groundImage.east, north: d.groundImage.north } : null;
+  return { buildings, buildingHeightsFt, buildingRoofs, trees, paths, fences, groundImage };
 }
 
 const STEPS = [

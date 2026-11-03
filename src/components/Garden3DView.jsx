@@ -261,19 +261,29 @@ function lawnTag(lines, maxDim) {
   return sprite;
 }
 
-// Lawn as it is today (the scan check shows it before anything is designed):
-// mown turf, short blade strokes in a few greens.
+// Lawn as it is today (the scan check, and "Today's lawn" next to the native
+// garden): thirsty California turf, patchy and browning in places, so the
+// before is honestly worse than the after.
 let _turf;
 function turfTexture() {
   if (_turf) return _turf;
   _turf = canvasTexture(256, (ctx, s) => {
-    ctx.fillStyle = '#5f8f3e';
+    ctx.fillStyle = '#7a8a4a';
     ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 14; i++) {
+      // dry patches
+      const [px, py] = [Math.random() * s, Math.random() * s];
+      const g = ctx.createRadialGradient(px, py, 2, px, py, 18 + Math.random() * 30);
+      g.addColorStop(0, 'rgba(176,156,98,0.75)');
+      g.addColorStop(1, 'rgba(176,156,98,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, s, s);
+    }
     ctx.lineWidth = 1.2;
     for (let i = 0; i < 5000; i++) {
       const x = Math.random() * s, y = Math.random() * s;
       const shade = Math.random();
-      ctx.strokeStyle = shade > 0.66 ? '#79a852' : shade < 0.33 ? '#4b7731' : '#628f41';
+      ctx.strokeStyle = shade > 0.7 ? '#9a9a5c' : shade < 0.3 ? '#5c7334' : '#76884a';
       ctx.beginPath();
       ctx.moveTo(x, y);
       ctx.lineTo(x + (Math.random() - 0.5) * 2, y - 2 - Math.random() * 3);
@@ -602,6 +612,43 @@ function drapedGround(outline, holes, at, texture, circles = [], skirt = false, 
   const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
     map: texture, alphaMap: alpha, alphaTest: 0.5, color: 0xa39a8a, vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide,
   }));
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+// The real yard from above (the scan's aerial photo), draped on the terrain
+// and trimmed to the lot, with the planned beds left out. corners: scene
+// [x0 (west), z0 (north), x1 (east), z1 (south)].
+function photoGround(url, [x0, z0, x1, z1], at, lotPts, holes) {
+  const segs = Math.min(64, Math.max(8, Math.round(Math.max(x1 - x0, z1 - z0) / 4)));
+  const geo = new THREE.PlaneGeometry(x1 - x0, z1 - z0, segs, segs);
+  const tex = new THREE.TextureLoader().load(url);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  const W = 512;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = W;
+  const ctx = c.getContext('2d');
+  const trace = (pts) => {
+    ctx.beginPath();
+    pts.forEach(([x, z], i) => {
+      const px = ((x - x0) / (x1 - x0)) * W;
+      const py = ((z - z0) / (z1 - z0)) * W;
+      if (i) ctx.lineTo(px, py);
+      else ctx.moveTo(px, py);
+    });
+    ctx.closePath();
+  };
+  ctx.fillStyle = '#fff';
+  trace(lotPts);
+  ctx.fill();
+  ctx.fillStyle = '#000';
+  holes.forEach((h) => { trace(h); ctx.fill(); });
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, alphaMap: new THREE.CanvasTexture(c), alphaTest: 0.5, roughness: 1, metalness: 0 }));
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set((x0 + x1) / 2, 0.02, (z0 + z1) / 2);
+  drape(mesh, at);
   mesh.receiveShadow = true;
   return mesh;
 }
@@ -987,6 +1034,9 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const shiftKey = viewShift ? viewShift.join(',') : '';
   useEffect(() => { threeRef.current?.applyShift?.(); }, [shiftKey]);
   const checking = mode === 'check';
+  // Before and after: today's lawn (the beds as turf, no plants) or the native garden.
+  const [before, setBefore] = useState(false);
+  const showLawn = checking || before;
   const wildlifeRef = useRef(null); // { group, counts, update } while the garden has visitors
   const [visitors, setVisitors] = useState(null);
   const onReadyRef = useRef(onReady);
@@ -1930,6 +1980,16 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       ground.userData.ground = true;
       ground.userData.lotGround = true; // Real 3D shows Google's real yard instead
       scene.add(ground);
+      // Over it, the yard as it really looks from above, when the scan brought the photo.
+      const gi = project?.groundImage;
+      if (gi?.url && origin) {
+        const sx = (lng) => (lng - origin.minLng) * 364000 * origin.cosLat - cx;
+        const sz = (lat) => -((lat - origin.minLat) * 364000 - cy);
+        const yard = photoGround(gi.url, [sx(gi.west), sz(gi.north), sx(gi.east), sz(gi.south)], at, outerPoly.map((p) => [p[0] - cx, -(p[1] - cy)]), polys.filter((q) => q && q.length >= 3).map((q) => q.map((p) => [p[0] - cx, -(p[1] - cy)])));
+        yard.userData.ground = true;
+        yard.userData.lotGround = true;
+        scene.add(yard);
+      }
       const gpts = outerPoly.map((p) => new THREE.Vector3(p[0] - cx, at(p[0] - cx, -(p[1] - cy)) + 0.65, -(p[1] - cy)));
       // The property line: white dashes over a dark halo, drawn over everything
       // (like a selection outline) so trees, fences and roofs never hide it.
@@ -2033,15 +2093,15 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         else shape.lineTo(x, y);
       });
       const span = Math.max(boundsAll.maxX - boundsAll.minX, boundsAll.maxY - boundsAll.minY, 10);
-      const mulch = checking ? turfTexture() : mulchTexture();
-      if (checking) mulch.repeat.set(1 / 4, 1 / 4); // shape UVs are in feet: one patch per 4 ft
+      const mulch = showLawn ? turfTexture() : mulchTexture();
+      if (showLawn) mulch.repeat.set(1 / 4, 1 / 4); // shape UVs are in feet: one patch per 4 ft
       else mulch.repeat.set(span / 4, span / 4);
       // Mulch is a flat 2D area lifted just above the ground (MULCH_Y) so it reads as
       // a layer on top of the property base, not a raised mound.
       const bed = new THREE.Mesh(
         new THREE.ShapeGeometry(shape),
         // Photographed wood-chip mulch (CC0, Poly Haven); shape UVs are in feet.
-        checking
+        showLawn
           ? new THREE.MeshStandardMaterial({ map: mulch, roughness: 1, metalness: 0, side: THREE.DoubleSide })
           : new THREE.MeshStandardMaterial({ map: photo('aerial_wood_snips', 'diffuse'), normalMap: photo('aerial_wood_snips', 'nor_gl'), color: 0xc9b8a6, roughness: 1, metalness: 0, side: THREE.DoubleSide }),
       );
@@ -2265,7 +2325,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     const moved = movedRef.current.map;
     const nth = new Map();
     const detail = plantDetailFor(layout.length);
-    layout.forEach((p, i) => {
+    (showLawn ? [] : layout).forEach((p, i) => {
       const mesh = buildPlant(p.plant, mature, detail, { spacing: p.spacing });
       const k = nth.get(p.speciesId) || 0;
       nth.set(p.speciesId, k + 1);
@@ -2298,7 +2358,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // Native wildlife the planting feeds, more of it as the biodiversity score
     // rises (see wildlife.js); only for the grown garden.
     wildlifeRef.current = null;
-    if (!checking && mature && layout.length) {
+    if (!showLawn && mature && layout.length) {
       const spots = layout.map((p) => ({ x: p.x - cx, z: -(p.y - cy), top: Math.max(0.8, p.plant.h || 1), wildlife: p.plant.wildlife || [] }));
       const wl = createWildlife(spots, environmental(project, entries).after, at);
       wl.group.userData.bed = true; // cleared with the planting on the next rebuild
@@ -2315,7 +2375,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       requestAnimationFrame(() => requestAnimationFrame(() => done()));
       if (fillRef.current) setTimeout(() => focusOnRef.current?.(-1), 900); // tilt down into 3D
     }
-  }, [layout, polys, pattern, lot, buildings, trees, paths, fences, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries]);
+  }, [layout, polys, pattern, lot, buildings, trees, paths, fences, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, showLawn, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries]);
 
   useEffect(() => {
     moveModeRef.current = moveMode;
@@ -2614,17 +2674,20 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   return (
     <div className={fill ? 'absolute inset-0' : ''}>
       <div className={fill ? 'absolute bottom-5 left-4 z-20 flex flex-wrap items-center gap-2 sm:left-6' : 'flex flex-wrap items-center justify-between gap-3'}>
-        <div className={`inline-flex rounded-full border border-border p-0.5 ${checking ? 'hidden' : ''}`}>
-          {[{ v: true, l: 'At maturity' }, { v: false, l: 'Newly planted' }].map((o) => (
-            <button
-              key={o.l}
-              type="button"
-              onClick={() => setMature(o.v)}
-              className={`rounded-full px-3 py-1.5 text-[11.5px] transition ${mature === o.v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              {o.l}
-            </button>
-          ))}
+        <div className={`inline-flex rounded-full border border-border bg-card/90 p-0.5 backdrop-blur ${checking ? 'hidden' : ''}`}>
+          {[{ k: 'before', l: 'Today’s lawn' }, { k: 'new', l: 'Newly planted' }, { k: 'mature', l: 'Native garden, grown' }].map((o) => {
+            const on = o.k === 'before' ? before : !before && (o.k === 'mature') === mature;
+            return (
+              <button
+                key={o.k}
+                type="button"
+                onClick={() => { setBefore(o.k === 'before'); if (o.k !== 'before') setMature(o.k === 'mature'); }}
+                className={`rounded-full px-3 py-1.5 text-[11.5px] transition ${on ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {o.l}
+              </button>
+            );
+          })}
         </div>
         <div className="flex flex-wrap gap-2">
           {GOOGLE_TILES_KEY && origin && (
