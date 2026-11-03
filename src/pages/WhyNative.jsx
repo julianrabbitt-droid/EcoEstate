@@ -117,7 +117,7 @@ export default function WhyNative() {
         <p className="mt-2 text-[13px] text-muted-foreground">Trusted regional guides we use for EcoEstate’s plant lists:</p>
         <ul className="mt-3 grid gap-2 sm:grid-cols-2">
           {regionSources.map((r) => (
-            <li key={r.url}>
+            <li key={`${r.url}|${r.title || r.name || r.label || ""}`}>
               <a href={r.url} target="_blank" rel="noreferrer" className="group block rounded-xl border border-border p-3 hover:border-primary/30">
                 <span className="block text-[12px] text-muted-foreground">{r.name}</span>
                 <span className="mt-0.5 flex items-center gap-1 text-[13px] text-foreground">

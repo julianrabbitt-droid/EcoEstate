@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import AccountMenu from '@/components/AccountMenu';
 import AuthModal from '@/components/AuthModal';
 import CookieNotice from '@/components/CookieNotice';
-import FeedbackButton from '@/components/FeedbackButton';
+import FeedbackButton, { openFeedback } from '@/components/FeedbackButton';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { useAuth } from '@/lib/AuthContext';
 import { claimBetaAccess } from '@/lib/beta';
@@ -144,6 +144,7 @@ export default function AppShell() {
             <Link to="/terms" className="underline-offset-2 hover:underline">Terms</Link>
             <Link to="/refunds" className="underline-offset-2 hover:underline">Refunds</Link>
             <Link to="/cookies" className="underline-offset-2 hover:underline">Cookies</Link>
+            <button type="button" onClick={openFeedback} className="underline-offset-2 hover:underline">Feedback</button>
           </nav>
         </div>
       </footer>

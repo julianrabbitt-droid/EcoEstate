@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Check, Loader2, MessageSquare, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,11 @@ import { useAuth } from '@/lib/AuthContext';
 
 // A small Feedback button on every page while EcoEstate is being built: a note
 // goes to the owner dashboard and support@ecoestate.org with the page it came from.
+// On a phone's full-screen pages (the scan and the project steps) the button
+// would sit on their panels, so there it opens from the account menu or the
+// footer instead (openFeedback()).
+export const openFeedback = () => window.dispatchEvent(new Event('ecoestate:feedback'));
+
 export default function FeedbackButton() {
   const { isAuthenticated } = useAuth();
   const location = useLocation();
@@ -15,6 +20,12 @@ export default function FeedbackButton() {
   const [email, setEmail] = useState('');
   const [state, setState] = useState('idle'); // idle | sending | sent | error
   const [error, setError] = useState('');
+  useEffect(() => {
+    const on = () => { setOpen(true); setState('idle'); };
+    window.addEventListener('ecoestate:feedback', on);
+    return () => window.removeEventListener('ecoestate:feedback', on);
+  }, []);
+  const immersive = location.pathname === '/' || location.pathname.startsWith('/project/');
 
   const send = async () => {
     setState('sending');
@@ -34,7 +45,7 @@ export default function FeedbackButton() {
       <button
         type="button"
         onClick={() => { setOpen(true); setState('idle'); }}
-        className="fixed bottom-4 right-4 z-40 inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-[13px] text-primary-foreground shadow-lg transition hover:scale-[1.03]"
+        className={`fixed bottom-4 right-4 z-40 items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-[13px] text-primary-foreground shadow-lg transition hover:scale-[1.03] ${immersive ? 'hidden sm:inline-flex' : 'inline-flex'}`}
       >
         <MessageSquare className="h-4 w-4" aria-hidden />
         Feedback

@@ -2958,20 +2958,21 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
           type="button"
           onClick={() => setToolsOpen(true)}
           aria-expanded={false}
-          className="absolute bottom-4 left-3 z-20 inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/90 px-4 py-2 text-[12.5px] shadow-lg backdrop-blur-md transition hover:bg-card sm:left-5"
+          className={`absolute left-3 z-20 inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/90 px-4 py-2 text-[12.5px] shadow-lg backdrop-blur-md transition hover:bg-card sm:left-5 ${checking ? 'top-3 lg:bottom-4 lg:top-auto' : 'bottom-4'}`}
         >
           <SlidersHorizontal className="h-4 w-4" aria-hidden />
           View options
         </button>
       ) : (
-      <div className={fill ? 'absolute bottom-4 left-3 z-20 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 rounded-2xl border border-border/60 bg-card/88 p-1.5 shadow-xl backdrop-blur-md sm:left-5 lg:max-w-[calc(100%-29rem)]' : 'flex flex-wrap items-center justify-between gap-3'}>
+      <div className={fill ? `absolute left-3 z-20 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 rounded-2xl border border-border/60 bg-card/88 p-1.5 shadow-xl backdrop-blur-md sm:left-5 lg:max-w-[calc(100%-29rem)] ${checking ? 'top-3 lg:bottom-4 lg:top-auto' : 'bottom-4'}` : 'flex flex-wrap items-center justify-between gap-3'}>
         {fill && walkMode ? (
           <Button variant="default" onClick={() => setWalkMode(false)} className="rounded-full" size="sm">
             Exit walk
           </Button>
         ) : (
         <>
-        <div className={`inline-flex rounded-full border border-border bg-card/90 p-0.5 backdrop-blur ${checking ? 'hidden' : ''}`}>
+        {!checking && (
+        <div className="inline-flex rounded-full border border-border bg-card/90 p-0.5 backdrop-blur">
           {[{ k: 'before', l: 'Today’s lawn' }, { k: 'new', l: 'Newly planted' }, { k: 'mature', l: 'Native garden, grown' }].map((o) => {
             const on = o.k === 'before' ? before : !before && (o.k === 'mature') === mature;
             return (
@@ -2986,6 +2987,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
             );
           })}
         </div>
+        )}
         <div className="flex flex-wrap gap-2">
           {GOOGLE_TILES_KEY && origin && (
             <Button

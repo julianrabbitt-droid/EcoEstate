@@ -172,6 +172,12 @@ export default function Scan() {
   const [hits, setHits] = useState([]); // the list's current suggestions
   const scanKey = (address, hit) => `${address}|${hit?.lat}|${hit?.lng}|${hit?.osm || ''}`;
   const [editSeed, setEditSeed] = useState(saved.editSeed || null);
+  // Each full-screen phase starts at the top of the page, with the whole
+  // stage in view (typing in the address box can leave it scrolled).
+  useEffect(() => {
+    if (['locating', 'confirm', 'scanning', 'lawn'].includes(phase) || (phase === 'manual' && editSeed)) window.scrollTo({ top: 0, behavior: 'smooth' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
   const [method, setMethod] = useState(saved.method || 'satellite');
   const [result, setResult] = useState(saved.result || { area: 0, source: 'satellite', boundary: [], turf: null });
   const navigate = useNavigate();
@@ -530,7 +536,10 @@ export default function Scan() {
   const measured = result.source === 'satellite' && areaCalc.lawnSqft !== null ? areaCalc.lawnSqft : result.area;
   const turfDisplay = result.source === 'upload' || result.source === 'satellite' ? measured : measured * 0.76;
 
+  // Typed but not yet picked: say why Locate is still grey.
+  const mustPick = query.trim().length > 3 && !chosen && !loading;
   const addressForm = (dark) => (
+    <>
     <form onSubmit={handleScan} className="flex flex-col gap-2.5 sm:flex-row">
       <AddressAutocomplete
         value={query}
@@ -546,6 +555,12 @@ export default function Scan() {
         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Crosshair className="mr-1.5 h-4 w-4" aria-hidden />Locate property</>}
       </Button>
     </form>
+    {mustPick && (
+      <p className={`mt-2 text-[12.5px] ${dark ? 'text-white/90 drop-shadow' : 'text-muted-foreground'}`} role="status">
+        {hits.length ? 'Pick your address from the list to locate it.' : 'Keep typing: pick your address from the list when it appears.'}
+      </p>
+    )}
+    </>
   );
 
   return (
@@ -581,7 +596,7 @@ export default function Scan() {
         </div>
       </div>
 
-      <section className="pointer-events-none relative min-h-[100svh]">
+      <section className="pointer-events-none relative min-h-[calc(100svh-var(--header-h,4rem))]">
         {/* The 3D model fills the stage once it is built. */}
         {phase === 'lawn' && previewProject && (
           <div
@@ -592,7 +607,7 @@ export default function Scan() {
         )}
 
         {phase === 'idle' && (
-          <div className="pointer-events-auto mx-auto flex min-h-[100svh] w-full max-w-3xl flex-col items-center justify-center px-5 pb-20 pt-10 text-center text-white duration-500 animate-in fade-in">
+          <div className="pointer-events-auto mx-auto flex min-h-[calc(100svh-var(--header-h,4rem))] w-full max-w-3xl flex-col items-center justify-center px-5 pb-20 pt-10 text-center text-white duration-500 animate-in fade-in">
             <h1 className="font-display text-[3rem] leading-[0.95] tracking-[-0.045em] drop-shadow sm:text-[5.4rem]">
               Your lawn could be <em>doing more.</em>
             </h1>
@@ -623,7 +638,7 @@ export default function Scan() {
         )}
 
         {phase === 'locating' && (
-          <div className="flex min-h-[100svh] items-center justify-center duration-500 animate-in fade-in">
+          <div className="flex min-h-[calc(100svh-var(--header-h,4rem))] items-center justify-center duration-500 animate-in fade-in">
             <p className="pointer-events-auto flex items-center gap-2 rounded-full border border-border/60 bg-card/90 px-5 py-2.5 text-[14px] text-foreground shadow-lg backdrop-blur">
               <Loader2 className="h-4 w-4 animate-spin" /> Finding {pending?.address || query || 'the address'}…
             </p>
@@ -632,7 +647,7 @@ export default function Scan() {
 
         {phase === 'confirm' && pending && pin && (
           // The pin sits on the aerial view itself; this panel just asks.
-          <div className="flex min-h-[100svh] items-end justify-center px-4 pb-8 duration-700 animate-in fade-in slide-in-from-bottom-6">
+          <div className="flex min-h-[calc(100svh-var(--header-h,4rem))] items-end justify-center px-4 pb-8 duration-700 animate-in fade-in slide-in-from-bottom-6">
             <div className="pointer-events-auto w-full max-w-xl rounded-3xl border border-border/60 bg-card/92 p-5 text-foreground shadow-2xl backdrop-blur-md">
               <p className="font-display text-[1.6rem] leading-tight tracking-tight">Is this your property?</p>
               <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
@@ -659,7 +674,7 @@ export default function Scan() {
         )}
 
         {phase === 'scanning' && (
-          <div className="flex min-h-[100svh] flex-col items-center justify-center px-5 text-center text-white duration-700 animate-in fade-in zoom-in-95">
+          <div className="flex min-h-[calc(100svh-var(--header-h,4rem))] flex-col items-center justify-center px-5 text-center text-white duration-700 animate-in fade-in zoom-in-95">
             <div className="relative h-40 w-40" aria-hidden>
               <span className="absolute inset-0 animate-ping rounded-full border-2 border-white/60" />
               <span className="absolute inset-6 rounded-full border border-white/40" />
@@ -674,7 +689,7 @@ export default function Scan() {
 
         {phase === 'lawn' && previewProject && (
           // Over the 3D model: the question and the numbers, at the side (below on phones).
-          <div className="flex min-h-[100svh] items-end justify-end p-3 duration-700 animate-in fade-in slide-in-from-right-8 sm:p-6 lg:items-center">
+          <div className="flex min-h-[calc(100svh-var(--header-h,4rem))] items-end justify-end p-3 duration-700 animate-in fade-in slide-in-from-right-8 sm:p-6 lg:items-center">
             <div className="pointer-events-auto max-h-[78svh] w-full overflow-y-auto rounded-3xl border border-border/60 bg-card/92 shadow-2xl backdrop-blur-md sm:max-w-md">
               <LawnApiResult
                 data={lawnData}

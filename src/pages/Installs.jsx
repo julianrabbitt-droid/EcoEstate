@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CalendarDays, Clock, HandHeart, Loader2, MapPin, Printer, Search, Sprout, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import CityStamp from '@/components/CityStamp';
 import { useAuth } from '@/lib/AuthContext';
 import { hostedInstalls, installWhen, mySignups, spotsLeft, upcomingInstalls } from '@/lib/installs';
 
@@ -37,6 +38,7 @@ export function InstallCard({ install }) {
         <p className={`text-[13px] font-medium ${left ? 'text-primary' : 'text-muted-foreground'}`}>{left ? `${left} spot${left === 1 ? '' : 's'} left` : 'Full'}</p>
         <p className="mt-0.5 text-[11.5px] text-muted-foreground">{install.plantCount ? `${install.plantCount} plants` : ''}{install.lawnSqft ? ` · ${install.lawnSqft.toLocaleString()} sq ft` : ''}</p>
       </div>
+      <CityStamp city={install.city} size={52} className="hidden sm:block" />
     </Link>
   );
 }

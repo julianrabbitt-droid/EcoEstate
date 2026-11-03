@@ -159,9 +159,9 @@ export default function Design() {
 
   // Plant density: the share of the lawn the grown plants cover. A drag works
   // from the counts it started with (rescaling already-rounded counts drifts),
-  // keeps the mix, and gives every species one plant before sharing out the
-  // rest by largest remainder, so the counts add up to exactly the total the
-  // slider asks for.
+  // keeps the mix by sharing plants out by largest remainder, so the counts
+  // add up to exactly the total the slider asks for, and leaves every species
+  // at least one plant.
   const coverOf = (list) => list.reduce((a, e) => a + e.quantity * clearanceOf(plantById(e.speciesId)) ** 2, 0) / Math.max(1, turfSqft);
   const cover = Math.round(Math.min(1.2, coverOf(entries)) * 100);
   const setCover = (percent) => {
@@ -173,15 +173,22 @@ export default function Design() {
     if (!baseCover || !base.length) return;
     const raw = base.map((e) => (e.quantity * percent) / 100 / baseCover);
     const total = Math.max(base.length, Math.round(raw.reduce((a, b) => a + b, 0)));
-    const weight = raw.reduce((a, b) => a + b, 0) || 1;
-    const share = raw.map((r) => ((total - base.length) * r) / weight);
-    const counts = share.map((x) => 1 + Math.floor(x));
+    const scale = total / (raw.reduce((a, b) => a + b, 0) || 1);
+    const share = raw.map((r) => r * scale);
+    const counts = share.map(Math.floor);
     let left = total - counts.reduce((a, b) => a + b, 0);
     for (const [, i] of share.map((x, i) => [x - Math.floor(x), i]).sort((a, b) => b[0] - a[0])) {
       if (left <= 0) break;
       counts[i]++;
       left--;
     }
+    // Every species keeps at least one plant, taken from the most numerous.
+    counts.forEach((c, i) => {
+      if (c > 0) return;
+      const most = counts.indexOf(Math.max(...counts));
+      counts[most]--;
+      counts[i] = 1;
+    });
     setEntries(base.map((e, i) => ({ ...e, quantity: counts[i] })));
   };
   const endDensityDrag = () => {

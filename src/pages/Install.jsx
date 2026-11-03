@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Check, Clock, Loader2, Mail, MapPin, Pencil, Send, Sprout, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import CityStamp from '@/components/CityStamp';
 import { useAuth } from '@/lib/AuthContext';
 import { getInstall, helpersOf, installAction, installWhen, mySignups, spotsLeft } from '@/lib/installs';
 
@@ -138,8 +139,13 @@ export default function Install() {
 
       <div className="mt-4 grid gap-5 lg:grid-cols-[1.25fr_1fr] lg:items-start">
         <section className="surface bg-card/85 p-6 backdrop-blur">
-          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11.5px] ${install.status === 'open' ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground'}`}>{STATUS[install.status] || install.status}</span>
-          <h1 className="mt-3 font-display text-[2rem] leading-tight tracking-tight">{install.title}</h1>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11.5px] ${install.status === 'open' ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground'}`}>{STATUS[install.status] || install.status}</span>
+              <h1 className="mt-3 font-display text-[2rem] leading-tight tracking-tight">{install.title}</h1>
+            </div>
+            <CityStamp city={install.city} size={76} />
+          </div>
           <div className="mt-3 space-y-1.5 text-[13px]">
             <p className="flex items-center gap-2"><Clock className="h-4 w-4 text-muted-foreground" aria-hidden />{installWhen(install, { long: true })} · about {install.hours} hours</p>
             <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-muted-foreground" aria-hidden />{install.city} · the host sends the address to helpers</p>
@@ -175,7 +181,10 @@ export default function Install() {
             <section className="surface bg-card/85 p-5 backdrop-blur">
               {mine ? (
                 <>
-                  <p className="flex items-center gap-2 text-[15px] font-medium"><Check className="h-4 w-4 text-primary" />You’re helping</p>
+                  <div className="flex items-center gap-3">
+                    <CityStamp city={install.city} size={48} />
+                    <p className="flex items-center gap-2 text-[15px] font-medium"><Check className="h-4 w-4 text-primary" />You’re helping in {install.city}</p>
+                  </div>
                   <p className="mt-1 text-[12.5px] text-muted-foreground">{install.hostName} will email you the address. After the day they confirm your hours, which go on <Link to="/installs" className="underline underline-offset-2">your volunteer record</Link>.</p>
                   {mine.status === 'signed_up' && !past && (
                     <Button variant="outline" size="sm" onClick={leave} disabled={busy === 'leave'} className="mt-3 rounded-full">

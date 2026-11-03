@@ -62,6 +62,18 @@ function Recenter({ center, zoom }) {
   return null;
 }
 
+// Opens framed on the property line (or the lawns), so the lot fills the
+// map rather than sitting small in the middle of the block.
+function FitProperty({ outline }) {
+  const map = useMap();
+  useEffect(() => {
+    const pts = (outline || []).filter((p) => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+    if (pts.length >= 3) map.fitBounds(pts, { padding: [36, 36], maxZoom: 21 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
+
 function MapInteraction({ picking, placingTree, editingLot, onPick, onTrace, onPlaceTree, onLotTrace }) {
   useMapEvents({
     click(e) {
@@ -321,9 +333,10 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
       </div>
 
       <div className={`relative h-[330px] w-full sm:h-[400px] cursor-crosshair`}>
-        <MapContainer center={center} zoom={zoom} scrollWheelZoom className="h-full w-full" attributionControl>
-          <TileLayer url={IMAGERY} attribution="Imagery © Esri, Maxar, Earthstar Geographics" maxZoom={20} />
+        <MapContainer center={center} zoom={zoom} maxZoom={21} scrollWheelZoom className="h-full w-full" attributionControl>
+          <TileLayer url={IMAGERY} attribution="Imagery © Esri, Maxar, Earthstar Geographics" maxNativeZoom={19} maxZoom={21} />
           <Recenter center={viewCenter} zoom={zoom} />
+          <FitProperty outline={lotOutline && lotOutline.length >= 3 ? lotOutline : (initialShapes || []).flat()} />
           <MapInteraction picking={picking} placingTree={placingTree} editingLot={editingLot} onPick={relocate} onTrace={trace} onPlaceTree={placeTree} onLotTrace={traceLot} />
           <Marker
             position={propCenter}
