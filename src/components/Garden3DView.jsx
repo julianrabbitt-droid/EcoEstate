@@ -781,7 +781,8 @@ function drapedGround(outline, holes, at, texture, circles = [], skirt = false, 
 // and trimmed to the lot, with the planned beds left out. corners: scene
 // [x0 (west), z0 (north), x1 (east), z1 (south)].
 function photoGround(url, [x0, z0, x1, z1], at, lotPts, holes) {
-  const segs = Math.min(64, Math.max(8, Math.round(Math.max(x1 - x0, z1 - z0) / 4)));
+  // Fine enough to follow a hillside as closely as the ground under it does.
+  const segs = Math.min(128, Math.max(8, Math.round(Math.max(x1 - x0, z1 - z0) / 2)));
   const geo = new THREE.PlaneGeometry(x1 - x0, z1 - z0, segs, segs);
   const tex = new THREE.TextureLoader().load(url);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -806,7 +807,9 @@ function photoGround(url, [x0, z0, x1, z1], at, lotPts, holes) {
   ctx.fill();
   ctx.fillStyle = '#000';
   holes.forEach((h) => { trace(h); ctx.fill(); });
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, alphaMap: new THREE.CanvasTexture(c), alphaTest: 0.5, roughness: 1, metalness: 0 }));
+  // Drawn over the plain ground under it wherever the two meet (on a steep
+  // slope their triangles cross, and the plain one poked through in patches).
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, alphaMap: new THREE.CanvasTexture(c), alphaTest: 0.5, roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.set((x0 + x1) / 2, 0.02, (z0 + z1) / 2);
   drape(mesh, at);
@@ -2629,8 +2632,10 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
 
     // Retaining walls: where a house's pad is cut well into the slope, a low
     // stone wall along that side of the pad holds the bank back, as on real
-    // hillside lots.
+    // hillside lots. Only on the lot, and no longer than the wall it follows
+    // (past the lot line it read as a beam standing in the neighbour's yard).
     if (at.pads && at.natural) {
+      const lotScene = outerPoly ? outerPoly.map((q) => [q[0] - cx, -(q[1] - cy)]) : null;
       const stoneWall = new THREE.MeshStandardMaterial({ color: 0xb9b2a3, roughness: 0.95 });
       for (const pad of at.pads) {
         const n = pad.pts.length;
@@ -2649,9 +2654,11 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
           const reach = off + pad.blend * 0.5;
           const rise = at.natural(px + nx * reach, pz + nz * reach) - pad.level;
           if (rise < 3) continue;
+          const ends = [[ax + nx * off, az + nz * off], [bx + nx * off, bz + nz * off]];
+          if (lotScene && !ends.every((e) => insidePoly(e, lotScene))) continue;
           const wallH = Math.min(6, rise * 0.55);
           const wall = new THREE.Mesh(GEO_BOX, stoneWall);
-          wall.scale.set(len + off * 2, wallH, 1.1);
+          wall.scale.set(len, wallH, 1.1);
           wall.position.set(px + nx * off, pad.level + wallH / 2 - 0.2, pz + nz * off);
           wall.rotation.y = -Math.atan2(bz - az, bx - ax);
           wall.castShadow = true;
