@@ -140,7 +140,7 @@ export default function Admin() {
               {down.length ? `${down.length} service${down.length > 1 ? 's' : ''} need attention: ${down.map((d) => d.name).join(', ')}.` : 'Everything is running.'}
             </p>
             {degraded.length > 0 && (
-              <p className="mt-1 text-[13.5px] text-amber-700">
+              <p className="mt-1 text-[13.5px] text-accent">
                 Using a fallback (nothing to do; they usually recover on their own): {degraded.map((d) => d.name).join(', ')}.
               </p>
             )}
@@ -149,7 +149,7 @@ export default function Admin() {
                 <li key={h.id}>
                   <Out href={h.url} className="flex flex-wrap items-center justify-between gap-2 px-1 py-2.5 text-[14px]">
                     <span className="flex items-center gap-2.5">
-                      <span className={`h-2.5 w-2.5 rounded-full ${h.ok ? 'bg-emerald-600' : h.quiet ? 'bg-amber-500' : 'bg-destructive'}`} aria-hidden />
+                      <span className={`h-2.5 w-2.5 rounded-full ${h.ok ? 'bg-primary' : h.quiet ? 'bg-amber-500' : 'bg-destructive'}`} aria-hidden />
                       {h.name}
                       <span className="sr-only">{h.ok ? 'working' : 'not working'}</span>
                       {h.url && <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />}
@@ -239,7 +239,7 @@ export default function Admin() {
               <ul className="mt-4 space-y-1 text-[12.5px]">
                 {Object.entries(data.history.sources).map(([k, v]) => (
                   <li key={k} className="flex gap-2">
-                    <span className={v.ok ? 'text-emerald-700' : 'text-destructive'} aria-hidden>{v.ok ? '●' : '○'}</span>
+                    <span className={v.ok ? 'text-primary' : 'text-destructive'} aria-hidden>{v.ok ? '●' : '○'}</span>
                     <span className="text-muted-foreground"><span className="capitalize text-foreground">{k}</span>: {v.detail}</span>
                   </li>
                 ))}

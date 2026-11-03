@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowRight, Loader2, Minus, Plus, Trash2, X } from 'lucide-react';
-import Garden3DView from '@/components/Garden3DView';
+import { ArrowRight, Minus, Plus, Trash2, X } from 'lucide-react';
+import { StageOverlay, useStage, useWide } from '@/components/ProjectStage';
 import PhotoCompare from '@/components/PhotoCompare';
 import PlantCard from '@/components/PlantCard';
 
@@ -24,12 +24,7 @@ export default function Design() {
   const location = useLocation();
   const { project, loading } = useProject(id, location.state);
   // Wide screens keep the planting list beside the garden, so the view shifts left.
-  const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
-  useEffect(() => {
-    const on = () => setWide(window.innerWidth >= 1024);
-    window.addEventListener('resize', on);
-    return () => window.removeEventListener('resize', on);
-  }, []);
+  const wide = useWide();
   const [entries, setEntries] = useState([]);
   const [goals, setGoals] = useState([]);
   const [arrangement, setArrangement] = useState(null);
@@ -101,14 +96,16 @@ export default function Design() {
 
   const photos = usePlantPhotos(filtered);
 
-  if (loading) {
-    return (
-      <div className="mx-auto flex max-w-md flex-col items-center px-5 py-24 text-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        <p className="mt-3 text-sm text-muted-foreground">Opening your design…</p>
-      </div>
-    );
-  }
+  // The garden fills the screen (the steps' shared 3D view); the planting
+  // list floats beside it.
+  const applyRef = useRef(null);
+  const onApplyArrangement = useCallback((arr) => applyRef.current?.(arr), []);
+  useStage(
+    loading ? null : !project ? { missing: true } : { project: viewProject, entries, scene: 'design', viewShift: wide ? [-230, 40] : [0, 40], activeArrangement: arrangement, onApplyArrangement },
+    [loading, project, viewProject, entries, wide, arrangement, onApplyArrangement],
+  );
+
+  if (loading) return null;
 
   if (!project) {
     return (
@@ -178,19 +175,11 @@ export default function Design() {
     setEntries(picks);
     setArrangement(arr.id);
   };
+  applyRef.current = applyArrangement;
 
   return (
     <div>
-      {/* The garden fills the screen; the planting list floats beside it. */}
-      <section className="relative h-[calc(100svh-4rem)] min-h-[560px] overflow-hidden">
-        <Garden3DView
-          entries={entries}
-          project={viewProject}
-          activeArrangement={arrangement}
-          onApplyArrangement={applyArrangement}
-          fill
-          viewShift={wide ? [-230, 40] : [0, 40]}
-        />
+      <StageOverlay>
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3 sm:p-5">
           <div className="pointer-events-auto inline-block max-w-full"><StepNav projectId={id} project={project} current="design" /></div>
           <div className="pointer-events-auto mt-3 w-fit max-w-[min(34rem,calc(100vw-1.5rem))] rounded-2xl border border-border/60 bg-card/85 px-4 py-3 shadow-lg backdrop-blur-md lg:max-w-[calc(100vw-30rem)]">
@@ -207,7 +196,7 @@ export default function Design() {
             )}
           </div>
         </div>
-        <aside className="absolute bottom-3 right-3 top-3 z-20 hidden w-[26rem] flex-col overflow-hidden rounded-3xl border border-border/60 bg-card/92 shadow-2xl backdrop-blur-md lg:flex">
+        <aside className="pointer-events-auto absolute bottom-16 right-3 top-3 z-20 hidden w-[26rem] flex-col overflow-hidden rounded-3xl border border-border/60 bg-card/88 shadow-2xl backdrop-blur-md lg:flex">
           <div className="flex-1 overflow-y-auto p-5">
 
           <div className="flex items-baseline justify-between">
@@ -331,7 +320,7 @@ export default function Design() {
             </Link>
           </div>
         </aside>
-      </section>
+      </StageOverlay>
 
       <div className="mx-auto w-full max-w-6xl px-5 py-10">
         {/* Phones: the planting list below the garden. */}

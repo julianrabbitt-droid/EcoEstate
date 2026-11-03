@@ -1,0 +1,31 @@
+{
+  "name": "InstallSignup",
+  // Someone helping at a community install. Seen by the helper and the host
+  // only. Written by the server (functions/communityInstall): signing up,
+  // cancelling, and the host confirming the hours worked, which the helper's
+  // volunteer-hours record is built from.
+  "type": "object",
+  "properties": {
+    "installId": { "type": "string", "title": "CommunityInstall id" },
+    "hostId": { "type": "string", "title": "The host's user id (set by the server)" },
+    "name": { "type": "string", "title": "Helper's name, as they gave it" },
+    "email": { "type": "string", "title": "Helper's email, shared with the host" },
+    "message": { "type": "string", "title": "Note to the host" },
+    "role": { "type": "string", "title": "volunteer, student or group" },
+    "groupSize": { "type": "number", "default": 1, "title": "People coming, the helper included" },
+    "status": { "type": "string", "default": "signed_up", "title": "signed_up, attended, no_show or cancelled" },
+    "hoursLogged": { "type": "number", "default": 0, "title": "Hours the host confirmed" },
+    "hoursConfirmedAt": { "type": "string", "title": "When the host confirmed them" },
+    "installTitle": { "type": "string" },
+    "installDate": { "type": "string", "format": "date" },
+    "city": { "type": "string" },
+    "hostName": { "type": "string" }
+  },
+  "required": ["installId", "hostId"],
+  "rls": {
+    "read": { "$or": [{ "created_by_id": "{{user.id}}" }, { "data.hostId": "{{user.id}}" }, { "user_condition": { "role": "admin" } }] },
+    "create": { "user_condition": { "role": "admin" } },
+    "update": { "user_condition": { "role": "admin" } },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

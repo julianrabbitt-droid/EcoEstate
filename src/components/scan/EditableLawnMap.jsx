@@ -9,7 +9,7 @@ import { polygonAreaSqFt } from '@/lib/geo';
 const IMAGERY = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
 const STYLES = {
-  lawn: { color: '#4fbf3f', stroke: '#d9ffb8' },
+  lawn: { color: '#8fae6b', stroke: '#eadfbf' },
   building: { color: '#9a8c7a', stroke: '#3a3128' },
 };
 const featureStyle = (type) => STYLES[type] || STYLES.lawn;

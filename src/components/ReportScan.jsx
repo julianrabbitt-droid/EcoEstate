@@ -47,7 +47,7 @@ export default function ReportScan({ getContext, className = '' }) {
         <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
       </div>
       {state === 'sent' ? (
-        <p className="mt-3 flex items-center gap-2 text-[13px] text-muted-foreground"><Check className="h-4 w-4 text-emerald-700" /> Thanks. We’ll use it to improve how this kind of property is scanned.</p>
+        <p className="mt-3 flex items-center gap-2 text-[13px] text-muted-foreground"><Check className="h-4 w-4 text-primary" /> Thanks. We’ll use it to improve how this kind of property is scanned.</p>
       ) : (
         <>
           <div className="mt-2 flex flex-wrap gap-1.5">

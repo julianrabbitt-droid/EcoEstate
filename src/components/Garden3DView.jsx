@@ -27,6 +27,8 @@ import { disposeObject } from '@/lib/disposeThree';
 import { terrainElevations } from '@/lib/terrainTiles';
 import { createWildlife } from '@/lib/wildlife';
 import { environmental } from '@/lib/landscapeMath';
+import { createPayoffStacks } from '@/lib/payoffStacks';
+import { speciesKey, OTHER_COLOR } from '@/lib/speciesColors';
 import { arrangePlants, prepareBuildings, prepareFences, prepareLot, preparePolys, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
 
 // Module-level geometries, materials and textures are reused across scene
@@ -55,6 +57,33 @@ const CURB_FT = 0.5; // the street sits this far below the sidewalk
 const SIDEWALK_FT = 5; // a typical residential sidewalk, along the curb
 const FENCE_FT = 6; // a typical back and side yard fence
 const GEO_BOX = shared(new THREE.BoxGeometry(1, 1, 1)); // reused by every fence panel and post, never disposed
+const GEO_DISC = shared(new THREE.CircleGeometry(1, 28)); // the Build step's species discs
+
+// A species number on a dot of its colour, the same size on screen at any zoom.
+function badgeSprite(n, color) {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(64, 64, 56, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 64px "Inter Tight", Helvetica, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(n), 64, 68);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, sizeAttenuation: false, transparent: true }));
+  sprite.scale.set(0.042, 0.042, 1);
+  sprite.renderOrder = 21;
+  return sprite;
+}
 const EYE_HEIGHT = 5.5; // walkthrough camera height (ft) above the ground
 
 // Google Photorealistic 3D Tiles: the real house, trees and street around the
@@ -109,7 +138,7 @@ const NEAR_CLEAR_FT = 15;
 // Real 3D keeps the property in Google's own colours and mutes what's around it
 // (this much of its colour, this bright) so the property is always easy to find.
 const SURROUND_SATURATION = 0.6;
-const LAWN_OUTLINE = 0x9fe870;
+const LAWN_OUTLINE = 0xeadfbf; // warm cream: stands out on lawn and satellite without glowing
 const SURROUND_BRIGHTNESS = 0.84;
 
 // Outlines that must always read (the property line, each lawn): screen-space
@@ -247,7 +276,7 @@ function lawnTag(lines, maxDim) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   lines.forEach((line, i) => {
-    ctx.fillStyle = i ? '#cfe6bd' : '#ffffff';
+    ctx.fillStyle = i ? '#d6dccd' : '#ffffff';
     ctx.font = i ? '500 34px "Inter Tight", Helvetica, Arial, sans-serif' : '600 46px "Inter Tight", Helvetica, Arial, sans-serif';
     ctx.fillText(line, W / 2, 50 + i * 52);
   });
@@ -1044,9 +1073,25 @@ function buildPlant(plant, mature, detail = 'normal', { spacing = 0 } = {}) {
 // into 3D once the model is drawn; its buttons float over it.
 // viewShift: [x, y] px to move the property by on screen, so panels over the
 // view never cover it (e.g. [-240, 0] when a panel takes the right side).
-export default function Garden3DView({ entries = [], project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady, fill = false, viewShift = null }) {
+// scene: which project step the view serves, so the camera glides to suit it
+// when the step changes: 'scan' and 'design' (the overview), 'payoff' (a
+// lower view from the street, with the savings as 3D stacks: payoff =
+// { dollars, gallons, years }), 'build' (closer over the beds, each plant on a
+// disc in its species' colour and number; planView looks straight down, and
+// highlight picks out one species).
+export default function Garden3DView({ entries = [], project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady, fill = false, viewShift = null, scene: step = 'design', payoff = null, highlight = null, planView = false }) {
   const fillRef = useRef(fill);
+  const stepRef = useRef(step);
+  stepRef.current = step;
+  const planViewRef = useRef(planView);
+  planViewRef.current = planView;
+  const payoffGroupRef = useRef(null); // the cash and water stacks while on the Payoff step
+  const payoffBoundsRef = useRef(null);
+  const payoffAnimRef = useRef(null); // { items, start, dur }: the stacks building up
+  const flyToStepRef = useRef(null);
+  const [layoutVersion, setLayoutVersion] = useState(0); // bumps after each rebuild of the plants
   const tiltedRef = useRef(false);
+  const tiltDoneRef = useRef(!fill); // the opening tilt into 3D has happened (or isn't needed)
   const viewShiftRef = useRef(viewShift);
   viewShiftRef.current = viewShift;
   const shiftKey = viewShift ? viewShift.join(',') : '';
@@ -1398,6 +1443,14 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         }
         controls.update();
       }
+      // The savings stacks build up, bundle by bundle and layer by layer.
+      const pa = payoffAnimRef.current;
+      if (pa) {
+        const p = still ? 1 : Math.max(0, Math.min(1, (performance.now() - pa.start) / pa.dur));
+        for (const it of pa.items) it.obj.visible = it.at <= p + 1e-6;
+        dirty = true;
+        if (p >= 1) payoffAnimRef.current = null;
+      }
       const t3 = tilesRef.current?.active ? tilesRef.current : null;
       // Tiles also load while hidden, behind the model, until Real 3D is ready.
       const tl = t3 || (tilesRef.current?.loading ? tilesRef.current : null);
@@ -1440,6 +1493,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       if (!len) return;
       // Only follow when the camera still sits at the default view (not dragged, focused or walking).
       const atDefault = !tweenRef.current && camera.position.distanceTo(overview().pos) < 1;
+      threeRef.current.front = { dx: dx / len, dz: dz / len };
       viewDir.set((dx / len) * 1.25, 1, (dz / len) * 1.25).normalize();
       if (userMoved || !atDefault || walkRef.current?.active) return;
       const next = overview();
@@ -2396,9 +2450,184 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     // Full screen opens straight above, like the aerial it follows, then tilts into 3D once.
     if (terrainDone && fillRef.current && !tiltedRef.current) {
       tiltedRef.current = true;
-      setTimeout(() => focusOnRef.current?.(-1), 900);
+      setTimeout(() => { tiltDoneRef.current = true; flyToStepRef.current?.(); }, 900);
     }
+    setLayoutVersion((v) => v + 1);
   }, [layout, polys, pattern, lot, buildings, trees, paths, fences, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, showLawn, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries]);
+
+  // The camera's view for each project step, flown to when the step changes:
+  // the overview for the scan and design, a lower look from the street that
+  // takes in the savings stacks for the payoff, and closer over the beds (or
+  // straight down for the planting plan) for the build.
+  const flyToStep = useCallback((dur = 1400) => {
+    const t = threeRef.current;
+    if (!t) return;
+    const { camera, controls } = t;
+    const f = t.front || { dx: 0, dz: 1 };
+    const ground = (x, z) => groundAtRef.current?.(x, z) || 0;
+    const step = stepRef.current;
+    const pb = payoffBoundsRef.current;
+    // Far enough that a circle of radius r fits the narrower way across the
+    // screen (a phone held upright needs to stand much further back).
+    const vfov = THREE.MathUtils.degToRad(camera.fov);
+    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
+    const fit = (r) => (r / Math.sin(Math.min(vfov, hfov) / 2)) * 0.92;
+    let pos;
+    let tgt;
+    if (step === 'payoff' && pb) {
+      tgt = new THREE.Vector3(pb.x, ground(pb.x, pb.z), pb.z);
+      pos = tgt.clone().addScaledVector(new THREE.Vector3(f.dx * 1.25, 0.85, f.dz * 1.25).normalize(), Math.max(fit(pb.radius), 45));
+    } else if (step === 'build' && bedsRef.current.length) {
+      const beds = bedsRef.current;
+      const [minX, maxX] = [Math.min(...beds.map((b) => b.x - b.radius)), Math.max(...beds.map((b) => b.x + b.radius))];
+      const [minZ, maxZ] = [Math.min(...beds.map((b) => b.z - b.radius)), Math.max(...beds.map((b) => b.z + b.radius))];
+      const [x, z] = [(minX + maxX) / 2, (minZ + maxZ) / 2];
+      const r = Math.max(12, Math.hypot(maxX - minX, maxZ - minZ) / 2);
+      tgt = new THREE.Vector3(x, ground(x, z), z);
+      pos = planViewRef.current
+        ? new THREE.Vector3(x, tgt.y + fit(r) * 1.1, z + 0.01)
+        : tgt.clone().addScaledVector(new THREE.Vector3(f.dx * 1.25, 1.3, f.dz * 1.25).normalize(), Math.max(fit(r), 28));
+    } else {
+      const ov = t.overview();
+      pos = ov.pos;
+      tgt = ov.tgt;
+    }
+    tweenRef.current = { fromPos: camera.position.clone(), toPos: pos, fromTgt: controls.target.clone(), toTgt: tgt, start: performance.now(), dur };
+    t.markDirty();
+  }, []);
+  flyToStepRef.current = flyToStep;
+
+  // Payoff: the money and water saved, standing beside the property and
+  // building up when they first appear or the years change.
+  const payoffRef = useRef(payoff);
+  payoffRef.current = payoff;
+  const payoffKey = payoff ? `${Math.round(payoff.dollars)}:${Math.round(payoff.gallons)}:${payoff.years}` : '';
+  useEffect(() => {
+    const three = threeRef.current;
+    if (!three) return;
+    if (payoffGroupRef.current) {
+      three.scene.remove(payoffGroupRef.current);
+      disposeObject(payoffGroupRef.current, isShared);
+      payoffGroupRef.current = null;
+      payoffBoundsRef.current = null;
+      payoffAnimRef.current = null;
+    }
+    const data = payoffRef.current;
+    if (step === 'payoff' && data && terrainDone) {
+      const built = createPayoffStacks({ ...data, lotPts: lot && lot.length >= 3 ? scenePoly(lot) : null, front: three.front, at: groundAtRef.current });
+      for (const it of built.items) it.obj.visible = false;
+      three.scene.add(built.group);
+      payoffGroupRef.current = built.group;
+      payoffBoundsRef.current = built.bounds;
+      payoffAnimRef.current = { items: built.items, start: performance.now() + 600, dur: 1800 };
+      if (tiltDoneRef.current) flyToStep(1100);
+    }
+    three.markDirty?.();
+  }, [step, payoffKey, terrainDone, lot, scenePoly, groundAt, flyToStep]);
+
+  // A new step, or the plan view switched, once the model is up: glide there.
+  // (The first tilt into 3D goes to the step's view by itself.)
+  const stepKey = `${step}:${planView}`;
+  const lastStepRef = useRef(stepKey);
+  useEffect(() => {
+    if (lastStepRef.current === stepKey) return;
+    lastStepRef.current = stepKey;
+    if (!terrainDone || !tiltDoneRef.current) return;
+    setWalkMode(false);
+    setMoveMode(false);
+    flyToStep();
+  }, [stepKey, terrainDone, flyToStep]);
+
+  // Build: every plant on a disc in its species' colour, and each species'
+  // number over one of its plants, matching the planting list beside the view.
+  // The planting plan (planView) draws each plant as a circle of its mature
+  // spread instead of the plant itself, like a landscape plan.
+  const keyOfSpecies = useMemo(() => speciesKey(entries), [entries]);
+  const speciesPlanRef = useRef(null);
+  useEffect(() => {
+    const three = threeRef.current;
+    if (!three) return;
+    if (speciesPlanRef.current) {
+      three.scene.remove(speciesPlanRef.current);
+      disposeObject(speciesPlanRef.current, isShared);
+      speciesPlanRef.current = null;
+    }
+    const plan = step === 'build' && planView && !showLawn;
+    three.plantGroup.visible = !plan;
+    if (wildlifeRef.current) wildlifeRef.current.group.visible = !plan;
+    if (step !== 'build' || showLawn) {
+      three.markDirty?.();
+      return;
+    }
+    const group = new THREE.Group();
+    group.userData.speciesPlan = true;
+    const mats = new Map();
+    const edgeMats = new Map();
+    const bySpecies = new Map();
+    for (const mesh of three.plantGroup.children) {
+      const id = mesh.userData?.speciesId;
+      if (!id) continue;
+      let mat = mats.get(id);
+      if (!mat) {
+        // In the plan nothing stands over the circles, so they draw on top of everything (Google's mesh included).
+        mat = new THREE.MeshBasicMaterial({ color: keyOfSpecies.get(id)?.color || OTHER_COLOR, transparent: true, opacity: 0.9, depthWrite: false, depthTest: !plan, polygonOffset: true, polygonOffsetFactor: -2 });
+        mat.userData.speciesId = id;
+        mats.set(id, mat);
+      }
+      const spacing = plantById(mesh.userData.plantId)?.spacing || 2;
+      const r = plan ? Math.max(0.5, spacing * 0.48) : Math.max(0.6, Math.min(4, spacing * 0.42));
+      const disc = new THREE.Mesh(GEO_DISC, mat);
+      disc.rotation.x = -Math.PI / 2;
+      disc.scale.set(r, r, r);
+      disc.position.set(mesh.position.x, mesh.position.y + 0.06, mesh.position.z);
+      disc.renderOrder = 3;
+      group.add(disc);
+      if (plan) {
+        // A darker rim, so touching circles stay separate.
+        let edge = edgeMats.get(id);
+        if (!edge) {
+          edge = new THREE.MeshBasicMaterial({ color: new THREE.Color(keyOfSpecies.get(id)?.color || OTHER_COLOR).multiplyScalar(0.55), transparent: true, opacity: 0.95, depthWrite: false, depthTest: false, side: THREE.DoubleSide });
+          edge.userData.speciesId = id;
+          edgeMats.set(id, edge);
+        }
+        const rim = new THREE.Mesh(GEO.ring, edge);
+        rim.rotation.x = -Math.PI / 2;
+        rim.scale.set(r, r, r);
+        rim.position.set(mesh.position.x, mesh.position.y + 0.08, mesh.position.z);
+        rim.renderOrder = 4;
+        group.add(rim);
+      }
+      if (!bySpecies.has(id)) bySpecies.set(id, []);
+      bySpecies.get(id).push(mesh);
+    }
+    for (const [id, meshes] of bySpecies) {
+      const k = keyOfSpecies.get(id);
+      if (!k) continue;
+      const mx = meshes.reduce((a, m) => a + m.position.x, 0) / meshes.length;
+      const mz = meshes.reduce((a, m) => a + m.position.z, 0) / meshes.length;
+      const m = meshes.reduce((a, b) => (Math.hypot(b.position.x - mx, b.position.z - mz) < Math.hypot(a.position.x - mx, a.position.z - mz) ? b : a));
+      const top = plan ? m.position.y + 0.3 : new THREE.Box3().setFromObject(m).max.y + 1.2;
+      const badge = badgeSprite(k.n, k.color);
+      badge.position.set(m.position.x, top, m.position.z);
+      badge.userData.speciesId = id;
+      group.add(badge);
+    }
+    three.scene.add(group);
+    speciesPlanRef.current = group;
+    three.markDirty?.();
+  }, [step, layoutVersion, keyOfSpecies, showLawn, planView]);
+  // One species picked in the list: its discs and number stand out.
+  useEffect(() => {
+    const g = speciesPlanRef.current;
+    if (!g) return;
+    for (const c of g.children) {
+      const id = c.isSprite ? c.userData.speciesId : c.material?.userData?.speciesId;
+      const on = !highlight || id === highlight;
+      if (c.isSprite) c.material.opacity = on ? 1 : 0.25;
+      else c.material.opacity = on ? 0.92 : 0.12;
+    }
+    threeRef.current?.markDirty?.();
+  }, [highlight, step, layoutVersion, keyOfSpecies, showLawn, planView]);
 
   useEffect(() => {
     moveModeRef.current = moveMode;
@@ -2727,7 +2956,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
             </Button>
           )}
           {interactive && (
-            <Button variant="outline" onClick={() => { if (walkMode) setWalkMode(false); else focusOnRef.current?.(-1); }} className="rounded-full" size="sm">
+            <Button variant="outline" onClick={() => { if (walkMode) setWalkMode(false); else flyToStep(600); }} className="rounded-full" size="sm">
               <ScanEye className="mr-1.5 h-4 w-4" />
               Reset view
             </Button>
@@ -2738,7 +2967,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
               projectId: project?.id || null,
               center: project?.center || null,
               view: showReal ? 'real3d' : 'model',
-              screen: checking ? 'scan check' : 'design',
+              screen: checking ? 'scan check' : step,
               lawnSqft: project?.breakdown?.turf ?? project?.totalSqft ?? null,
               lawnAreas: polys.length,
               buildings: buildings.length,
@@ -2750,13 +2979,13 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
               camera: threeRef.current ? threeRef.current.camera.position.toArray().map((v) => Math.round(v)) : null,
             })}
           />
-          {fill && !checking && (
+          {fill && !checking && onApplyArrangement && (
             <Button variant={showArr ? 'default' : 'outline'} onClick={() => setShowArr((v) => !v)} className="rounded-full" size="sm">
               <Leaf className="mr-1.5 h-4 w-4" />
               Arrangements
             </Button>
           )}
-          {!checking && (
+          {!checking && step === 'design' && (
             <Button variant={moveMode ? 'default' : 'outline'} onClick={() => setMoveMode((m) => !m)} className="rounded-full" size="sm">
               <Move className="mr-1.5 h-4 w-4" />
               {moveMode ? 'Done moving' : 'Move plants'}

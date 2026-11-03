@@ -1,0 +1,48 @@
+{
+  "name": "CommunityInstall",
+  // A planting day a homeowner hosts to turn their lawn into native garden:
+  // neighbours, students and volunteer groups sign up to help (InstallSignup)
+  // and log volunteer hours. Anyone can browse; installs are created and their
+  // counts kept by the server (functions/communityInstall). The street address
+  // stays the host's until they share it with the people helping.
+  // The host may edit the day's details; the sign-up count, place and project
+  // are the server's.
+  "updatableFields": ["title", "description", "date", "startTime", "hours", "spots", "whatToBring", "tasks", "kidsWelcome", "status"],
+  "type": "object",
+  "properties": {
+    "projectId": {
+      "type": "string",
+      "title": "Scanned property (Project) id",
+      "rls": { "read": { "$or": [{ "created_by_id": "{{user.id}}" }, { "user_condition": { "role": "admin" } }] } }
+    },
+    "address": {
+      "type": "string",
+      "title": "Street address (host only)",
+      "rls": { "read": { "$or": [{ "created_by_id": "{{user.id}}" }, { "user_condition": { "role": "admin" } }] } }
+    },
+    "title": { "type": "string", "title": "Title, e.g. Front lawn to native meadow" },
+    "description": { "type": "string", "title": "What the day involves" },
+    "date": { "type": "string", "format": "date", "title": "Day of the install" },
+    "startTime": { "type": "string", "title": "Start time, 24-hour HH:MM" },
+    "hours": { "type": "number", "title": "Length of the day in hours (the volunteer hours offered)" },
+    "spots": { "type": "number", "title": "Helpers wanted" },
+    "joined": { "type": "number", "default": 0, "title": "Helpers signed up (kept by the server)" },
+    "whatToBring": { "type": "string", "title": "What to bring" },
+    "tasks": { "type": "array", "items": { "type": "string" }, "title": "Jobs on the day" },
+    "kidsWelcome": { "type": "boolean", "default": false, "title": "Families with children welcome" },
+    "city": { "type": "string", "title": "City or neighbourhood shown to everyone" },
+    "mapPoint": { "type": "array", "title": "Approximate [lat, lng], about 1 km" },
+    "hostName": { "type": "string", "title": "Host's first name" },
+    "lawnSqft": { "type": "number", "title": "Lawn being converted (sq ft)" },
+    "plantCount": { "type": "number", "title": "Plants going in" },
+    "plants": { "type": "array", "title": "Species and counts [{ name, count }]" },
+    "status": { "type": "string", "default": "open", "title": "open, full, done or cancelled" }
+  },
+  "required": ["title", "date"],
+  "rls": {
+    "read": {},
+    "create": { "user_condition": { "role": "admin" } },
+    "update": { "$or": [{ "created_by_id": "{{user.id}}" }, { "user_condition": { "role": "admin" } }] },
+    "delete": { "user_condition": { "role": "admin" } }
+  }
+}

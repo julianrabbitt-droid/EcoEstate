@@ -13,10 +13,12 @@ export const emailConfigured = () => Boolean(process.env.RESEND_API_KEY);
 export class EmailError extends Error {}
 
 /**
- * Send { to, subject, text, html }. Throws EmailError when Resend rejects it.
- * The API key is only ever sent in the Authorization header, never logged.
+ * Send { to, subject, text, html, replyTo }. Throws EmailError when Resend
+ * rejects it. replyTo (default support@) lets a reply reach a person, e.g. the
+ * host of a community install. The API key is only ever sent in the
+ * Authorization header, never logged.
  */
-export async function sendEmail({ to, subject, text, html }) {
+export async function sendEmail({ to, subject, text, html, replyTo }) {
   if (!emailConfigured()) {
     console.warn('[email] RESEND_API_KEY is not set: printing this email instead of sending it.');
     console.log(`\n[email] To: ${to}\n[email] Subject: ${subject}\n${text}\n`);
@@ -28,7 +30,7 @@ export async function sendEmail({ to, subject, text, html }) {
     res = await fetch(RESEND_URL, {
       method: 'POST',
       headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: FROM, to: [to], reply_to: REPLY_TO, subject, text, html }),
+      body: JSON.stringify({ from: FROM, to: [to], reply_to: replyTo || REPLY_TO, subject, text, html }),
       signal: AbortSignal.timeout(15000),
     });
   } catch {

@@ -60,7 +60,7 @@ export default function Beta() {
           </>
         ) : state === 'done' ? (
           <>
-            <p className="flex items-center gap-2 text-[15px] font-medium"><Check className="h-4 w-4 text-emerald-700" /> You have full tester access.</p>
+            <p className="flex items-center gap-2 text-[15px] font-medium"><Check className="h-4 w-4 text-primary" /> You have full tester access.</p>
             <p className="mt-1 text-[13px] text-muted-foreground">Start with your own address, or any home you know.</p>
             <div className="mt-4 flex flex-wrap gap-2">
               <Button asChild className="rounded-full"><Link to="/">Scan a lawn</Link></Button>

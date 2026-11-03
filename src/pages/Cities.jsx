@@ -109,7 +109,7 @@ export default function Cities() {
         <ul className="space-y-4">
           {PARTNER_GETS.map(([t, d]) => (
             <li key={t} className="flex gap-3">
-              <Check className="mt-1 h-4 w-4 shrink-0 text-emerald-700" aria-hidden />
+              <Check className="mt-1 h-4 w-4 shrink-0 text-primary" aria-hidden />
               <div>
                 <p className="text-[15px] font-medium">{t}</p>
                 <p className="mt-0.5 text-[14px] leading-relaxed text-muted-foreground">{d}</p>

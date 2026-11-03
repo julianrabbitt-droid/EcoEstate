@@ -2,9 +2,9 @@ import { useId } from 'react';
 import { contourPath } from '@/components/scan/contourPaths';
 
 const styles = {
-  lawn: 'fill-chart-3/35 stroke-chart-3',
+  lawn: 'fill-chart-1/40 stroke-chart-1',
   path: 'fill-foreground/20 stroke-card/80',
-  tree: 'fill-primary/30 stroke-chart-3/80',
+  tree: 'fill-primary/30 stroke-primary/80',
   other: 'fill-accent/15 stroke-accent/60',
   building: 'fill-foreground/55 stroke-foreground/80',
 };

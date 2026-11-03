@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Check, Loader2, Sprout } from 'lucide-react';
+import { ArrowRight, Check, Droplets, PencilRuler, Sprout } from 'lucide-react';
+import { StageOverlay, useStage, useWide } from '@/components/ProjectStage';
 import StepNav from '@/components/StepNav';
 import ScanDiagram from '@/components/ScanDiagram';
 import EditScanPanel from '@/components/EditScanPanel';
@@ -51,6 +52,20 @@ export default function Analysis() {
   const [synced, setSynced] = useState(false);
   // Edits save as they happen, so leaving via StepNav or the header keeps them.
   const fields = useMemo(() => ({ breakdown, turf, sun, soil, zip }), [breakdown, turf, sun, soil, zip]);
+  const wide = useWide();
+  // The steps' shared 3D view, showing today's lawn with its size and water.
+  const lawnSqft = Number(breakdown.turf || 0);
+  const gallons = Math.round(lawnSqft * (turf.galPerSqft ?? 46));
+  const lawnLabel = useMemo(() => (lawnSqft ? [`${num(lawnSqft)} sq ft of lawn`, `about ${num(gallons)} gal of water a year`] : null), [lawnSqft, gallons]);
+  useStage(
+    loading ? null : !project ? { missing: true } : { project, scene: 'scan', lawnLabel, viewShift: wide ? [-210, 30] : [0, 70] },
+    [loading, project, lawnLabel, wide],
+  );
+  // Sent here to fix the scan: straight to the outline editor below the view.
+  const editing = searchParams.get('edit') === '1';
+  useEffect(() => {
+    if (!loading && project && editing) setTimeout(() => document.getElementById('scan-outline')?.scrollIntoView({ behavior: 'smooth' }), 500);
+  }, [loading, project, editing]);
   const autosave = useAutosave(fields, (patch) => updateProject(id, patch));
 
   useEffect(() => {
@@ -63,14 +78,7 @@ export default function Analysis() {
     setSynced(true);
   }, [project, synced]);
 
-  if (loading) {
-    return (
-      <div className="mx-auto flex max-w-md flex-col items-center px-5 py-24 text-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        <p className="mt-3 text-sm text-muted-foreground">Opening your scan…</p>
-      </div>
-    );
-  }
+  if (loading) return null;
 
   if (!project) {
     return (
@@ -102,32 +110,79 @@ export default function Analysis() {
     navigate(`/project/${id}/design`, { state: { project: next } });
   };
 
-  return (
-    <div className="mx-auto w-full max-w-6xl px-5 py-10">
-      <StepNav projectId={id} project={project} current="scan" />
+  const source = project.scanSource === 'auto'
+    ? 'Auto-detected from satellite & records'
+    : project.scanSource === 'streetview'
+      ? 'Scanned from street view'
+      : project.scanSource === 'manual'
+        ? 'Drawn by hand'
+        : project.scanSource === 'upload'
+          ? 'Uploaded estimate'
+          : 'Scanned from satellite imagery';
+  const toEditor = () => document.getElementById('scan-outline')?.scrollIntoView({ behavior: 'smooth' });
+  const figures = (
+    <div className="grid grid-cols-2 gap-2">
+      <div className="rounded-2xl border border-border/60 bg-background/40 p-3">
+        <p className="text-[11.5px] text-muted-foreground">Lawn to convert</p>
+        <p className="mt-1 font-display text-[1.6rem] leading-none tracking-tight">{num(lawnSqft)}<span className="ml-1 text-[13px] text-muted-foreground">sq ft</span></p>
+        <p className="mt-1 text-[11px] text-muted-foreground">of {num(total)} sq ft measured</p>
+      </div>
+      <div className="rounded-2xl border border-border/60 bg-background/40 p-3">
+        <p className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><Droplets className="h-3.5 w-3.5 text-chart-2" aria-hidden />Water it drinks</p>
+        <p className="mt-1 font-display text-[1.6rem] leading-none tracking-tight">{num(gallons)}<span className="ml-1 text-[13px] text-muted-foreground">gal/yr</span></p>
+        <p className="mt-1 text-[11px] text-muted-foreground">{turf.name || 'Unknown turf'}</p>
+      </div>
+    </div>
+  );
 
-      <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="label-xs">Existing landscape</p>
-          <h1 className="mt-2 max-w-xl font-display text-3xl leading-tight tracking-tight sm:text-[2.4rem]">
-            {cleanAddress(project.address)}
-          </h1>
-          <p className="mt-1.5 text-[13px] text-muted-foreground">
-            {project.scanSource === 'auto'
-              ? 'Auto-detected from satellite & records'
-              : project.scanSource === 'streetview'
-                ? 'Scanned from street view'
-                : project.scanSource === 'manual'
-                  ? 'Drawn by hand'
-                  : project.scanSource === 'upload'
-                    ? 'Uploaded estimate'
-                    : 'Scanned from satellite imagery'}{' '}
-            · {num(project.totalSqft)} sq ft outlined
-          </p>
+  return (
+    <div>
+      <StageOverlay>
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3 sm:p-5">
+          <div className="pointer-events-auto inline-block max-w-full"><StepNav projectId={id} project={project} current="scan" /></div>
+          <div className="pointer-events-auto mt-3 w-fit max-w-[min(34rem,calc(100vw-1.5rem))] rounded-2xl border border-border/60 bg-card/85 px-4 py-3 shadow-lg backdrop-blur-md lg:max-w-[calc(100vw-29rem)]">
+            <h1 className="font-display text-[1.5rem] leading-tight tracking-tight sm:text-[1.9rem]">{cleanAddress(project.address)}</h1>
+            <p className="mt-1 text-[12.5px] text-muted-foreground">{source} · {num(project.totalSqft)} sq ft outlined</p>
+            <div className="mt-3 space-y-2 lg:hidden">
+              {figures}
+              <div className="flex gap-2">
+                <Button onClick={save} size="sm" className="rounded-full">Generate native design<ArrowRight className="ml-1.5 h-4 w-4" /></Button>
+                <Button onClick={toEditor} size="sm" variant="outline" className="rounded-full">Fix the outline</Button>
+              </div>
+            </div>
+          </div>
         </div>
-        <Button onClick={save} className="rounded-full" size="lg">
-          Generate native design
-        </Button>
+        <aside className="pointer-events-auto absolute bottom-16 right-3 top-3 z-20 hidden w-[25rem] flex-col overflow-hidden rounded-3xl border border-border/60 bg-card/88 shadow-2xl backdrop-blur-md lg:flex">
+          <div className="flex-1 space-y-4 overflow-y-auto p-5">
+            <div>
+              <p className="label-xs">Your lawn today</p>
+              <p className="mt-1 text-[12.5px] text-muted-foreground">What the scan found, as it stands now. Correct anything below; the lawn’s size drives the water, cost and plant counts.</p>
+            </div>
+            {figures}
+            <dl className="space-y-2 rounded-2xl border border-border/60 bg-background/40 p-4 text-[12.5px]">
+              <div className="flex justify-between"><dt className="text-muted-foreground">Turf</dt><dd>{turf.name || 'Unknown turf'}</dd></div>
+              <div className="flex justify-between"><dt className="text-muted-foreground">Ornamental beds</dt><dd className="tabular-nums">{num(breakdown.beds)} sq ft</dd></div>
+              <div className="flex justify-between"><dt className="text-muted-foreground">Bare soil or gravel</dt><dd className="tabular-nums">{num(breakdown.bare)} sq ft</dd></div>
+              <div className="flex justify-between"><dt className="text-muted-foreground">Sun · soil</dt><dd>{sun} · {soil}</dd></div>
+            </dl>
+          </div>
+          <div className="space-y-2 border-t border-border/60 p-4">
+            <Button onClick={save} className="w-full rounded-full" size="lg">
+              <Sprout className="mr-2 h-4 w-4" />
+              Generate native design
+            </Button>
+            <Button variant="ghost" onClick={toEditor} className="w-full rounded-full">
+              <PencilRuler className="mr-2 h-4 w-4" />
+              Fix the outline or the numbers
+            </Button>
+          </div>
+        </aside>
+      </StageOverlay>
+
+    <div className="mx-auto w-full max-w-6xl px-5 py-10">
+      <div id="scan-outline" className="scroll-mt-24">
+        <p className="label-xs">Existing landscape</p>
+        <h2 className="mt-2 font-display text-3xl leading-tight tracking-tight">The scan, in detail</h2>
       </div>
 
       <div className="mt-6 space-y-4">
@@ -308,6 +363,7 @@ export default function Analysis() {
       <div className="mt-6">
         <FullAutoScanUpsell />
       </div>
+    </div>
     </div>
   );
 }

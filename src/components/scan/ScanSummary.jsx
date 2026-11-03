@@ -1,7 +1,7 @@
 import ScanStat from '@/components/scan/ScanStat';
 
 const sqft = value => typeof value === 'number' ? `${Math.round(value).toLocaleString()} sq ft` : '—';
-const legend = [['Property', 'bg-chart-4'], ['Lawns', 'bg-chart-3/50'], ['Paths', 'bg-foreground/40'], ['Trees', 'bg-primary/60'], ['Other', 'bg-accent/40']];
+const legend = [['Property', 'bg-accent'], ['Lawns', 'bg-chart-1/60'], ['Paths', 'bg-foreground/40'], ['Trees', 'bg-primary/60'], ['Other', 'bg-accent/40']];
 
 export default function ScanSummary({ estimate }) {
   const e = estimate || {};

@@ -553,8 +553,8 @@ export default function Scan() {
       {/* One full-screen stage for the whole scan. Behind everything, fixed: the
           aerial view, a neighbourhood at first, then the property (the pin is
           checked on it directly), crossfading into the property's 3D model once
-          it is built; scrolling down fades it into the page's green. */}
-      <div className="pointer-events-none fixed inset-0 -z-10" style={{ background: 'radial-gradient(120% 80% at 50% 0%, #d6dec7 0%, #e4e8da 55%, #eef0e6 100%)' }} aria-hidden={phase !== 'confirm'}>
+          it is built; scrolling down fades it into the page's dusk. */}
+      <div className="pointer-events-none fixed inset-0 -z-10" style={{ background: 'radial-gradient(120% 80% at 50% 0%, #1a2a20 0%, #111c16 55%, #0b130f 100%)' }} aria-hidden={phase !== 'confirm'}>
         <div
           className={`absolute inset-0 transition-opacity duration-1000 ${phase === 'confirm' ? 'pointer-events-auto' : ''}`}
           style={{ opacity: modelShown ? 0 : aerialOpacity, filter: scrollY > 0 ? `blur(${Math.min(6, (scrollY / viewH) * 8).toFixed(1)}px)` : 'none' }}
@@ -663,7 +663,7 @@ export default function Scan() {
             <div className="relative h-40 w-40" aria-hidden>
               <span className="absolute inset-0 animate-ping rounded-full border-2 border-white/60" />
               <span className="absolute inset-6 rounded-full border border-white/40" />
-              <span className="absolute inset-[4.5rem] rounded-full bg-[#9fe870] shadow-[0_0_30px_#9fe870]" />
+              <span className="absolute inset-[4.5rem] rounded-full bg-primary shadow-[0_0_24px_hsl(var(--primary)/0.45)]" />
             </div>
             <p className="mt-6 font-display text-2xl tracking-tight drop-shadow">Scanning the property…</p>
             <p className="mt-2 max-w-sm text-[13px] leading-relaxed text-white/85 drop-shadow">

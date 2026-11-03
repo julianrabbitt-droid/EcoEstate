@@ -1,7 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { useProject } from '@/hooks/useProjects';
-import { ArrowRight, ClipboardCheck, Hammer, Loader2, Printer, ShoppingBasket, Users } from 'lucide-react';
+import { ArrowRight, Box, CalendarDays, ClipboardCheck, Hammer, HandHeart, LayoutGrid, Printer, ShoppingBasket, Users } from 'lucide-react';
+import { StageOverlay, useStage, useWide } from '@/components/ProjectStage';
+import HostInstallForm from '@/components/HostInstallForm';
+import { useAuth } from '@/lib/AuthContext';
+import { base44 } from '@/api/base44Client';
+import { installWhen, spotsLeft } from '@/lib/installs';
+import { speciesKey } from '@/lib/speciesColors';
 import BuildTimeline from '@/components/BuildTimeline';
 import StepNav from '@/components/StepNav';
 import { Button } from '@/components/ui/button';
@@ -21,12 +27,40 @@ const STEPS = [
   ['Water to establish', 'Deep water twice a week for the first summer, then once a month, then only in extreme heat.'],
 ];
 
+// The build step: the view moves in over the beds, each plant on a disc in its
+// species' colour and number (or straight down, as a planting plan), with the
+// list beside it; then the materials, the order of work, and the ways to get
+// it built, a community install among them.
 export default function Plan() {
   const { id } = useParams();
   const location = useLocation();
   const { project, loading } = useProject(id, location.state);
   const rebates = useRebates(project);
+  const wide = useWide();
+  const { user, isAuthenticated, navigateToLogin } = useAuth();
   const [copied, setCopied] = useState(false);
+  const [highlight, setHighlight] = useState(null);
+  const [planView, setPlanView] = useState(false);
+  const design = useMemo(() => (project ? designOrDefault(project) : []), [project]);
+  useStage(
+    loading ? null : !project ? { missing: true } : { project, entries: design, scene: 'build', highlight, planView, viewShift: wide ? [-220, 20] : [0, 70] },
+    [loading, project, design, highlight, planView, wide],
+  );
+  // This property's community install, if its owner is hosting one.
+  const [install, setInstall] = useState(undefined);
+  const [hostForm, setHostForm] = useState(false);
+  useEffect(() => {
+    if (!user?.id || !project) return;
+    base44.entities.CommunityInstall.filter({ projectId: id, created_by_id: user.id }, { sort: '-date', limit: 10 })
+      .then((list) => setInstall(list.find((i) => i.status === 'open' || i.status === 'full') || list[0] || null))
+      .catch(() => setInstall(null));
+  }, [user?.id, project, id]);
+  // Arriving from "Edit" on the install page opens the form there.
+  useEffect(() => {
+    if (location.hash !== '#community-install' || install === undefined) return;
+    if (install) setHostForm(true);
+    setTimeout(() => document.getElementById('community-install')?.scrollIntoView({ behavior: 'smooth' }), 300);
+  }, [location.hash, install]);
   // Local organizations: start with the 5 closest (city-tier) matches, then
   // widen the range — county, region, statewide — 20 more at a time.
   const [orgTier, setOrgTier] = useState(0);
@@ -40,14 +74,7 @@ export default function Plan() {
     });
   }, [project]);
 
-  if (loading) {
-    return (
-      <div className="mx-auto flex max-w-md flex-col items-center px-5 py-24 text-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        <p className="mt-3 text-sm text-muted-foreground">Opening your scan…</p>
-      </div>
-    );
-  }
+  if (loading) return null;
 
   if (!project) {
     return (
@@ -60,7 +87,6 @@ export default function Plan() {
     );
   }
 
-  const design = designOrDefault(project);
   const allOrgs = organizationsFor(project, orgTier);
   const shownOrgs = allOrgs.slice(0, orgLimit);
   const orgsHasMore = orgLimit < allOrgs.length || orgTier < 3;
@@ -107,21 +133,115 @@ export default function Plan() {
     }
   };
 
-  return (
-    <div className="mx-auto w-full max-w-6xl px-5 py-10">
-      <StepNav projectId={id} project={project} current="plan" />
+  const key = speciesKey(design);
+  const plantRows = design.map((entry) => ({ entry, plant: plantById(entry.speciesId), k: key.get(entry.speciesId) })).filter((r) => r.plant && r.k);
+  const plantCount = plantRows.reduce((a, r) => a + r.entry.quantity, 0);
+  const toInstall = () => document.getElementById('community-install')?.scrollIntoView({ behavior: 'smooth' });
+  const viewSwitch = (
+    <div role="group" aria-label="View" className="flex rounded-full border border-border bg-background/40 p-0.5 text-[11.5px]">
+      {[[false, '3D garden', Box], [true, 'Planting plan', LayoutGrid]].map(([on, l, Icon]) => (
+        <button key={l} type="button" aria-pressed={planView === on} onClick={() => setPlanView(on)} className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-1 transition ${planView === on ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+          <Icon className="h-3.5 w-3.5" aria-hidden />{l}
+        </button>
+      ))}
+    </div>
+  );
+  // How the plants divide up, one bar segment per species in its colour.
+  const shareBar = (
+    <div className="flex h-2.5 w-full gap-[2px] overflow-hidden rounded-full" role="img" aria-label="Share of plants by species">
+      {plantRows.map(({ entry, k }) => (
+        <span key={entry.speciesId} style={{ width: `${(entry.quantity / Math.max(1, plantCount)) * 100}%`, background: k.color, opacity: !highlight || highlight === entry.speciesId ? 1 : 0.3 }} />
+      ))}
+    </div>
+  );
+  const legend = (
+    <ul className="space-y-1">
+      {plantRows.map(({ entry, plant, k }) => {
+        const on = highlight === entry.speciesId;
+        return (
+          <li key={entry.speciesId}>
+            <button
+              type="button"
+              aria-pressed={on}
+              onClick={() => setHighlight(on ? null : entry.speciesId)}
+              className={`flex w-full items-center gap-3 rounded-xl px-2 py-1.5 text-left transition ${on ? 'bg-secondary' : 'hover:bg-secondary/60'} ${highlight && !on ? 'opacity-55' : ''}`}
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-white font-mono text-[10.5px] font-semibold text-white" style={{ background: k.color }}>{k.n}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium leading-tight">{plant.common}</span>
+                <span className="block text-[11px] text-muted-foreground">{plant.spacing} ft apart · {money(entry.quantity * plant.cost)}</span>
+              </span>
+              <span className="text-[13px] tabular-nums">{entry.quantity}</span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
 
-      <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
+  return (
+    <div>
+      <StageOverlay>
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3 sm:p-5 print:hidden">
+          <div className="pointer-events-auto inline-block max-w-full"><StepNav projectId={id} project={project} current="plan" /></div>
+          <div className="pointer-events-auto mt-3 w-fit max-w-[min(34rem,calc(100vw-1.5rem))] rounded-2xl border border-border/60 bg-card/85 px-4 py-3 shadow-lg backdrop-blur-md lg:max-w-[calc(100vw-29rem)]">
+            <h1 className="font-display text-[1.5rem] leading-tight tracking-tight sm:text-[1.9rem]">
+              Make this garden <em className="italic text-primary">real</em>
+            </h1>
+            <p className="mt-1 text-[12.5px] text-muted-foreground">
+              {plantCount} plants · {design.length} species · {money(materialsTotal)} in materials and labor
+            </p>
+            <div className="mt-3 space-y-2 lg:hidden">
+              {viewSwitch}
+              {shareBar}
+              <details>
+                <summary className="cursor-pointer text-[12px] text-muted-foreground">The {plantRows.length} species, by number</summary>
+                <div className="mt-1 max-h-[24svh] overflow-y-auto">{legend}</div>
+              </details>
+            </div>
+          </div>
+        </div>
+        <aside className="pointer-events-auto absolute bottom-16 right-3 top-3 z-20 hidden w-[25rem] flex-col overflow-hidden rounded-3xl border border-border/60 bg-card/88 shadow-2xl backdrop-blur-md lg:flex print:hidden">
+          <div className="flex-1 space-y-4 overflow-y-auto p-5">
+            <div>
+              <p className="label-xs">Planting plan</p>
+              <p className="mt-1 text-[12.5px] text-muted-foreground">Every plant on a disc of its species’ colour, sized to its spacing. Pick a species to find it in the garden.</p>
+            </div>
+            {viewSwitch}
+            <div className="space-y-1.5">
+              {shareBar}
+              <p className="text-[11px] text-muted-foreground">Share of the {plantCount} plants, by species</p>
+            </div>
+            {legend}
+          </div>
+          <div className="space-y-2 border-t border-border/60 p-4">
+            <Button onClick={toInstall} className="w-full rounded-full" size="lg">
+              <HandHeart className="mr-2 h-4 w-4" />
+              {install && install.status !== 'cancelled' && install.status !== 'done' ? 'Your community install' : 'Host a community install'}
+            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" onClick={() => window.print()} className="rounded-full">
+                <Printer className="mr-1.5 h-4 w-4" />
+                Print plan
+              </Button>
+              <Button asChild variant="outline" className="rounded-full">
+                <Link to={`/my-projects?project=${id}`}>Track it</Link>
+              </Button>
+            </div>
+          </div>
+        </aside>
+      </StageOverlay>
+
+    <div className="mx-auto w-full max-w-6xl px-5 py-10">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="label-xs">Planting plan & materials</p>
-          <h1 className="mt-2 font-display text-3xl leading-tight tracking-tight sm:text-[2.4rem]">
-            Make this garden real
-          </h1>
+          <h2 className="mt-2 font-display text-3xl leading-tight tracking-tight">Everything it takes</h2>
           <p className="mt-1.5 text-[13px] text-muted-foreground">
             {cleanAddress(project.address)} · {design.length} species · {money(materialsTotal)} in materials and labor
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 print:hidden">
           <Button variant="outline" onClick={() => window.print()} className="rounded-full">
             <Printer className="mr-2 h-4 w-4" />
             Print plan
@@ -195,20 +315,66 @@ export default function Plan() {
             { icon: Hammer, title: 'Do it yourself', body: 'You have the quantities, spacing and sequence: a weekend for most of this yard.' },
             { icon: ShoppingBasket, title: 'Buy the materials', body: 'Take the bill of materials to a native nursery; most deliver by the pallet.' },
             { icon: Users, title: 'Hire a crew', body: 'Send the brief to an ecological landscape contractor for a fixed quote.' },
-            { icon: ClipboardCheck, title: 'Community install', body: 'Volunteer crews convert yards at scheduled planting events.', highlight: true },
+            { icon: ClipboardCheck, title: 'Community install', body: 'Host a planting day: neighbours and students sign up to help and earn volunteer hours.', highlight: true, onClick: toInstall },
           ].map((option) => (
             <div
               key={option.title}
+              role={option.onClick ? 'button' : undefined}
+              tabIndex={option.onClick ? 0 : undefined}
+              onClick={option.onClick}
+              onKeyDown={option.onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); option.onClick(); } } : undefined}
               className={`rounded-2xl border p-4 ${
-                option.highlight ? 'border-accent/40 bg-accent/5' : 'border-border bg-card'
+                option.highlight ? 'cursor-pointer border-primary/40 bg-primary/5 transition hover:border-primary/70' : 'border-border bg-card'
               }`}
             >
-              <option.icon className="h-4 w-4 text-accent" />
+              <option.icon className={`h-4 w-4 ${option.highlight ? 'text-primary' : 'text-accent'}`} />
               <h3 className="mt-2.5 text-[13.5px] font-medium leading-tight">{option.title}</h3>
               <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">{option.body}</p>
             </div>
           ))}
         </div>
+      </section>
+
+      <section id="community-install" className="mt-8 scroll-mt-24 rounded-2xl border border-primary/30 bg-primary/5 p-6 print:hidden">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-xl">
+            <p className="label-xs flex items-center gap-1.5"><HandHeart className="h-3.5 w-3.5 text-primary" aria-hidden />Community install</p>
+            <h2 className="mt-1.5 font-display text-2xl tracking-tight">Plant it together</h2>
+            <p className="mt-1 text-[13px] text-muted-foreground">
+              Post a planting day. Neighbours, students and volunteer groups sign up to help, learn how it’s done and earn volunteer hours you confirm afterwards. They can message you with questions; your address stays private until you send it.
+            </p>
+          </div>
+          {install && install.status !== 'cancelled' && !hostForm && (
+            <div className="surface min-w-[16rem] bg-card/80 p-4">
+              <p className="flex items-center gap-1.5 text-[12px] text-muted-foreground"><CalendarDays className="h-3.5 w-3.5" aria-hidden />{installWhen(install)}</p>
+              <p className="mt-1 text-[15px] font-medium">{install.title}</p>
+              <p className="mt-0.5 text-[12.5px] text-muted-foreground">{install.status === 'done' ? 'Planted' : `${install.joined || 0} of ${install.spots} helpers · ${spotsLeft(install)} spots left`}</p>
+              <div className="mt-3 flex gap-2">
+                <Button asChild size="sm" className="rounded-full"><Link to={`/installs/${install.id}`}><Users className="mr-1.5 h-3.5 w-3.5" />Helpers</Link></Button>
+                {install.status !== 'done' && <Button size="sm" variant="outline" onClick={() => setHostForm(true)} className="rounded-full">Edit</Button>}
+              </div>
+            </div>
+          )}
+        </div>
+        {!isAuthenticated ? (
+          <Button onClick={navigateToLogin} className="mt-4 rounded-full">Sign in to host</Button>
+        ) : hostForm || (!install || install.status === 'cancelled' || install.status === 'done') ? (
+          hostForm ? (
+            <div className="surface mt-5 bg-card/85 p-5">
+              <HostInstallForm
+                project={project}
+                install={install && install.status !== 'cancelled' && install.status !== 'done' ? install : null}
+                onSaved={(saved) => { setInstall(saved); setHostForm(false); }}
+                onCancel={() => setHostForm(false)}
+              />
+            </div>
+          ) : (
+            <Button onClick={() => setHostForm(true)} className="mt-4 rounded-full"><HandHeart className="mr-1.5 h-4 w-4" />Host a community install</Button>
+          )
+        ) : null}
+        <p className="mt-4 text-[12px] text-muted-foreground">
+          Want to help at someone else’s? <Link to="/installs" className="underline underline-offset-2">See planting days near you</Link>.
+        </p>
       </section>
 
       <section className="mt-8 surface p-5">
@@ -315,6 +481,7 @@ export default function Plan() {
           </Link>
         </Button>
       </div>
+    </div>
     </div>
   );
 }

@@ -22,10 +22,10 @@ const BUILDING_STYLE = { color: '#e9e2d4', weight: 1.5, fillColor: '#b9ad99', fi
 const TREE_STYLE = { color: '#2f5a2a', weight: 1, fillColor: '#3f6b35', fillOpacity: 0.3 };
 const NEARBY_TREE_STYLE = { ...TREE_STYLE, dashArray: '3 3', fillOpacity: 0.18 };
 const ESTIMATE_STYLE = { color: '#f0a03c', weight: 2.5, dashArray: '6 5', fillColor: '#f0a03c', fillOpacity: 0.08 };
-const LAWN_STYLE = { color: '#d9ffb8', weight: 2.5, fillColor: '#4fbf3f', fillOpacity: 0.5 };
+const LAWN_STYLE = { color: '#eadfbf', weight: 2.5, fillColor: '#8fae6b', fillOpacity: 0.5 };
 // Small isolated patches (counted in the total) are drawn faintly so the main
 // lawn regions stand out.
-const SCATTERED_STYLE = { color: '#d9ffb8', weight: 1, fillColor: '#4fbf3f', fillOpacity: 0.35 };
+const SCATTERED_STYLE = { color: '#eadfbf', weight: 1, fillColor: '#8fae6b', fillOpacity: 0.35 };
 // Roads dark with a pale curb line, paths light with darker edging, so both
 // stand out against lawn and imagery.
 const ROAD_KINDS = new Set(['service', 'living_street', 'residential', 'unclassified', 'tertiary', 'secondary', 'primary']);
@@ -327,7 +327,7 @@ export default function LawnApiResult({ data, preview, onConfirm, onFix, onEdit,
         {!adjusting && (
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
             <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-dashed border-foreground/60" />{data.parcelSource === 'place' ? 'Property outline (OpenStreetMap)' : `Property line${data.parcelSource === 'user' ? ' (adjusted)' : ''}`}</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-[#2f7a25] bg-[#4fbf3f]" />Lawn</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-[#5d7448] bg-[#8fae6b]" />Lawn</span>
             {data.buildings?.features?.length > 0 && <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-[#b9ad99]" />Buildings</span>}
             {data.trees?.length > 0 && <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#3f6b35]" />Trees (dashed: next to the property)</span>}
             {data.surveyDate && <span className="ml-auto">Aerial survey {data.surveyDate}</span>}

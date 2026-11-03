@@ -28,6 +28,9 @@ import Scan from '@/pages/Scan';
 // Pages past the first screen load on demand, so the homepage doesn't wait for
 // the 3D engine, charts or the community (AppShell shows a loader meanwhile).
 const Admin = lazy(() => import('@/pages/Admin'));
+const ProjectStage = lazy(() => import('@/components/ProjectStage'));
+const Installs = lazy(() => import('@/pages/Installs'));
+const Install = lazy(() => import('@/pages/Install'));
 const Analysis = lazy(() => import('@/pages/Analysis'));
 const Design = lazy(() => import('@/pages/Design'));
 const Impact = lazy(() => import('@/pages/Impact'));
@@ -80,7 +83,7 @@ const AuthenticatedApp = () => {
   if (!onAuthPage && (isLoadingPublicSettings || isLoadingAuth)) {
     return (
       <div className="fixed inset-0 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
+        <div className="w-8 h-8 border-4 border-border border-t-primary rounded-full animate-spin"></div>
       </div>
     );
   }
@@ -103,16 +106,21 @@ const AuthenticatedApp = () => {
       {/* Add your page Route elements here */}
       <Route element={<AppShell />}>
         <Route path="/" element={<Scan />} />
-        <Route path="/project/:id" element={<Analysis />} />
-        <Route path="/project/:id/design" element={<Design />} />
-        <Route path="/project/:id/impact" element={<Impact />} />
-        <Route path="/project/:id/plan" element={<Plan />} />
+        {/* The four steps share one 3D view of the property (ProjectStage). */}
+        <Route path="/project/:id" element={<ProjectStage />}>
+          <Route index element={<Analysis />} />
+          <Route path="design" element={<Design />} />
+          <Route path="impact" element={<Impact />} />
+          <Route path="plan" element={<Plan />} />
+        </Route>
         <Route path="/project/:id/legacy" element={<ToPayoff />} />
         <Route path="/why-native" element={<WhyNative />} />
         <Route path="/examples" element={<Examples />} />
         <Route path="/plans" element={<Plans />} />
         <Route path="/cities" element={<Cities />} />
         <Route path="/beta" element={<Beta />} />
+        <Route path="/installs" element={<Installs />} />
+        <Route path="/installs/:id" element={<Install />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/cookies" element={<Cookies />} />

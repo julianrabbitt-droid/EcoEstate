@@ -98,7 +98,7 @@ export default function Plans() {
                       {!Array.isArray(plans) ? (
                         plans[p.id] ? <span className="text-[13px]">{plans[p.id]}</span> : <Minus className="h-4 w-4 text-muted-foreground/60" aria-label="Not included" />
                       ) : plans.includes(p.id) ? (
-                        <Check className="h-4 w-4 text-emerald-700" aria-label="Included" />
+                        <Check className="h-4 w-4 text-primary" aria-label="Included" />
                       ) : (
                         <Minus className="h-4 w-4 text-muted-foreground/60" aria-label="Not included" />
                       )}

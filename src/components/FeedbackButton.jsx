@@ -50,7 +50,7 @@ export default function FeedbackButton() {
         </button>
       </div>
       {state === 'sent' ? (
-        <p className="mt-3 flex items-center gap-2 text-[13px] text-muted-foreground"><Check className="h-4 w-4 text-emerald-700" /> Thanks, it’s been sent.</p>
+        <p className="mt-3 flex items-center gap-2 text-[13px] text-muted-foreground"><Check className="h-4 w-4 text-primary" /> Thanks, it’s been sent.</p>
       ) : (
         <>
           <textarea

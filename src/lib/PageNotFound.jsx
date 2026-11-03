@@ -2,13 +2,13 @@ import { Link, useLocation } from 'react-router-dom';
 import { Crosshair, Sprout } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-// A page that doesn't exist: the same aerial and sage as the rest of the site,
+// A page that doesn't exist: the same aerial and dusk palette as the rest of the site,
 // and a way back to scanning.
 export default function PageNotFound() {
   const { pathname } = useLocation();
   return (
     <div className="relative isolate flex min-h-screen items-center justify-center px-5 text-center">
-      <div className="pointer-events-none fixed inset-0 -z-20" style={{ background: 'radial-gradient(120% 80% at 50% 0%, #dde4cf 0%, #e7eadd 55%, #f0f1e8 100%)' }} aria-hidden />
+      <div className="pointer-events-none fixed inset-0 -z-20" style={{ background: 'radial-gradient(120% 80% at 50% 0%, #1a2a20 0%, #111c16 55%, #0b130f 100%)' }} aria-hidden />
       <div
         className="pointer-events-none absolute inset-0 -z-10 bg-cover bg-center opacity-45"
         style={{ backgroundImage: 'url(/aerial-neighbourhood.jpg)', maskImage: 'radial-gradient(60% 60% at 50% 45%, #000 0%, transparent 100%)', WebkitMaskImage: 'radial-gradient(60% 60% at 50% 45%, #000 0%, transparent 100%)' }}
