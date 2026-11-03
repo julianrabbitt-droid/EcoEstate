@@ -25,6 +25,7 @@ import { COUNTIES, findCountyParcel } from './lib/parcels.js';
 import { estimateParcel } from './lib/estimate.js';
 import { placeById, placeByName } from './lib/places.js';
 import { detectLawn } from './lib/lawn.js';
+import { terrainGrid } from './lib/terrain.js';
 import { buildingsInBox, segmentsInBox } from './lib/buildings.js';
 import { mergeLawns } from './lib/merge.js';
 import { LRU } from './lib/lru.js';
@@ -70,6 +71,20 @@ async function limited(task) {
     else running--;
   }
 }
+
+// ---------- Ground heights (for 3D models saved before scans carried them) ----------
+// GET /v1/terrain?west=&south=&east=&north= (a property's box, lon/lat): USGS
+// bare earth over it and 30 m around, as in the scan's `terrain`.
+app.get('/v1/terrain', async (req, res) => {
+  const box = ['west', 'south', 'east', 'north'].map((k) => Number(req.query[k]));
+  const [w, s, e, n] = box;
+  if (box.some((v) => !Number.isFinite(v)) || e <= w || n <= s || e - w > 0.02 || n - s > 0.02 || Math.abs(s) > 90 || Math.abs(w) > 180) {
+    return fail(res, 400, 'bad_box', 'Pass west, south, east and north of a property (under ~2 km across).');
+  }
+  const terrain = await terrainGrid(box);
+  if (!terrain) return fail(res, 503, 'terrain_unavailable', 'The elevation service did not answer in time.');
+  res.json({ terrain });
+});
 
 app.get('/health', (req, res) => {
   res.json({
@@ -228,6 +243,7 @@ async function lawnResponse({ address, location, parcel, parcelSource, query }) 
     fences: detection.fences,
     groundImage: detection.groundImage,
     nearbyRoads: detection.nearbyRoads,
+    terrain: detection.terrain || null,
     impact: impact(detection.totalSqft, query),
     cached,
   };

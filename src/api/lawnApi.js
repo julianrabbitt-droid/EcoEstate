@@ -70,6 +70,12 @@ export function locateAddress(address, hit = null) {
   return call(`/locate?${params}`);
 }
 
+/** GET /v1/terrain — bare-earth heights around a property ([west, south, east, north]), as a scan's `terrain`. */
+export async function getTerrain([west, south, east, north]) {
+  const params = new URLSearchParams({ west: String(west), south: String(south), east: String(east), north: String(north) });
+  return (await call(`/terrain?${params}`)).terrain;
+}
+
 /** POST /v1/lawn — re-detect the lawn inside a property line the user adjusted. */
 export function getLawnForParcel({ parcel, address, location }) {
   return call('/lawn', {

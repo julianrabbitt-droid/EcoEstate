@@ -24,7 +24,7 @@ function baseUrl(env) {
   return (process.env.LAWN_API_URL || `http://localhost:${env.PORT || 3000}`).replace(/\/$/, '');
 }
 
-const ROUTES = { 'GET /lawn': '/v1/lawn', 'POST /lawn': '/v1/lawn', 'GET /locate': '/v1/locate', 'POST /area': '/v1/area', 'GET /health': '/health' };
+const ROUTES = { 'GET /lawn': '/v1/lawn', 'POST /lawn': '/v1/lawn', 'GET /locate': '/v1/locate', 'POST /area': '/v1/area', 'GET /terrain': '/v1/terrain', 'GET /health': '/health' };
 
 export const lawnRouter = express.Router();
 lawnRouter.use(express.json({ limit: '1mb' }));

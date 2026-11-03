@@ -13,6 +13,7 @@ import { ApiError } from './errors.js';
 import { buildingsInBox, segmentsInBox } from './buildings.js';
 import { forEachPixel, makeGrid, polygonsOf, rasterize, rasterizeLabels } from './grid.js';
 import { findNaip, readNaip } from './naip.js';
+import { terrainGrid } from './terrain.js';
 import { osmLawnShapes, PATH_WIDTH_M } from './osmLawns.js';
 import { dilate, distanceTo, erode, labelRegions, localStats } from './raster.js';
 import { regionShape } from './shapes.js';
@@ -83,6 +84,7 @@ export const SETTINGS = {
   // brighter than dry grass in the photo, counts in patches at least this big.
   lidarDormantNdviMin: 0.05,
   lidarDormantMinM2: 25, // ~270 sq ft
+  terrainExtraWaitMs: 6000, // the most a finished scan waits on the ground heights (lib/terrain.js)
   // Lidar older than the photo can describe a yard that has since changed (a
   // rebuild, a new lawn, a tree taken down). Where the newer photo shows smooth
   // turf (tree crowns and shrubs are never this smooth), the photo decides.
@@ -639,6 +641,8 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
 
   const parcel = rasterize(grid, polygonsOf(parcelGeometry));
   const t0 = Date.now();
+  // The ground's heights around the property for the 3D model (slow to answer, so started first).
+  const terrainLoad = grid.res <= SETTINGS.lidarMaxResM ? terrainGrid(box) : Promise.resolve(null);
   let templates = [];
   let buildingsFailed = false;
   let mappedPaths = [];
@@ -1213,6 +1217,8 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   };
 
   const streetTrees = grid.res <= SETTINGS.streetMaxResM ? await findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBuildings) : [];
+  // Not worth holding the scan long for: without it the 3D view fetches coarser terrain itself.
+  const terrain = await Promise.race([terrainLoad, new Promise((done) => setTimeout(() => done(null), SETTINGS.terrainExtraWaitMs))]);
   const result = {
     lawn,
     totalSqft: lawn.features.reduce((s, f) => s + f.properties.areaSqft, 0),
@@ -1229,6 +1235,7 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     // Some canopy tiles or the building outlines couldn't be loaded: callers shouldn't cache this.
     canopyIncomplete: canopy.failedTiles > 0 || buildingsFailed,
     buildings: buildingLayer,
+    terrain,
     trees: [...detectTrees(grid, canopy, onParcelNotRoof), ...streetTrees],
     paths: layers.paths,
     paved,
