@@ -1,5 +1,6 @@
 // Serve a city-test output folder over http (with CORS), for the side-by-side
-// review page (compare.html, copied in) and the app's /dev/render page.
+// review pages (compare.html: the scan; review.html: its renders; both copied
+// in) and the app's /dev/render page.
 //
 //   node scripts/serve-run.mjs <outDir> [port]
 //   → http://127.0.0.1:8768/compare.html?city=<slug>&n=1,2,3
@@ -10,7 +11,7 @@ import path from 'node:path';
 
 const [dir, port = '8768'] = process.argv.slice(2);
 const root = path.resolve(dir);
-fs.copyFileSync(new URL('./compare.html', import.meta.url), path.join(root, 'compare.html'));
+for (const page of ['compare.html', 'review.html']) fs.copyFileSync(new URL(`./${page}`, import.meta.url), path.join(root, page));
 const TYPES = { '.html': 'text/html', '.json': 'application/json', '.png': 'image/png', '.jsonl': 'text/plain' };
 http
   .createServer((req, res) => {

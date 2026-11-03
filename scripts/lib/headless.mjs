@@ -19,6 +19,9 @@ export async function openPage({ width = 1280, height = 800, mobile = false, por
   const chrome = spawn(CHROME, [
     '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, `--window-size=${width},${height}`,
     '--hide-scrollbars', '--mute-audio', '--no-first-run', '--no-default-browser-check', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader',
+    // HEADLESS_GL=swiftshader: software WebGL (slower; headless Chrome's GPU
+    // path can leave photographed textures white).
+    ...(process.env.HEADLESS_GL ? [`--use-angle=${process.env.HEADLESS_GL}`] : []),
   ], { stdio: 'ignore' });
   let closed = false;
   const close = () => {

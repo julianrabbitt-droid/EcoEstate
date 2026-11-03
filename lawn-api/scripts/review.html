@@ -1,0 +1,84 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Render review</title>
+<style>
+body{margin:0;font:12px/1.3 -apple-system,Helvetica,sans-serif;background:#1d1f1c;color:#eee}
+.row{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px 6px}
+.cell{position:relative;background:#000;aspect-ratio:16/10;overflow:hidden}
+.cell img,.cell canvas{width:100%;height:100%;object-fit:cover;display:block}
+.cell span{position:absolute;left:4px;top:4px;background:rgba(0,0,0,.6);padding:1px 5px;border-radius:4px;font-size:10px}
+.t{padding:2px 8px 8px;color:#cfd}
+</style></head><body>
+<!-- One row per home of a city-test run (served by serve-run.mjs): a current
+     photo (Esri, for looking only) with the scan's outlines, the 3D model, and
+     Real 3D close up and from the street, as scripts/real3d-holes.mjs rendered
+     them into renders-model/ and renders-real/. ?city=<slug>&n=1,2,3,4 -->
+<div id="rows"></div>
+<script>
+const params = new URLSearchParams(location.search);
+const slug = params.get('city');
+const list = (params.get('n') || '1').split(',').map(Number);
+const rings = (g) => !g ? [] : g.type === 'Polygon' ? [g.coordinates[0]] : g.type === 'MultiPolygon' ? g.coordinates.map((p) => p[0]) : [];
+const load = (src) => new Promise((r) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => r(i); i.onerror = () => r(null); i.src = src; });
+const Z = 20;
+const tileX = (lon) => ((lon + 180) / 360) * 2 ** Z;
+const tileY = (lat) => { const s = Math.sin((lat * Math.PI) / 180); return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 2 ** Z; };
+async function photo(d) {
+  // The parcel and a margin, framed 16:10.
+  const pts = rings(d.parcel?.geometry)[0] || [];
+  const xs = pts.map((p) => tileX(p[0])), ys = pts.map((p) => tileY(p[1]));
+  let [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  let w = (x1 - x0) * 1.6, h = (y1 - y0) * 1.6;
+  if (w / h < 1.6) w = h * 1.6; else h = w / 1.6;
+  [x0, x1, y0, y1] = [cx - w / 2, cx + w / 2, cy - h / 2, cy + h / 2];
+  const W = 640, H = 400, s = W / w;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  const zt = (z) => {
+    const tiles = [];
+    for (let ty = Math.floor(y0); ty <= Math.floor(y1); ty++) for (let tx = Math.floor(x0); tx <= Math.floor(x1); tx++) tiles.push([tx, ty]);
+    return tiles;
+  };
+  await Promise.all(zt().map(async ([tx, ty]) => {
+    let img = await load(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${Z}/${ty}/${tx}`);
+    if (img) ctx.drawImage(img, (tx - x0) * s, (ty - y0) * s, s, s);
+  }));
+  const px = ([lon, lat]) => [(tileX(lon) - x0) * s, (tileY(lat) - y0) * s];
+  const draw = (ring, stroke, fill, width = 2, dash = []) => {
+    ctx.beginPath(); ring.forEach((p, i) => { const [x, y] = px(p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    ctx.setLineDash(dash); ctx.strokeStyle = stroke; ctx.lineWidth = width; ctx.stroke(); ctx.setLineDash([]);
+  };
+  (d.lawn?.features || []).forEach((f) => rings(f.geometry).forEach((r) => draw(r, '#7CFC00', 'rgba(124,252,0,.22)', 2)));
+  (d.buildings?.features || []).forEach((f) => rings(f.geometry).forEach((r) => draw(r, '#ff3b3b', null, 2)));
+  (d.pools?.features || []).forEach((f) => rings(f.geometry).forEach((r) => draw(r, '#00e5ff', null, 2)));
+  rings(d.parcel?.geometry).forEach((r) => draw(r, '#ffffff', null, 2, [6, 4]));
+  (d.trees || []).forEach((t) => {
+    const [x, y] = px([t.lon, t.lat]);
+    const [x2] = px([t.lon + ((t.radiusFt || 6) * 0.3048) / (111320 * Math.cos((t.lat * Math.PI) / 180)), t.lat]);
+    ctx.beginPath(); ctx.arc(x, y, Math.abs(x2 - x), 0, 7); ctx.strokeStyle = t.street ? '#c58cff' : '#ffe14d'; ctx.lineWidth = 1.5; ctx.stroke();
+  });
+  return c;
+}
+const cell = (label, el) => { const d = document.createElement('div'); d.className = 'cell'; const s = document.createElement('span'); s.textContent = label; d.append(el, s); return d; };
+const img = (src) => { const i = document.createElement('img'); i.src = src; i.onerror = () => { i.style.display = 'none'; }; return i; };
+(async () => {
+  for (const n of list) {
+    let d;
+    try { d = await (await fetch(`${slug}/${n}.json`)).json(); } catch { continue; }
+    const row = document.createElement('div'); row.className = 'row';
+    row.append(
+      cell('photo + scan', await photo(d)),
+      cell('3D model', img(`renders-model/${slug}-${n}-near.png`)),
+      cell('Real 3D', img(`renders-real/${slug}-${n}-near.png`)),
+      cell('Real 3D, street', img(`renders-real/${slug}-${n}-street.png`)),
+    );
+    const t = document.createElement('div'); t.className = 't';
+    const b = (d.buildings?.features || []).map((f) => `${Math.round(f.properties.areaSqft)} sq ft ${f.properties.heightFt} ft (${f.properties.heightSource}${f.properties.completed ? ', completed' : ''})`).join('; ');
+    t.textContent = `${slug} ${n} · ${d.address} · lot ${d.parcel?.areaSqft} · lawn ${d.lawnSqft} · ${b} · pools ${(d.pools?.features || []).length} · trees ${(d.trees || []).length} · terrain ${d.terrain ? 'yes' : 'no'}`;
+    document.getElementById('rows').append(row, t);
+  }
+  await new Promise((r) => setTimeout(r, 800));
+  window.__reviewReady = true;
+})();
+</script></body></html>

@@ -14,7 +14,8 @@
 // outDir/<label>-<view>.png, -holes.png (holes in magenta) and -plan.png (the
 // cut masks with the holes' ground points), and outDir/results.jsonl.
 // MODEL=1: the plain 3D model instead; QA=1: Google's own mesh, uncut (its
-// holes are the baseline); SETTLE_MS: how long each view waits for its tiles.
+// holes are the baseline); SETTLE_MS: how long each view waits for its tiles;
+// VIEWS=front,street,near: only those views (near: closer, for reviewing).
 import fs from 'node:fs';
 import path from 'node:path';
 import { openPage } from './lib/headless.mjs';
@@ -41,6 +42,23 @@ function inPage(spec) {
     const gAt = window.__ecoGround?.groundAt?.current || (() => 0);
     const pos = [...spec.pos];
     const tgt = [...spec.tgt];
+    // The street view: out from the house toward the street until off the lot,
+    // a sidewalk's width further, looking back at the house.
+    if (spec.street && clip?.uEcoMask.value.image?.getContext) {
+      const lotC = clip.uEcoMask.value.image;
+      const lb = clip.uEcoBox.value;
+      const lctx = lotC.getContext('2d');
+      const onLot = (x, z) => {
+        const u = (x - lb.x) / lb.z;
+        const v = (z - lb.y) / lb.w;
+        if (u <= 0 || u >= 1 || v <= 0 || v >= 1) return false;
+        return lctx.getImageData(Math.floor(u * lotC.width), Math.floor((1 - v) * lotC.height), 1, 1).data[0] > 127;
+      };
+      let r = 0;
+      while (r < 400 && onLot(spec.street[0] * r, spec.street[1] * r)) r += 2;
+      pos[0] = spec.street[0] * (r + 12);
+      pos[2] = spec.street[1] * (r + 12);
+    }
     // Heights given above the ground there (the street view stands on it).
     if (spec.eye) {
       pos[1] = gAt(pos[0], pos[2]) + spec.eye;
@@ -211,14 +229,20 @@ for (const spec of specs) {
       await page.waitFor('Boolean(window.__ecoGround?.fix)', 20000, 500);
       row.ground = await page.evaluate(`(${groundProbe.toString()})()`).catch((e) => ({ error: e.message }));
     }
+    // Every texture in (the photographed ones load after the model shows, a
+    // white stand-in until then).
+    await page.waitFor(`(() => { let waiting = 0; window.__ecoThree.current.scene.traverse((o) => { const m = o.material; for (const k of ['map', 'normalMap']) { const img = m?.[k]?.image; if (img && (img.width || 0) <= 1) waiting++; } }); return waiting === 0; })()`, 20000, 500);
     const geo = await page.evaluate('(() => { const t = window.__ecoThree.current; return { maxDim: t.maxDim, front: t.front || null }; })()');
     const d = Math.max(60, geo.maxDim);
     const f = geo.front ? [geo.front.dx, geo.front.dz] : [0, 1];
-    const views = [
+    const all = [
       { name: 'top', pos: [0, d * 2.4, 0.01], tgt: [0, 0, 0] },
       ...[['front', f[0], f[1]], ['back', -f[0], -f[1]], ['left', -f[1], f[0]], ['right', f[1], -f[0]]].map(([name, dx, dz]) => ({ name, pos: [dx * d * 1.3, d * 0.95, dz * d * 1.3], tgt: [0, 0, 0] })),
-      { name: 'street', pos: [f[0] * d * 1.1, 0, f[1] * d * 1.1], tgt: [0, 0, 0], eye: 6 },
+      { name: 'street', pos: [f[0] * d * 1.1, 0, f[1] * d * 1.1], tgt: [0, 0, 0], eye: 5.5, street: f },
+      // Closer, as the app opens on a property: for reviewing the model itself.
+      { name: 'near', pos: [f[0] * d * 0.75, d * 0.55, f[1] * d * 0.75], tgt: [0, 0, 0] },
     ];
+    const views = process.env.VIEWS ? all.filter((v) => process.env.VIEWS.split(',').includes(v.name)) : all.filter((v) => v.name !== 'near');
     for (const v of views) {
       try {
         const r = await page.evaluate(`(${inPage.toString()})(${JSON.stringify({ ...v, settleMs })})`);
