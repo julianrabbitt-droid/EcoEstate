@@ -922,6 +922,7 @@ const GROUND_SNAP_FT = 1.2; // a hit this close to the estimate is the ground it
 // horizon) hundreds of metres above the real ground, while the detailed tiles
 // are in under it.
 const COARSE_TILE_M = 2000; // a tile's geometry wider than this (in its own metres) isn't the ground's detail
+const REMEASURE_MS = 3000; // after Real 3D shows, Google's ground is measured once more
 function tileHit(ray, group) {
   return ray.intersectObject(group, true).find((h) => {
     const g = h.object.geometry;
@@ -2122,6 +2123,9 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
         state.loading = false;
         clearInterval(state.giveUp);
         setPhotoStatus('ready');
+        // Once more when the finer tiles for the view are in: the first
+        // measure can catch some coarse ones and leave the street a few feet off.
+        setTimeout(() => { if (!state.disposed) measureGround(); }, REMEASURE_MS);
       };
       const measureGround = () => {
         clearTimeout(measureTimer);

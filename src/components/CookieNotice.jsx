@@ -29,7 +29,8 @@ export default function CookieNotice() {
     <div
       role="region"
       aria-label="Cookie notice"
-      className="fixed bottom-3 left-3 right-3 z-40 flex items-center gap-3 rounded-2xl border border-border bg-card/95 px-4 py-3 shadow-lg backdrop-blur sm:right-auto sm:max-w-sm"
+      // Above the 3D view's toolbar (bottom left), so it never covers its buttons.
+      className="fixed bottom-24 left-3 right-3 z-40 flex items-center gap-3 rounded-2xl border border-border bg-card/95 px-4 py-3 shadow-lg backdrop-blur sm:bottom-20 sm:right-auto sm:max-w-sm"
     >
       <p className="text-[12.5px] leading-snug text-foreground">
         Only the cookies needed to sign in. No ads or tracking.{' '}
