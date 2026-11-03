@@ -43,7 +43,7 @@ function inPage(spec) {
     const pos = [...spec.pos];
     const tgt = [...spec.tgt];
     // The street view: out from the house toward the street until off the lot,
-    // a sidewalk's width further, looking back at the house.
+    // then across the sidewalk to the far side of the road, looking back at the house.
     if (spec.street && clip?.uEcoMask.value.image?.getContext) {
       const lotC = clip.uEcoMask.value.image;
       const lb = clip.uEcoBox.value;
@@ -56,8 +56,8 @@ function inPage(spec) {
       };
       let r = 0;
       while (r < 400 && onLot(spec.street[0] * r, spec.street[1] * r)) r += 2;
-      pos[0] = spec.street[0] * (r + 12);
-      pos[2] = spec.street[1] * (r + 12);
+      pos[0] = spec.street[0] * (r + 30);
+      pos[2] = spec.street[1] * (r + 30);
     }
     // Heights given above the ground there (the street view stands on it).
     if (spec.eye) {

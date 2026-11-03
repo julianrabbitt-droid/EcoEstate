@@ -11,7 +11,9 @@ body{margin:0;font:12px/1.3 -apple-system,Helvetica,sans-serif;background:#1d1f1
 <!-- One row per home of a city-test run (served by serve-run.mjs): a current
      photo (Esri, for looking only) with the scan's outlines, the 3D model, and
      Real 3D close up and from the street, as scripts/real3d-holes.mjs rendered
-     them into renders-model/ and renders-real/. ?city=<slug>&n=1,2,3,4 -->
+     them into renders-model/ and renders-real/. Outlines: lawn green, roofs red,
+     pools cyan, paving orange, walks pink, trees yellow (street trees purple),
+     bushes light green. ?city=<slug>&n=1,2,3,4 -->
 <div id="rows"></div>
 <script>
 const params = new URLSearchParams(location.search);
@@ -52,6 +54,12 @@ async function photo(d) {
   (d.lawn?.features || []).forEach((f) => rings(f.geometry).forEach((r) => draw(r, '#7CFC00', 'rgba(124,252,0,.22)', 2)));
   (d.buildings?.features || []).forEach((f) => rings(f.geometry).forEach((r) => draw(r, '#ff3b3b', null, 2)));
   (d.pools?.features || []).forEach((f) => rings(f.geometry).forEach((r) => draw(r, '#00e5ff', null, 2)));
+  (d.paved?.features || []).forEach((f) => rings(f.geometry).forEach((r) => draw(r, f.properties.kind === 'walk' ? '#ff4fd8' : '#ffa53b', null, 1.5)));
+  (d.bushes || []).forEach((t) => {
+    const [x, y] = px([t.lon, t.lat]);
+    const [x2] = px([t.lon + (t.radiusFt * 0.3048) / (111320 * Math.cos((t.lat * Math.PI) / 180)), t.lat]);
+    ctx.beginPath(); ctx.arc(x, y, Math.abs(x2 - x), 0, 7); ctx.strokeStyle = '#3ddc84'; ctx.lineWidth = 1; ctx.stroke();
+  });
   rings(d.parcel?.geometry).forEach((r) => draw(r, '#ffffff', null, 2, [6, 4]));
   (d.trees || []).forEach((t) => {
     const [x, y] = px([t.lon, t.lat]);
@@ -75,7 +83,7 @@ const img = (src) => { const i = document.createElement('img'); i.src = src; i.o
     );
     const t = document.createElement('div'); t.className = 't';
     const b = (d.buildings?.features || []).map((f) => `${Math.round(f.properties.areaSqft)} sq ft ${f.properties.heightFt} ft (${f.properties.heightSource}${f.properties.completed ? ', completed' : ''})`).join('; ');
-    t.textContent = `${slug} ${n} · ${d.address} · lot ${d.parcel?.areaSqft} · lawn ${d.lawnSqft} · ${b} · pools ${(d.pools?.features || []).length} · trees ${(d.trees || []).length} · terrain ${d.terrain ? 'yes' : 'no'}`;
+    t.textContent = `${slug} ${n} · ${d.address} · lot ${d.parcel?.areaSqft} · lawn ${d.lawnSqft} · ${b} · pools ${(d.pools?.features || []).length} · trees ${(d.trees || []).length} · bushes ${(d.bushes || []).length} · walks ${(d.paved?.features || []).filter((f) => f.properties.kind === 'walk').length} · terrain ${d.terrain ? 'yes' : 'no'}`;
     document.getElementById('rows').append(row, t);
   }
   await new Promise((r) => setTimeout(r, 800));
