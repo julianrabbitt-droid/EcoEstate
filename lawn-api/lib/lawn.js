@@ -84,7 +84,7 @@ export const SETTINGS = {
   // brighter than dry grass in the photo, counts in patches at least this big.
   lidarDormantNdviMin: 0.05,
   lidarDormantMinM2: 25, // ~270 sq ft
-  terrainExtraWaitMs: 6000, // the most a finished scan waits on the ground heights (lib/terrain.js)
+  terrainExtraWaitMs: 3000, // the most a finished scan waits on the ground heights (lib/terrain.js; the 3D view picks up a later answer)
   // Lidar older than the photo can describe a yard that has since changed (a
   // rebuild, a new lawn, a tree taken down). Where the newer photo shows smooth
   // turf (tree crowns and shrubs are never this smooth), the photo decides.
