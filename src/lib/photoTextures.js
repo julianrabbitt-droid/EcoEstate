@@ -51,7 +51,12 @@ export function photo(name, kind, uvFt = 1) {
   const t = new THREE.Texture(stand);
   t.needsUpdate = true;
   loader.load(`${BASE}/${name}_${kind}_1k.jpg`, (img) => {
-    t.source = new THREE.Source(img); // a new source, so the GPU copy is sized for the photo
+    // The GPU copy made for the one-pixel stand-in is one pixel big, and the
+    // photo can't be copied into it (it stayed white: tile roofs, brick and
+    // siding showed plain for anyone whose photos came after the first
+    // frame). Released, it's made again at the photo's size.
+    t.dispose();
+    t.source = new THREE.Source(img);
     t.needsUpdate = true;
     loaded('texture');
   });

@@ -317,7 +317,7 @@ const MAX_PITCH = 14 / 12;
 // painted boards for siding, real brick for brick; the roof in its colour from
 // the aerial photo, clay tile on stucco houses as on most California
 // Mediterranean homes, or where mappers recorded tile.
-function houseMaterials(type, wallColor, roof) {
+function houseMaterials(type, scannedWall, roof) {
   const facade = (() => {
     try {
       return roof?.facadeColor ? new THREE.Color(roof.facadeColor).getHex() : null;
@@ -325,13 +325,16 @@ function houseMaterials(type, wallColor, roof) {
       return null;
     }
   })();
-  const wallHex = facade ?? WALL_COLORS[wallColor] ?? WALL_COLORS.gray;
   // The roof's own colour from the aerial photo (brightened a little: the
   // survey is taken from high up, through haze), else a typical one.
   const scanned = roof?.color ? new THREE.Color(roof.color) : null;
   if (scanned) scanned.multiplyScalar(1.15);
   const roofHex = scanned ? scanned.getHex() : ROOF_COLORS[type] ?? ROOF_COLORS.unknown;
   const terracotta = scanned ? scanned.r > scanned.g * 1.12 && scanned.r > scanned.b * 1.2 : false;
+  // Walls not seen yet (Street View is checked at the design step): under a
+  // clay tile roof, cream stucco, as such houses are nearly always built.
+  const wallColor = scannedWall || (terracotta && !facade ? 'cream' : undefined);
+  const wallHex = facade ?? WALL_COLORS[wallColor] ?? WALL_COLORS.gray;
   const wallTex = wallTexture(wallColor, wallHex);
   const roofTex = type === 'flat' ? stuccoTexture(roofHex) : shingleTexture(roofHex);
   const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9, side: THREE.DoubleSide });
