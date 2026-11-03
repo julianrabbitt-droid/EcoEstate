@@ -37,6 +37,8 @@ export const SETTINGS = {
   pavePatchBrightness: 92, // a patch this dark on average is shaded ground or planting, not pavement
   paveOpenM: 0.6, // specks and seams narrower than about twice this (1.2 m) are dropped; side walks are wider
   paveMinSqft: 80,
+  houseMaxM2: 600, // ~6,500 sq ft: footprints up to this are houses…
+  houseMaxHeightM: 15, // …and no house roof here stands over ~50 ft above its average ground
   poolMinSqft: 150, // a small pool and up; smaller blue patches are spas, tarps, cars, toys
   poolMaxSqft: 2500, // bigger blue water is a pond or a community pool, not a yard pool
   ndviMin: 0.2, // NDVI at or above this counts as green (healthy turf is usually 0.3+)
@@ -769,11 +771,15 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
         under[l - 1].m++;
       }
     }
-    lidarRoofs = ownBuildings.map((_, i) => {
+    lidarRoofs = ownBuildings.map((b, i) => {
       if (tops[i].length < 8 || !under[i].m) return null;
       const sorted = Float64Array.from(tops[i]).sort();
-      const heightM = sorted[Math.min(sorted.length - 1, Math.floor((classed ? 0.95 : 0.85) * sorted.length))] - under[i].s / under[i].m;
-      return heightM >= 2.5 && heightM <= 80 ? { heightM } : null;
+      // High on the roof but below its very top, where branches over it are.
+      const heightM = sorted[Math.min(sorted.length - 1, Math.floor((classed ? 0.9 : 0.75) * sorted.length))] - under[i].s / under[i].m;
+      // A house-sized footprint taller than this is a tree over the roof, not
+      // the roof: the other measures decide then.
+      const tallest = b.areaM2 < SETTINGS.houseMaxM2 ? SETTINGS.houseMaxHeightM : 80;
+      return heightM >= 2.5 && heightM <= tallest ? { heightM } : null;
     });
   }
   const buildingLayer = describeBuildings(ownBuildings, roofLabels, canopy, naip, lidarRoofs);

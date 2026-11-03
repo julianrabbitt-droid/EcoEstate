@@ -57,7 +57,8 @@ function buildingHeight(b, roof, lidarRoof) {
   // footprint as raised (trees overhanging a roof cover only part of it).
   if (roof && roof.pixels >= 4 && roof.heights.length / roof.pixels >= 0.6) {
     const h = percentile(roof.heights, 0.75);
-    if (h >= 2.5 && h <= 80) return { heightM: h, source: 'canopy_height_model' };
+    // A house-sized roof reading taller than ~50 ft is a tree over it.
+    if (h >= 2.5 && h <= (b.areaM2 < 600 ? 15 : 80)) return { heightM: h, source: 'canopy_height_model' };
   }
   // Footprint size: small footprints are usually one storey, large ones more.
   const floors = b.areaM2 < 220 ? 1 : b.areaM2 < 900 ? 2 : 3;
