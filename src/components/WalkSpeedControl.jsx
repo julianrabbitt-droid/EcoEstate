@@ -12,9 +12,9 @@ const MARKS = [
   { value: 30, label: 'Top' },
 ];
 
-export default function WalkSpeedControl({ value, onChange }) {
+export default function WalkSpeedControl({ value, onChange, className = 'bottom-3' }) {
   return (
-    <div className="pointer-events-auto absolute bottom-3 right-3 w-44 rounded-md bg-background/70 px-2.5 py-1.5 shadow-md backdrop-blur">
+    <div className={`pointer-events-auto absolute right-3 w-44 rounded-md bg-background/70 px-2.5 py-1.5 shadow-md backdrop-blur ${className}`}>
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-medium text-foreground">Speed</span>
         <span className="text-[10px] text-muted-foreground">{value.toFixed(1)} ft/s</span>

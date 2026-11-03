@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
@@ -8,7 +9,7 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { TilesRenderer } from '3d-tiles-renderer';
 import { GLTFExtensionsPlugin, GoogleCloudAuthPlugin, ReorientationPlugin, TileCompressionPlugin } from '3d-tiles-renderer/plugins';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bird, Box, Leaf, Loader2, Lock, Move, ScanEye, Sun, Wand2 } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bird, Box, ChevronLeft, Leaf, Loader2, Lock, Move, ScanEye, SlidersHorizontal, Sun, Wand2 } from 'lucide-react';
 import WalkThroughHandle from '@/components/WalkThroughHandle';
 import ReportScan from '@/components/ReportScan';
 import WalkSpeedControl from '@/components/WalkSpeedControl';
@@ -58,6 +59,9 @@ const SIDEWALK_FT = 5; // a typical residential sidewalk, along the curb
 const FENCE_FT = 6; // a typical back and side yard fence
 const GEO_BOX = shared(new THREE.BoxGeometry(1, 1, 1)); // reused by every fence panel and post, never disposed
 const GEO_DISC = shared(new THREE.CircleGeometry(1, 28)); // the Build step's species discs
+// The default plant list, one array for every render: a fresh [] each time
+// would re-run the layout and rebuild the whole scene on every render.
+const NO_ENTRIES = [];
 
 // A species number on a dot of its colour, the same size on screen at any zoom.
 function badgeSprite(n, color) {
@@ -269,14 +273,14 @@ function lawnTag(lines, maxDim) {
   c.width = W;
   c.height = H;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = 'rgba(20, 33, 26, 0.86)';
+  ctx.fillStyle = 'rgba(251, 250, 247, 0.94)';
   ctx.beginPath();
   ctx.roundRect(4, 4, W - 8, H - 8, 28);
   ctx.fill();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   lines.forEach((line, i) => {
-    ctx.fillStyle = i ? '#d6dccd' : '#ffffff';
+    ctx.fillStyle = i ? '#5d6159' : '#141613';
     ctx.font = i ? '500 34px "Inter Tight", Helvetica, Arial, sans-serif' : '600 46px "Inter Tight", Helvetica, Arial, sans-serif';
     ctx.fillText(line, W / 2, 50 + i * 52);
   });
@@ -927,9 +931,10 @@ function skyTexture() {
   c.height = 512;
   const ctx = c.getContext('2d');
   const g = ctx.createLinearGradient(0, 0, 0, 512);
-  g.addColorStop(0, '#9dbbd8');
-  g.addColorStop(0.55, '#c3d6e7');
-  g.addColorStop(1, '#eef2f4');
+  // A hazy, warm sky that meets the site's bone paper at the horizon.
+  g.addColorStop(0, '#b9c6cc');
+  g.addColorStop(0.55, '#d9ddd6');
+  g.addColorStop(1, '#f1efe9');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 4, 512);
   _sky = shared(new THREE.CanvasTexture(c));
@@ -1079,7 +1084,10 @@ function buildPlant(plant, mature, detail = 'normal', { spacing = 0 } = {}) {
 // { dollars, gallons, years }), 'build' (closer over the beds, each plant on a
 // disc in its species' colour and number; planView looks straight down, and
 // highlight picks out one species).
-export default function Garden3DView({ entries = [], project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady, fill = false, viewShift = null, scene: step = 'design', payoff = null, highlight = null, planView = false }) {
+// arrangementsEl: a page's own place for the arrangements and "design from
+// text" (the Design step's side panel), instead of a panel over the view.
+// onWalkChange(walking): so a page can clear its panels away during a walk.
+export default function Garden3DView({ entries = NO_ENTRIES, project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady, fill = false, viewShift = null, scene: step = 'design', payoff = null, highlight = null, planView = false, arrangementsEl = null, onWalkChange }) {
   const fillRef = useRef(fill);
   const stepRef = useRef(step);
   stepRef.current = step;
@@ -1088,8 +1096,9 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const payoffGroupRef = useRef(null); // the cash and water stacks while on the Payoff step
   const payoffBoundsRef = useRef(null);
   const payoffAnimRef = useRef(null); // { items, start, dur }: the stacks building up
+  const [payoffZones, setPayoffZones] = useState(null); // where the stacks stand, cleared of Google's trees and walls in Real 3D
   const flyToStepRef = useRef(null);
-  const [layoutVersion, setLayoutVersion] = useState(0); // bumps after each rebuild of the plants
+  const speciesPlanBuildRef = useRef(null); // redraws the Build step's species discs (after each rebuild of the plants)
   const tiltedRef = useRef(false);
   const tiltDoneRef = useRef(!fill); // the opening tilt into 3D has happened (or isn't needed)
   const viewShiftRef = useRef(viewShift);
@@ -1100,6 +1109,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   // Before and after: today's lawn (the beds as turf, no plants) or the native garden.
   const [before, setBefore] = useState(false);
   const [showArr, setShowArr] = useState(false); // full screen: the arrangements panel
+  const [toolsOpen, setToolsOpen] = useState(true); // full screen: the view controls, or just their pill
   const showLawn = checking || before;
   const wildlifeRef = useRef(null); // { group, counts, update } while the garden has visitors
   const [visitors, setVisitors] = useState(null);
@@ -1124,6 +1134,9 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const [walkSpeed, setWalkSpeed] = useState(4.5);
   const walkSpeedRef = useRef(4.5);
   useEffect(() => { walkSpeedRef.current = walkSpeed; }, [walkSpeed]);
+  const onWalkChangeRef = useRef(onWalkChange);
+  onWalkChangeRef.current = onWalkChange;
+  useEffect(() => { onWalkChangeRef.current?.(walkMode); }, [walkMode]);
   const walkRef = useRef({ keys: new Set(), yaw: 0, pitch: 0, active: false, last: 0 });
   const personPosRef = useRef(null);
   // Plants moved by hand, keyed `${speciesId}:${nth of that species}` → lot
@@ -1698,6 +1711,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         });
         tctx.restore();
       }
+      // On the Payoff step, the ground where the savings stacks stand.
+      (payoffZones || []).forEach((zp) => { tracePts(zp); tctx.fill(); });
       // The house and its eaves are never cut: Google's real house stands there.
       tctx.globalCompositeOperation = 'multiply';
       tctx.fillStyle = '#000000';
@@ -1737,7 +1752,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     if (oldGround.image?.width > 1) oldGround.dispose();
     threeRef.current?.markDirty?.();
     return undefined;
-  }, [lot, polys, buildings, trees, paths, groundAt, front, ownTree, cx, cy]);
+  }, [lot, polys, buildings, trees, paths, groundAt, front, ownTree, cx, cy, payoffZones]);
 
   // Google Photorealistic 3D Tiles around the garden, while the toggle is on.
   // The tileset is placed so the scene origin is the property's centre, east
@@ -2452,7 +2467,9 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       tiltedRef.current = true;
       setTimeout(() => { tiltDoneRef.current = true; flyToStepRef.current?.(); }, 900);
     }
-    setLayoutVersion((v) => v + 1);
+    // The plants were just rebuilt: their species discs follow them. (A call,
+    // not a state change, so a rebuild never triggers another render.)
+    speciesPlanBuildRef.current?.();
   }, [layout, polys, pattern, lot, buildings, trees, paths, fences, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, showLawn, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries]);
 
   // The camera's view for each project step, flown to when the step changes:
@@ -2469,14 +2486,18 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     const pb = payoffBoundsRef.current;
     // Far enough that a circle of radius r fits the narrower way across the
     // screen (a phone held upright needs to stand much further back).
-    const vfov = THREE.MathUtils.degToRad(camera.fov);
-    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
+    // Only the part of the screen the panels leave clear counts (viewShift).
+    const [sx, sy] = (viewShiftRef.current || [0, 0]).map(Math.abs);
+    const el = t.renderer.domElement;
+    const clearAspect = Math.max(0.3, (el.clientWidth - 2 * sx) / Math.max(1, el.clientHeight - 2 * sy));
+    const vfov = THREE.MathUtils.degToRad(camera.fov) * Math.max(0.5, 1 - (2 * sy) / Math.max(1, el.clientHeight));
+    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * clearAspect);
     const fit = (r) => (r / Math.sin(Math.min(vfov, hfov) / 2)) * 0.92;
     let pos;
     let tgt;
     if (step === 'payoff' && pb) {
       tgt = new THREE.Vector3(pb.x, ground(pb.x, pb.z), pb.z);
-      pos = tgt.clone().addScaledVector(new THREE.Vector3(f.dx * 1.25, 0.85, f.dz * 1.25).normalize(), Math.max(fit(pb.radius), 45));
+      pos = tgt.clone().addScaledVector(new THREE.Vector3(f.dx * 1.25, 0.72, f.dz * 1.25).normalize(), Math.max(fit(pb.radius), 45));
     } else if (step === 'build' && bedsRef.current.length) {
       const beds = bedsRef.current;
       const [minX, maxX] = [Math.min(...beds.map((b) => b.x - b.radius)), Math.max(...beds.map((b) => b.x + b.radius))];
@@ -2513,17 +2534,20 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       payoffAnimRef.current = null;
     }
     const data = payoffRef.current;
+    if (step !== 'payoff') setPayoffZones(null);
     if (step === 'payoff' && data && terrainDone) {
-      const built = createPayoffStacks({ ...data, lotPts: lot && lot.length >= 3 ? scenePoly(lot) : null, front: three.front, at: groundAtRef.current });
+      const main = buildings.filter((b) => b && b.length >= 3).reduce((a, b) => (!a || polyArea(b) > polyArea(a) ? b : a), null);
+      const built = createPayoffStacks({ ...data, lotPts: lot && lot.length >= 3 ? scenePoly(lot) : null, house: main ? scenePoly(main) : null, front: three.front, at: groundAtRef.current });
       for (const it of built.items) it.obj.visible = false;
       three.scene.add(built.group);
       payoffGroupRef.current = built.group;
       payoffBoundsRef.current = built.bounds;
       payoffAnimRef.current = { items: built.items, start: performance.now() + 600, dur: 1800 };
+      setPayoffZones(built.zones);
       if (tiltDoneRef.current) flyToStep(1100);
     }
     three.markDirty?.();
-  }, [step, payoffKey, terrainDone, lot, scenePoly, groundAt, flyToStep]);
+  }, [step, payoffKey, terrainDone, lot, buildings, scenePoly, groundAt, flyToStep]);
 
   // A new step, or the plan view switched, once the model is up: glide there.
   // (The first tilt into 3D goes to the step's view by itself.)
@@ -2544,7 +2568,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   // spread instead of the plant itself, like a landscape plan.
   const keyOfSpecies = useMemo(() => speciesKey(entries), [entries]);
   const speciesPlanRef = useRef(null);
-  useEffect(() => {
+  const buildSpeciesPlan = useCallback(() => {
     const three = threeRef.current;
     if (!three) return;
     if (speciesPlanRef.current) {
@@ -2612,22 +2636,19 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       badge.userData.speciesId = id;
       group.add(badge);
     }
-    three.scene.add(group);
-    speciesPlanRef.current = group;
-    three.markDirty?.();
-  }, [step, layoutVersion, keyOfSpecies, showLawn, planView]);
-  // One species picked in the list: its discs and number stand out.
-  useEffect(() => {
-    const g = speciesPlanRef.current;
-    if (!g) return;
-    for (const c of g.children) {
+    // One species picked in the list: its discs and number stand out.
+    for (const c of group.children) {
       const id = c.isSprite ? c.userData.speciesId : c.material?.userData?.speciesId;
       const on = !highlight || id === highlight;
       if (c.isSprite) c.material.opacity = on ? 1 : 0.25;
       else c.material.opacity = on ? 0.92 : 0.12;
     }
-    threeRef.current?.markDirty?.();
-  }, [highlight, step, layoutVersion, keyOfSpecies, showLawn, planView]);
+    three.scene.add(group);
+    speciesPlanRef.current = group;
+    three.markDirty?.();
+  }, [step, keyOfSpecies, showLawn, planView, highlight]);
+  speciesPlanBuildRef.current = buildSpeciesPlan;
+  useEffect(() => { buildSpeciesPlan(); }, [buildSpeciesPlan]);
 
   useEffect(() => {
     moveModeRef.current = moveMode;
@@ -2923,9 +2944,33 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     }
   };
 
+  // The arrangements go where the page keeps them, if it has a place for them.
+  const maybePortal = (node) => (fill && arrangementsEl ? createPortal(node, arrangementsEl) : node);
+
   return (
     <div className={fill ? 'absolute inset-0' : ''}>
-      <div className={fill ? 'absolute bottom-4 left-3 z-20 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 rounded-2xl border border-white/15 bg-[#14211a]/75 p-1.5 shadow-xl backdrop-blur-md sm:left-5 lg:max-w-[calc(100%-29rem)]' : 'flex flex-wrap items-center justify-between gap-3'}>
+      {/* Full screen: the view's controls in one bar at the bottom left, which
+          folds away to a pill. While walking only Exit walk is left (the rest
+          can't be used then). Real 3D's state is said here too, never in a
+          note floating over the view. */}
+      {fill && !toolsOpen && !walkMode ? (
+        <button
+          type="button"
+          onClick={() => setToolsOpen(true)}
+          aria-expanded={false}
+          className="absolute bottom-4 left-3 z-20 inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/90 px-4 py-2 text-[12.5px] shadow-lg backdrop-blur-md transition hover:bg-card sm:left-5"
+        >
+          <SlidersHorizontal className="h-4 w-4" aria-hidden />
+          View options
+        </button>
+      ) : (
+      <div className={fill ? 'absolute bottom-4 left-3 z-20 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 rounded-2xl border border-border/60 bg-card/88 p-1.5 shadow-xl backdrop-blur-md sm:left-5 lg:max-w-[calc(100%-29rem)]' : 'flex flex-wrap items-center justify-between gap-3'}>
+        {fill && walkMode ? (
+          <Button variant="default" onClick={() => setWalkMode(false)} className="rounded-full" size="sm">
+            Exit walk
+          </Button>
+        ) : (
+        <>
         <div className={`inline-flex rounded-full border border-border bg-card/90 p-0.5 backdrop-blur ${checking ? 'hidden' : ''}`}>
           {[{ k: 'before', l: 'Today’s lawn' }, { k: 'new', l: 'Newly planted' }, { k: 'mature', l: 'Native garden, grown' }].map((o) => {
             const on = o.k === 'before' ? before : !before && (o.k === 'mature') === mature;
@@ -2949,10 +2994,11 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
               className="rounded-full"
               size="sm"
               aria-pressed={photoReal}
-              title={locked ? 'Real 3D is part of Pro and the free student unlock' : 'Show the real house, trees and street in 3D from Google'}
+              title={locked ? 'Real 3D is part of Pro and the free student unlock' : 'Experimental: Google’s 3D mesh of the real street. Still in development, and it won’t line up for most properties yet.'}
             >
               {photoReal && photoStatus === 'loading' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : locked ? <Lock className="mr-1.5 h-4 w-4" /> : <Box className="mr-1.5 h-4 w-4" />}
               {photoReal && photoStatus === 'loading' ? 'Setting up Real 3D…' : checking && !photoReal ? 'Try Real 3D' : 'Real 3D'}
+              <span className="ml-1.5 rounded-full border border-current/30 px-1.5 text-[9.5px] uppercase tracking-wide opacity-80">Beta</span>
             </Button>
           )}
           {interactive && (
@@ -2979,13 +3025,13 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
               camera: threeRef.current ? threeRef.current.camera.position.toArray().map((v) => Math.round(v)) : null,
             })}
           />
-          {fill && !checking && onApplyArrangement && (
+          {fill && !checking && onApplyArrangement && !arrangementsEl && (
             <Button variant={showArr ? 'default' : 'outline'} onClick={() => setShowArr((v) => !v)} className="rounded-full" size="sm">
               <Leaf className="mr-1.5 h-4 w-4" />
               Arrangements
             </Button>
           )}
-          {!checking && step === 'design' && (
+          {!checking && step === 'design' && !showReal && (
             <Button variant={moveMode ? 'default' : 'outline'} onClick={() => setMoveMode((m) => !m)} className="rounded-full" size="sm">
               <Move className="mr-1.5 h-4 w-4" />
               {moveMode ? 'Done moving' : 'Move plants'}
@@ -2998,8 +3044,25 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           ) : (
             <WalkThroughHandle onActivate={() => setWalkMode(true)} />
           )}
+          {fill && (
+            <button type="button" onClick={() => { setToolsOpen(false); setShowArr(false); }} aria-label="Hide view options" title="Hide view options" className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          )}
         </div>
+        {fill && photoReal && (
+          <p role="status" className="basis-full px-2 pb-0.5 text-[11px] leading-snug text-muted-foreground">
+            {photoStatus === 'failed'
+              ? 'Google 3D isn’t available here right now, so this is the model.'
+              : photoStatus === 'loading'
+                ? 'Real 3D is experimental: it loads in the background and won’t line up for most properties yet.'
+                : 'Real 3D is experimental and still in development: for most properties it won’t line up yet.'}
+          </p>
+        )}
+        </>
+        )}
       </div>
+      )}
 
       <div className={fill ? 'absolute inset-0' : 'relative mt-3'}>
         {showReal ? (
@@ -3017,13 +3080,13 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
             Surroundings from Google 3D. Your property is our model of it, so the plan is never hidden.
           </p>
         )}
-        {photoReal && photoStatus === 'loading' && (
-          <p role="status" className={`pointer-events-none absolute z-10 flex max-w-[85%] items-center gap-1.5 rounded-full bg-background/80 px-3 py-1 text-[11px] text-muted-foreground shadow backdrop-blur ${fill ? 'bottom-20 left-1/2 -translate-x-1/2' : 'left-3 top-3'}`}>
+        {photoReal && photoStatus === 'loading' && !fill && (
+          <p role="status" className="pointer-events-none absolute left-3 top-3 z-10 flex max-w-[85%] items-center gap-1.5 rounded-full bg-background/80 px-3 py-1 text-[11px] text-muted-foreground shadow backdrop-blur">
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
             Setting up Real 3D in the background. It appears here once it’s ready.
           </p>
         )}
-        {photoReal && photoStatus === 'failed' && (
+        {photoReal && photoStatus === 'failed' && !fill && (
           <p role="status" className="absolute left-3 top-3 z-10 rounded-full bg-background/80 px-3 py-1 text-[11px] text-muted-foreground shadow backdrop-blur">
             Google 3D isn't available here right now. Showing the model.
           </p>
@@ -3040,13 +3103,13 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
               <span className="text-foreground/90">Walk mode</span>
               <span className="text-muted-foreground"> · WASD or arrows to move · drag to look · Exit walk to return</span>
             </div>
-            <div className="absolute bottom-3 left-3 grid grid-cols-3 gap-1">
+            <div className={`absolute left-3 grid grid-cols-3 gap-1 ${fill ? 'bottom-20 sm:left-5' : 'bottom-3'}`}>
               {padButton('arrowup', ArrowUp, 'Walk forward', 'col-start-2')}
               {padButton('arrowleft', ArrowLeft, 'Step left', 'col-start-1 row-start-2')}
               {padButton('arrowdown', ArrowDown, 'Walk back', 'col-start-2 row-start-2')}
               {padButton('arrowright', ArrowRight, 'Step right', 'col-start-3 row-start-2')}
             </div>
-            <WalkSpeedControl value={walkSpeed} onChange={setWalkSpeed} />
+            <WalkSpeedControl value={walkSpeed} onChange={setWalkSpeed} className={fill ? 'bottom-16' : 'bottom-3'} />
             {origin && <WalkMiniMap project={project} getPersonGeo={getPersonGeo} />}
           </>
         )}
@@ -3072,8 +3135,8 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
             : 'Drag to rotate · click a lawn to focus · scroll to zoom · tap the person, or drag it onto the property, to walk it.'}
       </p>
 
-      {!checking && (!fill || showArr) && (
-      <div className={fill ? 'absolute bottom-20 left-4 z-20 max-h-[55%] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-border/60 bg-card/92 p-4 shadow-2xl backdrop-blur-md sm:left-6 lg:max-w-[calc(100vw-30rem)]' : ''}>
+      {!checking && (!fill || showArr || arrangementsEl) && maybePortal(
+      <div className={fill && !arrangementsEl ? 'absolute bottom-20 left-4 z-20 max-h-[min(55%,calc(100%-14rem))] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-border/60 bg-card/92 p-4 shadow-2xl backdrop-blur-md sm:left-6 lg:max-w-[calc(100vw-30rem)]' : ''}>
       <div className={fill ? '' : 'mt-4 border-t border-border/70 pt-3'}>
         <div className="flex items-center gap-2">
         <Leaf className="h-3.5 w-3.5 text-accent" />

@@ -9,52 +9,52 @@
 @tailwind utilities;
 
 @layer base {
-  /* Dusk over satellite imagery: deep pine surfaces, warm off-white ink, a
-     muted sage for what to press next and sand for the warm accent. The
-     same tokens serve every page, so the scan, the 3D views and the panels
-     over them read as one place. */
+  /* Bone paper and ink, in the manner of an editorial portfolio: warm
+     off-white surfaces, near-black type and buttons, hairline borders, and a
+     single clay accent. Satellite imagery and the 3D views bring the colour;
+     panels over them are frosted bone. */
   :root {
-    --background: 146 26% 7%;
-    --foreground: 76 26% 92%;
-    --card: 145 23% 10%;
-    --card-foreground: 76 26% 92%;
-    --popover: 146 23% 12%;
-    --popover-foreground: 76 26% 92%;
-    --primary: 102 17% 69%;
-    --primary-foreground: 116 33% 8%;
-    --secondary: 146 21% 15%;
-    --secondary-foreground: 76 26% 92%;
-    --muted: 146 22% 13%;
-    --muted-foreground: 125 8% 67%;
-    --accent: 35 78% 69%;
-    --accent-foreground: 33 52% 8%;
-    --destructive: 5 85% 66%;
-    --destructive-foreground: 5 50% 8%;
-    --border: 145 17% 20%;
-    --input: 145 17% 22%;
-    --ring: 102 20% 62%;
-    --chart-1: 102 51% 43%; /* chart colours pass the CVD and contrast checks on the dark cards */
-    --chart-2: 206 59% 55%;
-    --chart-3: 28 63% 50%;
-    --chart-4: 253 50% 64%;
-    --chart-5: 347 51% 56%;
-    --radius: 0.85rem;
+    --background: 43 21% 94%;
+    --foreground: 105 7% 8%;
+    --card: 45 33% 98%;
+    --card-foreground: 105 7% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 105 7% 8%;
+    --primary: 105 7% 8%;
+    --primary-foreground: 43 21% 95%;
+    --secondary: 43 18% 89%;
+    --secondary-foreground: 105 7% 8%;
+    --muted: 43 17% 91%;
+    --muted-foreground: 90 4% 36%;
+    --accent: 16 68% 41%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 4 70% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 43 14% 84%;
+    --input: 43 14% 80%;
+    --ring: 105 7% 8%;
+    --chart-1: 99 53% 35%; /* chart colours pass the CVD and contrast checks on the bone cards */
+    --chart-2: 208 59% 45%;
+    --chart-3: 26 74% 44%;
+    --chart-4: 254 45% 58%;
+    --chart-5: 342 51% 52%;
+    --radius: 0.75rem;
     --font-heading: 'Inter Tight Variable', 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
     --font-body: 'Inter Tight Variable', 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
-    --font-display: 'Fraunces Variable', 'Fraunces', ui-serif, Georgia, serif;
+    --font-display: 'Inter Tight Variable', 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
+    --font-serif: 'Fraunces Variable', 'Fraunces', ui-serif, Georgia, serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    --sidebar-background: 145 23% 10%;
-    --sidebar-foreground: 76 26% 92%;
-    --sidebar-primary: 102 17% 69%;
-    --sidebar-primary-foreground: 116 33% 8%;
-    --sidebar-accent: 146 21% 15%;
-    --sidebar-accent-foreground: 76 26% 92%;
-    --sidebar-border: 145 17% 20%;
-    --sidebar-ring: 102 20% 62%;
+    --sidebar-background: 45 33% 98%;
+    --sidebar-foreground: 105 7% 8%;
+    --sidebar-primary: 105 7% 8%;
+    --sidebar-primary-foreground: 43 21% 95%;
+    --sidebar-accent: 43 18% 89%;
+    --sidebar-accent-foreground: 105 7% 8%;
+    --sidebar-border: 43 14% 84%;
+    --sidebar-ring: 105 7% 8%;
   }
 
-  /* The site is dark already; .dark (used by a few library components) keeps
-     the same palette. */
+  /* A dark set for library components that ask for .dark. */
   .dark {
     --background: 146 26% 7%;
     --foreground: 76 26% 92%;
@@ -62,8 +62,8 @@
     --card-foreground: 76 26% 92%;
     --popover: 146 23% 12%;
     --popover-foreground: 76 26% 92%;
-    --primary: 102 17% 69%;
-    --primary-foreground: 116 33% 8%;
+    --primary: 43 21% 94%;
+    --primary-foreground: 105 7% 8%;
     --secondary: 146 21% 15%;
     --secondary-foreground: 76 26% 92%;
     --muted: 146 22% 13%;
@@ -84,7 +84,7 @@
   }
 
   html {
-    color-scheme: dark;
+    color-scheme: light;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     scroll-behavior: smooth;
@@ -105,8 +105,21 @@
   }
 
   .label-xs {
-    /* Small section labels: sentence case and readable, not tiny tracked capitals. */
-    @apply text-[12.5px] font-medium tracking-normal text-muted-foreground;
+    /* Small section labels, in the editorial style: mono capitals, tracked out. */
+    @apply font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground;
+  }
+
+  /* Display type: a tight grotesk, with an italic serif for the words in <em>. */
+  .font-display {
+    font-weight: 500;
+    letter-spacing: -0.035em;
+  }
+  .font-display em,
+  .font-display i {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 400;
+    letter-spacing: -0.01em;
   }
 
   .field {
@@ -123,8 +136,8 @@
 
 .leaflet-control-attribution {
   font-size: 9px !important;
-  background: rgba(13, 22, 17, 0.7) !important;
-  color: rgba(237, 240, 229, 0.75) !important;
+  background: rgba(251, 250, 247, 0.8) !important;
+  color: rgba(20, 22, 19, 0.7) !important;
 }
 
 .property-center-tooltip {
@@ -172,5 +185,5 @@
   cursor: pointer;
 }
 .leaflet-control-attribution a {
-  color: rgba(237, 240, 229, 0.9) !important;
+  color: rgba(20, 22, 19, 0.85) !important;
 }

@@ -553,8 +553,8 @@ export default function Scan() {
       {/* One full-screen stage for the whole scan. Behind everything, fixed: the
           aerial view, a neighbourhood at first, then the property (the pin is
           checked on it directly), crossfading into the property's 3D model once
-          it is built; scrolling down fades it into the page's dusk. */}
-      <div className="pointer-events-none fixed inset-0 -z-10" style={{ background: 'radial-gradient(120% 80% at 50% 0%, #1a2a20 0%, #111c16 55%, #0b130f 100%)' }} aria-hidden={phase !== 'confirm'}>
+          it is built; scrolling down fades it into the page's bone. */}
+      <div className="pointer-events-none fixed inset-0 -z-10" style={{ background: 'radial-gradient(120% 80% at 50% 0%, #e9e6dc 0%, #f1efe9 55%, #f5f3ee 100%)' }} aria-hidden={phase !== 'confirm'}>
         <div
           className={`absolute inset-0 transition-opacity duration-1000 ${phase === 'confirm' ? 'pointer-events-auto' : ''}`}
           style={{ opacity: modelShown ? 0 : aerialOpacity, filter: scrollY > 0 ? `blur(${Math.min(6, (scrollY / viewH) * 8).toFixed(1)}px)` : 'none' }}
@@ -593,8 +593,8 @@ export default function Scan() {
 
         {phase === 'idle' && (
           <div className="pointer-events-auto mx-auto flex min-h-[100svh] w-full max-w-3xl flex-col items-center justify-center px-5 pb-20 pt-10 text-center text-white duration-500 animate-in fade-in">
-            <h1 className="font-display text-[2.7rem] font-normal leading-[1.02] tracking-[-0.015em] drop-shadow sm:text-[4.2rem]">
-              Your lawn could be doing more.
+            <h1 className="font-display text-[3rem] leading-[0.95] tracking-[-0.045em] drop-shadow sm:text-[5.4rem]">
+              Your lawn could be <em>doing more.</em>
             </h1>
             <p className="mx-auto mt-5 max-w-xl text-[16.5px] leading-relaxed text-white/90 drop-shadow">
               Enter your address. We find your lawn from above, design a native garden for it in 3D, and show what it
@@ -624,7 +624,7 @@ export default function Scan() {
 
         {phase === 'locating' && (
           <div className="flex min-h-[100svh] items-center justify-center duration-500 animate-in fade-in">
-            <p className="pointer-events-auto flex items-center gap-2 rounded-full bg-black/55 px-5 py-2.5 text-[14px] text-white backdrop-blur">
+            <p className="pointer-events-auto flex items-center gap-2 rounded-full border border-border/60 bg-card/90 px-5 py-2.5 text-[14px] text-foreground shadow-lg backdrop-blur">
               <Loader2 className="h-4 w-4 animate-spin" /> Finding {pending?.address || query || 'the address'}…
             </p>
           </div>
@@ -633,10 +633,10 @@ export default function Scan() {
         {phase === 'confirm' && pending && pin && (
           // The pin sits on the aerial view itself; this panel just asks.
           <div className="flex min-h-[100svh] items-end justify-center px-4 pb-8 duration-700 animate-in fade-in slide-in-from-bottom-6">
-            <div className="pointer-events-auto w-full max-w-xl rounded-3xl border border-white/20 bg-black/55 p-5 text-white shadow-2xl backdrop-blur-md">
+            <div className="pointer-events-auto w-full max-w-xl rounded-3xl border border-border/60 bg-card/92 p-5 text-foreground shadow-2xl backdrop-blur-md">
               <p className="font-display text-[1.6rem] leading-tight tracking-tight">Is this your property?</p>
-              <p className="mt-1 text-[13px] leading-relaxed text-white/80">
-                <span className="text-white">{pending.hit.short || shortAddress(pending.hit.label) || pending.address}.</span>{' '}
+              <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                <span className="text-foreground">{pending.hit.short || shortAddress(pending.hit.label) || pending.address}.</span>{' '}
                 {['range_interpolation', 'nearest_rooftop_match', 'point'].includes(pending.hit.accuracy)
                   ? 'This pin is an estimate along the street. Drag it onto your house, or tap your house, before we scan.'
                   : 'Check the pin sits on your house. If not, drag it there or tap your house.'}
@@ -646,11 +646,11 @@ export default function Scan() {
                   {pin[0] !== pending.hit.lat || pin[1] !== pending.hit.lng ? 'Scan this spot' : 'Yes, scan my property'}
                 </Button>
                 {(pin[0] !== pending.hit.lat || pin[1] !== pending.hit.lng) && (
-                  <Button variant="ghost" className="rounded-full text-white hover:bg-white/10 hover:text-white" onClick={() => setPin([pending.hit.lat, pending.hit.lng])}>
+                  <Button variant="ghost" className="rounded-full" onClick={() => setPin([pending.hit.lat, pending.hit.lng])}>
                     Reset pin
                   </Button>
                 )}
-                <Button variant="ghost" className="ml-auto rounded-full text-white/80 hover:bg-white/10 hover:text-white" onClick={startOver}>
+                <Button variant="ghost" className="ml-auto rounded-full text-muted-foreground" onClick={startOver}>
                   Different address
                 </Button>
               </div>

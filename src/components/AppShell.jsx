@@ -6,6 +6,7 @@ import AccountMenu from '@/components/AccountMenu';
 import AuthModal from '@/components/AuthModal';
 import CookieNotice from '@/components/CookieNotice';
 import FeedbackButton from '@/components/FeedbackButton';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import { useAuth } from '@/lib/AuthContext';
 import { claimBetaAccess } from '@/lib/beta';
 
@@ -30,9 +31,9 @@ export default function AppShell() {
     window.addEventListener('scroll', on, { passive: true });
     return () => window.removeEventListener('scroll', on);
   }, []);
-  // The project steps float it over their full-screen 3D view the same way.
+  // The project steps keep it over their full-screen 3D view, frosted.
   const stage = /^\/project\/[^/]+(\/(design|impact|plan))?\/?$/.test(pathname);
-  const overlay = (pathname === '/' || stage) && !scrolled;
+  const overlay = pathname === '/' && !scrolled;
   // Its height, for pages that run full screen under it (ProjectStage).
   const headerRef = useRef(null);
   useEffect(() => {
@@ -51,8 +52,8 @@ export default function AppShell() {
 
   return (
     <div className="relative isolate flex min-h-screen flex-col">
-      {/* The whole site sits on the same dusk green as the scan's backdrop. */}
-      <div className="pointer-events-none fixed inset-0 -z-20" style={{ background: 'radial-gradient(120% 80% at 50% 0%, #1a2a20 0%, #111c16 55%, #0b130f 100%)' }} aria-hidden />
+      {/* The whole site sits on bone paper with a faint grain, like the scan's backdrop. */}
+      <div className="pointer-events-none fixed inset-0 -z-20" style={{ background: 'radial-gradient(120% 80% at 50% 0%, #e9e6dc 0%, #f1efe9 55%, #f5f3ee 100%)' }} aria-hidden />
       {/* Every other page opens under the same neighbourhood from above, washed
           out and fading into the page (project pages show their own property). */}
       {pathname !== '/' && !pathname.startsWith('/project/') && (
@@ -65,7 +66,7 @@ export default function AppShell() {
           }}
           aria-hidden
         >
-          <div className="absolute inset-0 bg-[#0d1611]/55" />
+          <div className="absolute inset-0 bg-[#f3f1ec]/55" />
         </div>
       )}
       <a
@@ -74,7 +75,7 @@ export default function AppShell() {
       >
         Skip to content
       </a>
-      <header ref={headerRef} className={cn('sticky top-0 z-40 border-b transition-colors duration-500', overlay ? 'border-transparent bg-gradient-to-b from-black/45 to-transparent' : 'border-border/70 bg-background/85 backdrop-blur-md')}>
+      <header ref={headerRef} className={cn('sticky top-0 z-40 border-b transition-colors duration-500', overlay ? 'border-transparent bg-gradient-to-b from-black/45 to-transparent' : stage && !scrolled ? 'border-transparent bg-background/70 backdrop-blur-md' : 'border-border/70 bg-background/85 backdrop-blur-md')}>
         {/* Phones: logo and account on top, the menu on its own scrollable row
             beneath. Wider screens: one row. */}
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-y-1 px-5 py-2 md:h-16 md:flex-nowrap md:py-0">
@@ -117,7 +118,9 @@ export default function AppShell() {
             </div>
           }
         >
-          <Outlet />
+          <ErrorBoundary resetKey={pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </Suspense>
       </main>
 

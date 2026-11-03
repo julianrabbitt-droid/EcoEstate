@@ -9,11 +9,11 @@ import * as THREE from 'three';
 
 const GAL_PER_FT3 = 7.48052;
 const BUNDLE = { w: 3.4, h: 0.6, d: 1.5 }; // a bill bundle, drawn about 6x real size so it reads from the street
-const PER_COLUMN = 10;
+const PER_COLUMN = 20; // a tower, about 12 ft, roughly a storey of the house beside it
 const MAX_BUNDLES = 60;
 const DENOMS = [10, 20, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
-const GAP_FT = 3; // between the front lot line and a stack
-const MID_GAP_FT = 4; // at least this far either side of the middle of the lot
+const GAP_FT = 6; // between the house (or the lot line) and a stack
+const VIEW_FT = 40; // Real 3D is cleared from each piece out toward the street, so the view of it is open
 
 // How many bundles, and what each stands for: the smallest bundle that keeps
 // the pile to 60, so small savings still make a pile and big ones never tower.
@@ -73,7 +73,7 @@ function edgeTexture() {
   });
 }
 
-// A floating label: a dark glass tag with one bold line and smaller ones.
+// A floating label: a bone tag with one bold line in ink and smaller ones.
 export function tagSprite(lines, width) {
   const W = 640;
   const H = 72 + 46 * (lines.length - 1) + 26;
@@ -81,14 +81,14 @@ export function tagSprite(lines, width) {
   c.width = W;
   c.height = H;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = 'rgba(13, 22, 17, 0.88)';
+  ctx.fillStyle = 'rgba(251, 250, 247, 0.94)';
   ctx.beginPath();
   ctx.roundRect(4, 4, W - 8, H - 8, 28);
   ctx.fill();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   lines.forEach((line, i) => {
-    ctx.fillStyle = i ? '#c9d6c3' : '#ffffff';
+    ctx.fillStyle = i ? '#5d6159' : '#141613';
     ctx.font = i ? '500 30px "Inter Tight", Helvetica, Arial, sans-serif' : '600 46px "Inter Tight", Helvetica, Arial, sans-serif';
     ctx.fillText(line, W / 2, 50 + i * 46);
   });
@@ -113,25 +113,124 @@ function pad(w, d, lowest, highest) {
 
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
 
+
+// What the money could buy, drawn at real size beside the cash: the priciest
+// of these the savings cover. Prices are rough, for scale, not quotes.
+export const PURCHASES = [
+  { min: 15000, name: 'a used electric car', price: 15000, model: 'car' },
+  { min: 1500, name: 'an e-bike', price: 1500, model: 'ebike' },
+  { min: 450, name: 'a new bike', price: 500, model: 'bike' },
+  { min: 0, name: 'a garden bench', price: 300, model: 'bench' },
+];
+export const purchaseFor = (dollars) => PURCHASES.find((p) => dollars >= p.min) || PURCHASES[PURCHASES.length - 1];
+
+const mat = (color, roughness = 0.6, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
+function tube(a, b, r, material) {
+  const [va, vb] = [new THREE.Vector3(...a), new THREE.Vector3(...b)];
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, va.distanceTo(vb), 10), material);
+  m.position.copy(va).add(vb).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), vb.clone().sub(va).normalize());
+  m.castShadow = true;
+  return m;
+}
+function wheel(r, width, x, y, z, rubber, hub) {
+  const g = new THREE.Group();
+  const tyre = new THREE.Mesh(new THREE.TorusGeometry(r - width / 2, width / 2, 10, 32), rubber);
+  g.add(tyre);
+  if (hub) g.add(new THREE.Mesh(new THREE.CylinderGeometry(r * 0.55, r * 0.55, width * 0.8, 20).rotateX(Math.PI / 2), hub));
+  g.position.set(x, y, z);
+  g.traverse((o) => { o.castShadow = true; });
+  return g;
+}
+
+// Long side along local x, front along +z; standing on y = 0. Feet.
+function purchaseModel(kind) {
+  const g = new THREE.Group();
+  const rubber = mat(0x1d1f1c, 0.9);
+  if (kind === 'bike' || kind === 'ebike') {
+    const frame = mat(kind === 'ebike' ? 0x2f6f8f : 0xb5532c, 0.35, 0.4);
+    const metal = mat(0x8c8f8a, 0.3, 0.8);
+    const r = 1.15;
+    const [rear, frontX] = [-1.75, 1.75];
+    g.add(wheel(r, kind === 'ebike' ? 0.22 : 0.12, rear, r, 0, rubber, null));
+    g.add(wheel(r, kind === 'ebike' ? 0.22 : 0.12, frontX, r, 0, rubber, null));
+    const bb = [-0.2, 1.0, 0]; // bottom bracket
+    const seat = [-0.75, 2.75, 0];
+    const head = [1.15, 2.7, 0];
+    for (const [a, b] of [[[rear, r, 0], bb], [[rear, r, 0], seat], [bb, seat], [bb, head], [seat, head], [head, [frontX, r, 0]]]) g.add(tube(a, b, 0.07, frame));
+    g.add(tube(seat, [-0.85, 3.15, 0], 0.05, metal));
+    const saddle = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.16, 0.32), rubber);
+    saddle.position.set(-0.85, 3.25, 0);
+    g.add(saddle);
+    g.add(tube(head, [1.05, 3.35, 0], 0.05, metal));
+    g.add(tube([1.05, 3.35, -0.75], [1.05, 3.35, 0.75], 0.05, metal));
+    if (kind === 'ebike') {
+      const battery = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.38, 0.32), mat(0x2b2d2a, 0.5));
+      battery.position.set(0.5, 1.75, 0);
+      battery.rotation.z = Math.atan2(2.7 - 1.0, 1.15 + 0.2);
+      g.add(battery);
+    }
+  } else if (kind === 'car') {
+    const paint = mat(0xe9e6dd, 0.3, 0.2);
+    const glass = mat(0x22302c, 0.15, 0.3);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(14.2, 2.3, 6), paint);
+    body.position.y = 2.15;
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(7.6, 1.9, 5.4), glass);
+    cabin.position.set(-0.6, 4.2, 0);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.25, 5.2), paint);
+    roof.position.set(-0.7, 5.2, 0);
+    for (const m of [body, cabin, roof]) { m.castShadow = true; m.receiveShadow = true; g.add(m); }
+    const hub = mat(0xa7aaa4, 0.35, 0.7);
+    for (const x of [-4.6, 4.6]) for (const z of [-3.05, 3.05]) g.add(wheel(1.15, 0.7, x, 1.15, z, rubber, hub));
+  } else {
+    const wood = mat(0x9a6b45, 0.85);
+    const iron = mat(0x2b2d2a, 0.5, 0.6);
+    for (let k = 0; k < 4; k++) {
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(5, 0.12, 0.32), wood);
+      slat.position.set(0, 1.5, -0.6 + k * 0.4);
+      g.add(slat);
+    }
+    for (let k = 0; k < 3; k++) {
+      const back = new THREE.Mesh(new THREE.BoxGeometry(5, 0.3, 0.1), wood);
+      back.position.set(0, 2.0 + k * 0.42, -0.85);
+      g.add(back);
+    }
+    for (const x of [-2.2, 2.2]) {
+      g.add(tube([x, 0, 0.6], [x, 1.5, 0.6], 0.07, iron));
+      g.add(tube([x, 0, -0.75], [x, 3.0, -0.9], 0.07, iron));
+    }
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  }
+  return g;
+}
+
+const SIZE = { bench: [5.2, 2.2], bike: [6, 1.6], ebike: [6, 1.6], car: [14.6, 7.4] }; // footprint [long, deep]
+
 /**
- * dollars, gallons: saved over `years`. lotPts: the lot in scene feet [[x, z]].
- * front: { dx, dz }, the unit direction from the property toward its street.
- * at(x, z): ground height. Returns { group, items, bounds } where items are
- * the bundles and water layers in the order they appear ({ obj, at: 0..1 }),
- * and bounds frames the lot and both stacks for the camera.
+ * dollars, gallons: saved over `years`. lotPts: the lot in scene feet [[x, z]];
+ * house: the main building's outline there, if known. front: { dx, dz }, the
+ * unit direction from the property toward its street. at(x, z): ground height.
+ * The water stands on one side of the house and the cash (with what it could
+ * buy) on the other, their fronts in line with the house front, so the three
+ * read as one row from the street. Without a house they stand at the front
+ * corners of the lot. Returns { group, items, zones, bounds }: items are the bundles
+ * and water layers in the order they appear ({ obj, at: 0..1 }); zones are
+ * their footprints with room around them ([[x, z] x 4] each); bounds
+ * frames the house and everything beside it for the camera.
  */
-export function createPayoffStacks({ dollars, gallons, years, lotPts, front, at }) {
+export function createPayoffStacks({ dollars, gallons, years, lotPts, house, front, at }) {
   const group = new THREE.Group();
   group.userData.payoff = true;
   const items = [];
   const f = front && Math.hypot(front.dx, front.dz) > 0 ? front : { dx: 0, dz: 1 };
-  const s = { dx: -f.dz, dz: f.dx }; // across the front of the lot
-  const pts = lotPts?.length >= 3 ? lotPts : [[-30, -30], [30, -30], [30, 30], [-30, 30]];
-  const c = pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length], [0, 0]);
+  const s = { dx: -f.dz, dz: f.dx }; // across the front
+  const lot = lotPts?.length >= 3 ? lotPts : [[-30, -30], [30, -30], [30, 30], [-30, 30]];
+  const anchor = house?.length >= 3 ? house : lot;
+  const c = anchor.reduce((a, p) => [a[0] + p[0] / anchor.length, a[1] + p[1] / anchor.length], [0, 0]);
   const along = (p, v) => (p[0] - c[0]) * v.dx + (p[1] - c[1]) * v.dz;
-  const maxF = Math.max(...pts.map((p) => along(p, f)));
-  const minS = Math.min(...pts.map((p) => along(p, s)));
-  const maxS = Math.max(...pts.map((p) => along(p, s)));
+  const frontLine = Math.max(...anchor.map((p) => along(p, f)));
+  const minS = Math.min(...anchor.map((p) => along(p, s)));
+  const maxS = Math.max(...anchor.map((p) => along(p, s)));
   const place = (sideOffset, frontOffset) => [c[0] + s.dx * sideOffset + f.dx * frontOffset, c[1] + s.dz * sideOffset + f.dz * frontOffset];
   const facing = Math.atan2(f.dx, f.dz); // local +z toward the street
   const lowHigh = (x, z, hw, hd) => {
@@ -142,17 +241,23 @@ export function createPayoffStacks({ dollars, gallons, years, lotPts, front, at 
     }
     return [Math.min(...hs), Math.max(...hs)];
   };
-  const framed = [...pts];
+  const framed = [...anchor];
+  const labels = []; // { sprite, top } lined up at one height afterwards
+  // Where each piece stands, with room around it: Real 3D clears Google's
+  // trees, cars and neighbours' walls there so nothing stands in them.
+  const zones = [];
+  const zone = (s0, s1, f0, f1) => zones.push([place(s0, f0), place(s1, f0), place(s1, f1), place(s0, f1)]);
 
-  // Money: bundles in columns of ten, filled one after another.
+  // Money: a tower of bundles beside the house, filled column by column.
   const { denom, count } = cashPlan(dollars);
   if (count > 0) {
     const cols = Math.ceil(count / PER_COLUMN);
-    const across = Math.min(cols, Math.max(1, Math.ceil(Math.sqrt(cols * 1.6))));
+    const across = Math.max(1, Math.ceil(Math.sqrt(cols)));
     const deep = Math.ceil(cols / across);
     const w = across * (BUNDLE.w + 0.25) + 1.2;
     const d = deep * (BUNDLE.d + 0.25) + 1.2;
-    const [x, z] = place(Math.min(minS * 0.6, -(w / 2 + MID_GAP_FT)), maxF + GAP_FT + d / 2);
+    const sideAt = minS - GAP_FT - w / 2;
+    const [x, z] = place(sideAt, frontLine - d / 2);
     const [lo, hi] = lowHigh(x, z, w / 2, d / 2);
     const base = pad(w, d, lo, hi);
     const stack = new THREE.Group();
@@ -170,34 +275,55 @@ export function createPayoffStacks({ dollars, gallons, years, lotPts, front, at 
       const level = k % PER_COLUMN;
       const [gx, gz] = [col % across, Math.floor(col / across)];
       const b = new THREE.Mesh(geo, mats);
-      const jitter = Math.sin(k * 12.9898) * 0.06;
+      const jitter = Math.sin(k * 12.9898) * 0.05;
       b.position.set(
         (gx - (across - 1) / 2) * (BUNDLE.w + 0.25) + jitter,
         base.top + BUNDLE.h / 2 + level * BUNDLE.h,
         (gz - (deep - 1) / 2) * (BUNDLE.d + 0.25) - jitter,
       );
-      b.rotation.y = jitter * 0.6;
+      b.rotation.y = jitter * 0.5;
       b.castShadow = true;
       b.receiveShadow = true;
       stack.add(b);
       items.push({ obj: b, at: (k + 1) / count });
     }
-    const top = base.top + Math.min(count, PER_COLUMN) * BUNDLE.h;
-    const label = tagSprite([`$${fmt(dollars)} saved`, `${years} year${years === 1 ? '' : 's'} · each bundle $${fmt(denom)}`], Math.max(14, w * 1.6));
-    label.position.set(0, top + 2.2 + label.userData.halfHeight, 0);
+    const label = tagSprite([`$${fmt(dollars)} saved`, `${years} year${years === 1 ? '' : 's'} · each bundle $${fmt(denom)}`], 16);
     stack.add(label);
+    labels.push({ sprite: label, top: base.top + Math.min(count, PER_COLUMN) * BUNDLE.h });
     group.add(stack);
-    framed.push([x - w, z - d], [x + w, z + d]);
+    framed.push(place(sideAt - w / 2, frontLine), place(sideAt + w / 2, frontLine - d));
+    zone(sideAt - w / 2 - 3, sideAt + w / 2 + 3, frontLine - d - 3, frontLine + VIEW_FT);
+
+    // What it could buy, at real size, just outside the cash and a little
+    // toward the street, turned a touch to show its side.
+    const buy = purchaseFor(dollars);
+    const [len, dep] = SIZE[buy.model];
+    const objSide = sideAt - w / 2 - 3 - len / 2;
+    const [ox, oz] = place(objSide, frontLine + dep / 2 + 1);
+    const [olo, ohi] = lowHigh(ox, oz, len / 2, dep / 2);
+    const obj = purchaseModel(buy.model);
+    obj.position.set(ox, ohi > olo + 1.5 ? olo : (olo + ohi) / 2, oz);
+    obj.rotation.y = facing + 0.35; // side on to the street, turned a little
+    obj.visible = false;
+    group.add(obj);
+    items.push({ obj, at: 1 });
+    const objLabel = tagSprite([`That buys ${buy.name}`, `about $${fmt(buy.price)}, drawn to scale`], 13);
+    objLabel.position.set(ox, 0, oz);
+    group.add(objLabel);
+    labels.push({ sprite: objLabel, top: obj.position.y + (buy.model === 'car' ? 5.4 : 3.6), world: true });
+    framed.push(place(objSide - len / 2, frontLine + dep + 1), place(objSide + len / 2, frontLine));
+    zone(objSide - len / 2 - 3, objSide + len / 2 + 3, frontLine - 2, frontLine + VIEW_FT);
   }
 
-  // Water: the true volume, as a block of clear blue layers, one per year
-  // (or per month for a single year).
+  // Water: the true volume beside the house on the other side, a clear blue
+  // block of layers, one per year (or per month for a single year).
   const ft3 = Math.max(0, gallons) / GAL_PER_FT3;
   if (ft3 > 1) {
     const side = Math.cbrt(ft3);
     const layers = years <= 1 ? 12 : Math.min(30, Math.round(years));
     const layerH = side / layers;
-    const [x, z] = place(Math.max(maxS * 0.6, side / 2 + 0.6 + MID_GAP_FT), maxF + GAP_FT + side / 2 + 0.6);
+    const sideAt = maxS + GAP_FT + side / 2 + 0.6;
+    const [x, z] = place(sideAt, frontLine - side / 2 - 0.6);
     const [lo, hi] = lowHigh(x, z, side / 2 + 0.6, side / 2 + 0.6);
     const base = pad(side + 1.2, side + 1.2, lo, hi);
     const block = new THREE.Group();
@@ -213,17 +339,25 @@ export function createPayoffStacks({ dollars, gallons, years, lotPts, front, at 
       const m = new THREE.Mesh(geo, water);
       m.position.y = base.top + layerH * k + layerH / 2;
       m.renderOrder = 2;
-      const line = new THREE.LineSegments(edges, edgeMat);
-      m.add(line);
+      m.add(new THREE.LineSegments(edges, edgeMat));
       block.add(m);
       items.push({ obj: m, at: (k + 1) / layers });
     }
     const unit = years <= 1 ? 'month' : 'year';
-    const label = tagSprite([`${fmt(gallons)} gallons`, `${years} year${years === 1 ? '' : 's'} · each layer one ${unit}, true size`], Math.max(14, side * 1.3));
-    label.position.set(0, base.top + side + 2.2 + label.userData.halfHeight, 0);
+    const label = tagSprite([`${fmt(gallons)} gallons`, `${years} year${years === 1 ? '' : 's'} · each layer one ${unit}, true size`], 16);
     block.add(label);
+    labels.push({ sprite: label, top: base.top + side });
     group.add(block);
-    framed.push([x - side, z - side], [x + side, z + side]);
+    framed.push(place(sideAt + side / 2 + 0.6, frontLine), place(sideAt - side / 2, frontLine - side - 1.2));
+    zone(sideAt - side / 2 - 3.6, sideAt + side / 2 + 3.6, frontLine - side - 4.2, frontLine + VIEW_FT);
+  }
+
+  // The cash and water labels in one row, just above the taller of the two;
+  // the purchase's label sits just above it.
+  const row = Math.max(0, ...labels.filter((l) => !l.world).map((l) => l.top)) + 2.5;
+  for (const l of labels) {
+    if (l.world) l.sprite.position.y = l.top + 1.5 + l.sprite.userData.halfHeight;
+    else l.sprite.position.set(0, row + l.sprite.userData.halfHeight, 0);
   }
 
   const xs = framed.map((p) => p[0]);
@@ -231,5 +365,5 @@ export function createPayoffStacks({ dollars, gallons, years, lotPts, front, at 
   const bx = (Math.min(...xs) + Math.max(...xs)) / 2;
   const bz = (Math.min(...zs) + Math.max(...zs)) / 2;
   const radius = Math.max(20, ...framed.map((p) => Math.hypot(p[0] - bx, p[1] - bz)));
-  return { group, items, bounds: { x: bx, z: bz, radius } };
+  return { group, items, zones, bounds: { x: bx, z: bz, radius } };
 }

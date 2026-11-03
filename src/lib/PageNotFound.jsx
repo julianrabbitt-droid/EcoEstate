@@ -8,7 +8,7 @@ export default function PageNotFound() {
   const { pathname } = useLocation();
   return (
     <div className="relative isolate flex min-h-screen items-center justify-center px-5 text-center">
-      <div className="pointer-events-none fixed inset-0 -z-20" style={{ background: 'radial-gradient(120% 80% at 50% 0%, #1a2a20 0%, #111c16 55%, #0b130f 100%)' }} aria-hidden />
+      <div className="pointer-events-none fixed inset-0 -z-20" style={{ background: 'radial-gradient(120% 80% at 50% 0%, #e9e6dc 0%, #f1efe9 55%, #f5f3ee 100%)' }} aria-hidden />
       <div
         className="pointer-events-none absolute inset-0 -z-10 bg-cover bg-center opacity-45"
         style={{ backgroundImage: 'url(/aerial-neighbourhood.jpg)', maskImage: 'radial-gradient(60% 60% at 50% 45%, #000 0%, transparent 100%)', WebkitMaskImage: 'radial-gradient(60% 60% at 50% 45%, #000 0%, transparent 100%)' }}

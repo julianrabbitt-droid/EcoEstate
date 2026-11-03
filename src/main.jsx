@@ -21,16 +21,16 @@ const localization = {
 
 const appearance = {
   variables: {
-    // The site's dusk palette (src/index.css).
-    colorPrimary: 'hsl(102, 17%, 69%)',
-    colorTextOnPrimaryBackground: 'hsl(116, 33%, 8%)',
-    colorBackground: 'hsl(145, 23%, 10%)',
-    colorInputBackground: 'hsl(146, 22%, 13%)',
-    colorInputText: 'hsl(76, 26%, 92%)',
-    colorText: 'hsl(76, 26%, 92%)',
-    colorTextSecondary: 'hsl(125, 8%, 67%)',
-    colorNeutral: 'hsl(76, 26%, 92%)',
-    colorDanger: 'hsl(5, 85%, 66%)',
+    // The site's bone-and-ink palette (src/index.css).
+    colorPrimary: 'hsl(105, 7%, 8%)',
+    colorTextOnPrimaryBackground: 'hsl(43, 21%, 95%)',
+    colorBackground: 'hsl(45, 33%, 98%)',
+    colorInputBackground: 'hsl(0, 0%, 100%)',
+    colorInputText: 'hsl(105, 7%, 8%)',
+    colorText: 'hsl(105, 7%, 8%)',
+    colorTextSecondary: 'hsl(90, 4%, 36%)',
+    colorNeutral: 'hsl(105, 7%, 8%)',
+    colorDanger: 'hsl(4, 70%, 46%)',
     borderRadius: '0.75rem',
   },
 }

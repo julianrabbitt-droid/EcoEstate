@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowRight, Minus, Plus, Trash2, X } from 'lucide-react';
-import { StageOverlay, useStage, useWide } from '@/components/ProjectStage';
+import { StageAside, StageOverlay, StageTitle, useStage, useStagePanels, useWide } from '@/components/ProjectStage';
 import PhotoCompare from '@/components/PhotoCompare';
 import PlantCard from '@/components/PlantCard';
 
@@ -100,10 +100,21 @@ export default function Design() {
   // list floats beside it.
   const applyRef = useRef(null);
   const onApplyArrangement = useCallback((arr) => applyRef.current?.(arr), []);
+  // The side panel's two tabs: the planting list, and the arrangements (the
+  // 3D view draws those into arrEl, in the panel, rather than over the garden).
+  const { asideOpen } = useStagePanels();
+  const [panelTab, setPanelTab] = useState('plants');
+  const [arrEl, setArrEl] = useState(null);
+  const panelShown = wide && asideOpen;
   useStage(
-    loading ? null : !project ? { missing: true } : { project: viewProject, entries, scene: 'design', viewShift: wide ? [-230, 40] : [0, 40], activeArrangement: arrangement, onApplyArrangement },
-    [loading, project, viewProject, entries, wide, arrangement, onApplyArrangement],
+    loading ? null : !project ? { missing: true } : { project: viewProject, entries, scene: 'design', viewShift: panelShown ? [-230, 40] : [0, 40], activeArrangement: arrangement, onApplyArrangement, arrangementsEl: panelShown ? arrEl : null },
+    [loading, project, viewProject, entries, panelShown, arrangement, onApplyArrangement, arrEl],
   );
+
+  // The density slider while it's being dragged: the counts the drag started
+  // from, and the value under the thumb.
+  const densityDrag = useRef(null);
+  const [densityDraft, setDensityDraft] = useState(null);
 
   if (loading) return null;
 
@@ -146,18 +157,36 @@ export default function Design() {
     );
   };
 
-  // Plant density: the share of the lawn the grown plants cover. Moving the
-  // slider scales every species' count together, so the mix stays the same.
+  // Plant density: the share of the lawn the grown plants cover. A drag works
+  // from the counts it started with (rescaling already-rounded counts drifts),
+  // keeps the mix, and gives every species one plant before sharing out the
+  // rest by largest remainder, so the counts add up to exactly the total the
+  // slider asks for.
   const coverOf = (list) => list.reduce((a, e) => a + e.quantity * clearanceOf(plantById(e.speciesId)) ** 2, 0) / Math.max(1, turfSqft);
   const cover = Math.round(Math.min(1.2, coverOf(entries)) * 100);
   const setCover = (percent) => {
     autosave.markDirty();
-    setEntries((prev) => {
-      const now = coverOf(prev);
-      if (!now) return prev;
-      const k = percent / 100 / now;
-      return prev.map((e) => ({ ...e, quantity: Math.max(1, Math.round(e.quantity * k)) }));
-    });
+    setDensityDraft(percent);
+    if (!densityDrag.current) densityDrag.current = entries;
+    const base = densityDrag.current;
+    const baseCover = coverOf(base);
+    if (!baseCover || !base.length) return;
+    const raw = base.map((e) => (e.quantity * percent) / 100 / baseCover);
+    const total = Math.max(base.length, Math.round(raw.reduce((a, b) => a + b, 0)));
+    const weight = raw.reduce((a, b) => a + b, 0) || 1;
+    const share = raw.map((r) => ((total - base.length) * r) / weight);
+    const counts = share.map((x) => 1 + Math.floor(x));
+    let left = total - counts.reduce((a, b) => a + b, 0);
+    for (const [, i] of share.map((x, i) => [x - Math.floor(x), i]).sort((a, b) => b[0] - a[0])) {
+      if (left <= 0) break;
+      counts[i]++;
+      left--;
+    }
+    setEntries(base.map((e, i) => ({ ...e, quantity: counts[i] })));
+  };
+  const endDensityDrag = () => {
+    densityDrag.current = null;
+    setDensityDraft(null);
   };
 
   const save = async () => {
@@ -182,11 +211,14 @@ export default function Design() {
       <StageOverlay>
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3 sm:p-5">
           <div className="pointer-events-auto inline-block max-w-full"><StepNav projectId={id} project={project} current="design" /></div>
-          <div className="pointer-events-auto mt-3 w-fit max-w-[min(34rem,calc(100vw-1.5rem))] rounded-2xl border border-border/60 bg-card/85 px-4 py-3 shadow-lg backdrop-blur-md lg:max-w-[calc(100vw-30rem)]">
-            <h1 className="font-display text-[1.6rem] leading-tight tracking-tight sm:text-[2rem]">
-              {propertyName}, <em className="italic text-accent">reimagined</em>
-            </h1>
-            <p className="mt-1 text-[12.5px] text-muted-foreground">
+          <StageTitle
+            title={(
+              <h1 className="font-display text-[1.6rem] leading-tight tracking-tight sm:text-[2rem]">
+                {propertyName}, <em className="italic text-accent">reimagined</em>
+              </h1>
+            )}
+          >
+            <p className="text-[12.5px] text-muted-foreground">
               {num(turfSqft)} sq ft of lawn becomes native garden · {totals.speciesCount} species · {totals.count} plants · {money(totals.cost)} in plants
             </p>
             {project.nativeListAdjusted && (
@@ -194,29 +226,48 @@ export default function Design() {
                 This preview corrects an older plant list to match your location. Your saved choices stay unchanged until you continue with See the payoff.
               </p>
             )}
-          </div>
+          </StageTitle>
         </div>
-        <aside className="pointer-events-auto absolute bottom-16 right-3 top-3 z-20 hidden w-[26rem] flex-col overflow-hidden rounded-3xl border border-border/60 bg-card/88 shadow-2xl backdrop-blur-md lg:flex">
-          <div className="flex-1 overflow-y-auto p-5">
-
-          <div className="flex items-baseline justify-between">
-            <h2 className="text-[15px] font-medium tracking-tight">Your planting list</h2>
-            <span className="text-[11px] text-muted-foreground">{totals.count} plants</span>
+        <StageAside
+          label="Your garden"
+          summary={`${totals.count} plants`}
+          width="w-[26rem]"
+          footer={(
+            <>
+              <Button onClick={save} className="w-full rounded-full" size="lg">
+                See the payoff
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+              <Link to={`/project/${id}?edit=1`} state={{ project }} className="block text-center text-[12px] text-muted-foreground underline underline-offset-4 hover:text-foreground">
+                3D not right? Fix the 2D plan
+              </Link>
+            </>
+          )}
+        >
+          <div role="tablist" aria-label="Garden panel" className="mb-4 flex rounded-full border border-border bg-background/40 p-0.5 text-[12px]">
+            {[['plants', `Planting list · ${totals.count}`], ['arrangements', 'Arrangements & ideas']].map(([k, l]) => (
+              <button key={k} type="button" role="tab" aria-selected={panelTab === k} onClick={() => setPanelTab(k)} className={`flex-1 rounded-full px-3 py-1.5 transition ${panelTab === k ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                {l}
+              </button>
+            ))}
           </div>
-
+          <div ref={setArrEl} role="tabpanel" hidden={panelTab !== 'arrangements'} />
+          <div role="tabpanel" hidden={panelTab !== 'plants'}>
           {entries.length > 0 && turfSqft > 0 && (
             <label className="mt-3 block">
               <span className="flex items-baseline justify-between text-[12px]">
                 <span className="text-foreground">Plant density</span>
-                <span className="text-muted-foreground">{cover}% of the lawn covered when grown</span>
+                <span className="text-muted-foreground">{totals.count} plants · {cover}% of the lawn covered when grown</span>
               </span>
               <input
                 type="range"
                 min={25}
                 max={100}
                 step={5}
-                value={Math.max(25, Math.min(100, cover))}
+                value={densityDraft ?? Math.max(25, Math.min(100, cover))}
                 onChange={(e) => setCover(Number(e.target.value))}
+                onPointerUp={endDensityDrag}
+                onBlur={endDensityDrag}
                 className="mt-1.5 w-full accent-[hsl(var(--primary))]"
                 aria-label="Plant density"
               />
@@ -310,19 +361,10 @@ export default function Design() {
           </p>
 
           </div>
-          <div className="border-t border-border/70 p-4">
-            <Button onClick={save} className="w-full rounded-full" size="lg">
-              See the payoff
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-            <Link to={`/project/${id}?edit=1`} state={{ project }} className="mt-2 block text-center text-[12px] text-muted-foreground underline underline-offset-4 hover:text-foreground">
-              3D not right? Fix the 2D plan
-            </Link>
-          </div>
-        </aside>
+        </StageAside>
       </StageOverlay>
 
-      <div className="mx-auto w-full max-w-6xl px-5 py-10">
+      <div id="step-details" className="mx-auto w-full max-w-6xl scroll-mt-20 px-5 py-10">
         {/* Phones: the planting list below the garden. */}
         <section className="surface p-5 lg:hidden">
 
@@ -335,15 +377,17 @@ export default function Design() {
             <label className="mt-3 block">
               <span className="flex items-baseline justify-between text-[12px]">
                 <span className="text-foreground">Plant density</span>
-                <span className="text-muted-foreground">{cover}% of the lawn covered when grown</span>
+                <span className="text-muted-foreground">{totals.count} plants · {cover}% of the lawn covered when grown</span>
               </span>
               <input
                 type="range"
                 min={25}
                 max={100}
                 step={5}
-                value={Math.max(25, Math.min(100, cover))}
+                value={densityDraft ?? Math.max(25, Math.min(100, cover))}
                 onChange={(e) => setCover(Number(e.target.value))}
+                onPointerUp={endDensityDrag}
+                onBlur={endDensityDrag}
                 className="mt-1.5 w-full accent-[hsl(var(--primary))]"
                 aria-label="Plant density"
               />

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Check, Droplets, PencilRuler, Sprout } from 'lucide-react';
-import { StageOverlay, useStage, useWide } from '@/components/ProjectStage';
+import { StageAside, StageOverlay, StageTitle, useStage, useStagePanels, useWide } from '@/components/ProjectStage';
 import StepNav from '@/components/StepNav';
 import ScanDiagram from '@/components/ScanDiagram';
 import EditScanPanel from '@/components/EditScanPanel';
@@ -53,13 +53,14 @@ export default function Analysis() {
   // Edits save as they happen, so leaving via StepNav or the header keeps them.
   const fields = useMemo(() => ({ breakdown, turf, sun, soil, zip }), [breakdown, turf, sun, soil, zip]);
   const wide = useWide();
+  const { asideOpen } = useStagePanels();
   // The steps' shared 3D view, showing today's lawn with its size and water.
   const lawnSqft = Number(breakdown.turf || 0);
   const gallons = Math.round(lawnSqft * (turf.galPerSqft ?? 46));
   const lawnLabel = useMemo(() => (lawnSqft ? [`${num(lawnSqft)} sq ft of lawn`, `about ${num(gallons)} gal of water a year`] : null), [lawnSqft, gallons]);
   useStage(
-    loading ? null : !project ? { missing: true } : { project, scene: 'scan', lawnLabel, viewShift: wide ? [-210, 30] : [0, 70] },
-    [loading, project, lawnLabel, wide],
+    loading ? null : !project ? { missing: true } : { project, scene: 'scan', lawnLabel, viewShift: wide && asideOpen ? [-210, 30] : [0, 70] },
+    [loading, project, lawnLabel, wide, asideOpen],
   );
   // Sent here to fix the scan: straight to the outline editor below the view.
   const editing = searchParams.get('edit') === '1';
@@ -140,8 +141,11 @@ export default function Analysis() {
       <StageOverlay>
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3 sm:p-5">
           <div className="pointer-events-auto inline-block max-w-full"><StepNav projectId={id} project={project} current="scan" /></div>
-          <div className="pointer-events-auto mt-3 w-fit max-w-[min(34rem,calc(100vw-1.5rem))] rounded-2xl border border-border/60 bg-card/85 px-4 py-3 shadow-lg backdrop-blur-md lg:max-w-[calc(100vw-29rem)]">
-            <h1 className="font-display text-[1.5rem] leading-tight tracking-tight sm:text-[1.9rem]">{cleanAddress(project.address)}</h1>
+          <StageTitle
+            title={(
+              <h1 className="font-display text-[1.5rem] leading-tight tracking-tight sm:text-[1.9rem]">{cleanAddress(project.address)}</h1>
+            )}
+          >
             <p className="mt-1 text-[12.5px] text-muted-foreground">{source} · {num(project.totalSqft)} sq ft outlined</p>
             <div className="mt-3 space-y-2 lg:hidden">
               {figures}
@@ -150,13 +154,27 @@ export default function Analysis() {
                 <Button onClick={toEditor} size="sm" variant="outline" className="rounded-full">Fix the outline</Button>
               </div>
             </div>
-          </div>
+          </StageTitle>
         </div>
-        <aside className="pointer-events-auto absolute bottom-16 right-3 top-3 z-20 hidden w-[25rem] flex-col overflow-hidden rounded-3xl border border-border/60 bg-card/88 shadow-2xl backdrop-blur-md lg:flex">
-          <div className="flex-1 space-y-4 overflow-y-auto p-5">
+        <StageAside
+          label="Your lawn today"
+          summary={`${num(lawnSqft)} sq ft`}
+          footer={(
+            <>
+              <Button onClick={save} className="w-full rounded-full" size="lg">
+                <Sprout className="mr-2 h-4 w-4" />
+                Generate native design
+              </Button>
+              <Button variant="ghost" onClick={toEditor} className="w-full rounded-full">
+                <PencilRuler className="mr-2 h-4 w-4" />
+                Fix the outline or the numbers
+              </Button>
+            </>
+          )}
+        >
+          <div className="space-y-4">
             <div>
-              <p className="label-xs">Your lawn today</p>
-              <p className="mt-1 text-[12.5px] text-muted-foreground">What the scan found, as it stands now. Correct anything below; the lawn’s size drives the water, cost and plant counts.</p>
+              <p className="text-[12.5px] text-muted-foreground">What the scan found, as it stands now. Correct anything below; the lawn’s size drives the water, cost and plant counts.</p>
             </div>
             {figures}
             <dl className="space-y-2 rounded-2xl border border-border/60 bg-background/40 p-4 text-[12.5px]">
@@ -166,20 +184,10 @@ export default function Analysis() {
               <div className="flex justify-between"><dt className="text-muted-foreground">Sun · soil</dt><dd>{sun} · {soil}</dd></div>
             </dl>
           </div>
-          <div className="space-y-2 border-t border-border/60 p-4">
-            <Button onClick={save} className="w-full rounded-full" size="lg">
-              <Sprout className="mr-2 h-4 w-4" />
-              Generate native design
-            </Button>
-            <Button variant="ghost" onClick={toEditor} className="w-full rounded-full">
-              <PencilRuler className="mr-2 h-4 w-4" />
-              Fix the outline or the numbers
-            </Button>
-          </div>
-        </aside>
+        </StageAside>
       </StageOverlay>
 
-    <div className="mx-auto w-full max-w-6xl px-5 py-10">
+    <div id="step-details" className="mx-auto w-full max-w-6xl scroll-mt-20 px-5 py-10">
       <div id="scan-outline" className="scroll-mt-24">
         <p className="label-xs">Existing landscape</p>
         <h2 className="mt-2 font-display text-3xl leading-tight tracking-tight">The scan, in detail</h2>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { useProject } from '@/hooks/useProjects';
 import { ArrowRight, Box, CalendarDays, ClipboardCheck, Hammer, HandHeart, LayoutGrid, Printer, ShoppingBasket, Users } from 'lucide-react';
-import { StageOverlay, useStage, useWide } from '@/components/ProjectStage';
+import { StageAside, StageOverlay, StageTitle, useStage, useStagePanels, useWide } from '@/components/ProjectStage';
 import HostInstallForm from '@/components/HostInstallForm';
 import { useAuth } from '@/lib/AuthContext';
 import { base44 } from '@/api/base44Client';
@@ -37,14 +37,15 @@ export default function Plan() {
   const { project, loading } = useProject(id, location.state);
   const rebates = useRebates(project);
   const wide = useWide();
+  const { asideOpen } = useStagePanels();
   const { user, isAuthenticated, navigateToLogin } = useAuth();
   const [copied, setCopied] = useState(false);
   const [highlight, setHighlight] = useState(null);
   const [planView, setPlanView] = useState(false);
   const design = useMemo(() => (project ? designOrDefault(project) : []), [project]);
   useStage(
-    loading ? null : !project ? { missing: true } : { project, entries: design, scene: 'build', highlight, planView, viewShift: wide ? [-220, 20] : [0, 70] },
-    [loading, project, design, highlight, planView, wide],
+    loading ? null : !project ? { missing: true } : { project, entries: design, scene: 'build', highlight, planView, viewShift: wide && asideOpen ? [-220, 20] : [0, 70] },
+    [loading, project, design, highlight, planView, wide, asideOpen],
   );
   // This property's community install, if its owner is hosting one.
   const [install, setInstall] = useState(undefined);
@@ -184,10 +185,13 @@ export default function Plan() {
       <StageOverlay>
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3 sm:p-5 print:hidden">
           <div className="pointer-events-auto inline-block max-w-full"><StepNav projectId={id} project={project} current="plan" /></div>
-          <div className="pointer-events-auto mt-3 w-fit max-w-[min(34rem,calc(100vw-1.5rem))] rounded-2xl border border-border/60 bg-card/85 px-4 py-3 shadow-lg backdrop-blur-md lg:max-w-[calc(100vw-29rem)]">
-            <h1 className="font-display text-[1.5rem] leading-tight tracking-tight sm:text-[1.9rem]">
-              Make this garden <em className="italic text-primary">real</em>
-            </h1>
+          <StageTitle
+            title={(
+              <h1 className="font-display text-[1.5rem] leading-tight tracking-tight sm:text-[1.9rem]">
+                Make this garden <em className="italic text-primary">real</em>
+              </h1>
+            )}
+          >
             <p className="mt-1 text-[12.5px] text-muted-foreground">
               {plantCount} plants · {design.length} species · {money(materialsTotal)} in materials and labor
             </p>
@@ -199,13 +203,32 @@ export default function Plan() {
                 <div className="mt-1 max-h-[24svh] overflow-y-auto">{legend}</div>
               </details>
             </div>
-          </div>
+          </StageTitle>
         </div>
-        <aside className="pointer-events-auto absolute bottom-16 right-3 top-3 z-20 hidden w-[25rem] flex-col overflow-hidden rounded-3xl border border-border/60 bg-card/88 shadow-2xl backdrop-blur-md lg:flex print:hidden">
-          <div className="flex-1 space-y-4 overflow-y-auto p-5">
+        <StageAside
+          label="Planting plan"
+          summary={`${plantCount} plants`}
+          footer={(
+            <>
+              <Button onClick={toInstall} className="w-full rounded-full" size="lg">
+                <HandHeart className="mr-2 h-4 w-4" />
+                {install && install.status !== 'cancelled' && install.status !== 'done' ? 'Your community install' : 'Host a community install'}
+              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" onClick={() => window.print()} className="rounded-full">
+                  <Printer className="mr-1.5 h-4 w-4" />
+                  Print plan
+                </Button>
+                <Button asChild variant="outline" className="rounded-full">
+                  <Link to={`/my-projects?project=${id}`}>Track it</Link>
+                </Button>
+              </div>
+            </>
+          )}
+        >
+          <div className="space-y-4">
             <div>
-              <p className="label-xs">Planting plan</p>
-              <p className="mt-1 text-[12.5px] text-muted-foreground">Every plant on a disc of its species’ colour, sized to its spacing. Pick a species to find it in the garden.</p>
+              <p className="text-[12.5px] text-muted-foreground">Every plant on a disc of its species’ colour, sized to its spacing. Pick a species to find it in the garden.</p>
             </div>
             {viewSwitch}
             <div className="space-y-1.5">
@@ -214,25 +237,10 @@ export default function Plan() {
             </div>
             {legend}
           </div>
-          <div className="space-y-2 border-t border-border/60 p-4">
-            <Button onClick={toInstall} className="w-full rounded-full" size="lg">
-              <HandHeart className="mr-2 h-4 w-4" />
-              {install && install.status !== 'cancelled' && install.status !== 'done' ? 'Your community install' : 'Host a community install'}
-            </Button>
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" onClick={() => window.print()} className="rounded-full">
-                <Printer className="mr-1.5 h-4 w-4" />
-                Print plan
-              </Button>
-              <Button asChild variant="outline" className="rounded-full">
-                <Link to={`/my-projects?project=${id}`}>Track it</Link>
-              </Button>
-            </div>
-          </div>
-        </aside>
+        </StageAside>
       </StageOverlay>
 
-    <div className="mx-auto w-full max-w-6xl px-5 py-10">
+    <div id="step-details" className="mx-auto w-full max-w-6xl scroll-mt-20 px-5 py-10">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="label-xs">Planting plan & materials</p>

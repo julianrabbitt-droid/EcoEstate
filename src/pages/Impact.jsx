@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { StageOverlay, useStage, useWide } from '@/components/ProjectStage';
+import { purchaseFor } from '@/lib/payoffStacks';
+import { StageAside, StageOverlay, StageTitle, useStage, useStagePanels, useWide } from '@/components/ProjectStage';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useProject } from '@/hooks/useProjects';
 import { ArrowRight, Banknote, Bird, Droplets, Leaf, Loader2, Share2, Sprout, TrendingUp } from 'lucide-react';
@@ -48,6 +49,7 @@ export default function Impact() {
   const location = useLocation();
   const { project, loading } = useProject(id, location.state);
   const wide = useWide();
+  const { asideOpen } = useStagePanels();
   const [fin, setFin] = useState(null);
   const [env, setEnv] = useState(null);
   const [error, setError] = useState('');
@@ -112,8 +114,8 @@ export default function Impact() {
     [fin, point, horizon],
   );
   useStage(
-    loading ? null : !project ? { missing: true } : { project, entries, scene: 'payoff', payoff, viewShift: wide ? [-210, -50] : [0, 20] },
-    [loading, project, entries, payoff, wide],
+    loading ? null : !project ? { missing: true } : { project, entries, scene: 'payoff', payoff, viewShift: wide && asideOpen ? [-210, -50] : [0, 20] },
+    [loading, project, entries, payoff, wide, asideOpen],
   );
 
   if (loading) return null;
@@ -204,7 +206,7 @@ export default function Impact() {
       <div className="rounded-2xl border border-border/60 bg-background/40 p-3">
         <p className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><Banknote className="h-3.5 w-3.5 text-primary" aria-hidden />Money saved</p>
         <p className="mt-1 font-display text-[1.6rem] leading-none tracking-tight">{money(series[horizon].saved)}</p>
-        <p className="mt-1 text-[11px] text-muted-foreground">{net >= 0 ? `${money(net)} ahead after the cost` : `${money(-net)} to go to break even`}</p>
+        <p className="mt-1 text-[11px] text-muted-foreground">{net >= 0 ? `${money(net)} ahead after the cost` : `${money(-net)} to go to break even`} · buys {purchaseFor(series[horizon].saved).name}</p>
       </div>
       <div className="rounded-2xl border border-border/60 bg-background/40 p-3">
         <p className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><Droplets className="h-3.5 w-3.5 text-chart-2" aria-hidden />Water saved</p>
@@ -219,10 +221,13 @@ export default function Impact() {
       <StageOverlay>
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3 sm:p-5">
           <div className="pointer-events-auto inline-block max-w-full"><StepNav projectId={id} project={project} current="impact" /></div>
-          <div className="pointer-events-auto mt-3 w-fit max-w-[min(34rem,calc(100vw-1.5rem))] rounded-2xl border border-border/60 bg-card/85 px-4 py-3 shadow-lg backdrop-blur-md lg:max-w-[calc(100vw-29rem)]">
-            <h1 className="font-display text-[1.5rem] leading-tight tracking-tight sm:text-[1.9rem]">
-              {money(fin.outOfPocket)} in, <em className="italic text-primary">{money(fin.annualSavings)} back</em> every year
-            </h1>
+          <StageTitle
+            title={(
+              <h1 className="font-display text-[1.5rem] leading-tight tracking-tight sm:text-[1.9rem]">
+                {money(fin.outOfPocket)} in, <em className="italic text-primary">{money(fin.annualSavings)} back</em> every year
+              </h1>
+            )}
+          >
             <p className="mt-1 text-[12.5px] text-muted-foreground">
               {num(fin.turfSqft)} sq ft converted · {num(fin.plantCount)} native plants · {breakEven ? `pays for itself in year ${breakEven}` : 'no payback at today’s rates'}
             </p>
@@ -231,13 +236,27 @@ export default function Impact() {
               {horizonSwitch}
               {figures}
             </div>
-          </div>
+          </StageTitle>
         </div>
-        <aside className="pointer-events-auto absolute bottom-16 right-3 top-3 z-20 hidden w-[25rem] flex-col overflow-hidden rounded-3xl border border-border/60 bg-card/88 shadow-2xl backdrop-blur-md lg:flex">
-          <div className="flex-1 space-y-4 overflow-y-auto p-5">
+        <StageAside
+          label="What comes back"
+          summary={`${money(fin.annualSavings)} a year`}
+          footer={(
+            <>
+              <Button onClick={toBuild} className="w-full rounded-full" size="lg">
+                Build this garden
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+              <Button variant="ghost" onClick={shareProject} className="w-full rounded-full">
+                <Share2 className="mr-2 h-4 w-4" />
+                Share in the community
+              </Button>
+            </>
+          )}
+        >
+          <div className="space-y-4">
             <div>
-              <p className="label-xs">What comes back</p>
-              <p className="mt-1 text-[12.5px] text-muted-foreground">Beside your property: the money and the water this garden saves, the water at its true size.</p>
+              <p className="text-[12.5px] text-muted-foreground">Beside your house: the money and the water this garden saves (the water at its true size), and what the money could buy.</p>
             </div>
             {horizonSwitch}
             {figures}
@@ -259,20 +278,10 @@ export default function Impact() {
               </div>
             </div>
           </div>
-          <div className="space-y-2 border-t border-border/60 p-4">
-            <Button onClick={toBuild} className="w-full rounded-full" size="lg">
-              Build this garden
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-            <Button variant="ghost" onClick={shareProject} className="w-full rounded-full">
-              <Share2 className="mr-2 h-4 w-4" />
-              Share in the community
-            </Button>
-          </div>
-        </aside>
+        </StageAside>
       </StageOverlay>
 
-    <div className="mx-auto w-full max-w-6xl px-5 py-10">
+    <div id="step-details" className="mx-auto w-full max-w-6xl scroll-mt-20 px-5 py-10">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="label-xs">Financial & environmental payoff</p>
