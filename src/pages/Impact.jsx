@@ -114,7 +114,7 @@ export default function Impact() {
     [fin, point, horizon],
   );
   useStage(
-    loading ? null : !project ? { missing: true } : { project, entries, scene: 'payoff', payoff, viewShift: wide && asideOpen ? [-210, -50] : [0, 20] },
+    loading ? null : !project ? { missing: true } : { project, entries, scene: 'payoff', payoff, viewShift: wide && asideOpen ? [-210, 0] : [0, 40] },
     [loading, project, entries, payoff, wide, asideOpen],
   );
 

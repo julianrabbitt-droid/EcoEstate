@@ -116,7 +116,8 @@ export default function ProjectStage() {
   const [overlay, setOverlay] = useState(null);
   const model = useRef({ key: '', project: null });
   const [asideOpen, setAsideOpen] = useState(true);
-  const [titleOpen, setTitleOpen] = useState(true);
+  // Phones start with the title card folded: its details would cover the view.
+  const [titleOpen, setTitleOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 640);
   const [walking, setWalking] = useState(false);
   const panels = useMemo(() => ({ asideOpen, setAsideOpen, titleOpen, setTitleOpen, walking }), [asideOpen, titleOpen, walking]);
   const next = props?.project || null;

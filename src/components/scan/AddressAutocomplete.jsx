@@ -6,7 +6,7 @@ import { autocompleteAddresses } from '@/lib/geo';
 // onSelect(hit) when the user picks a suggestion.
 // onSuggestions(hits) with every new list, so the form can accept text typed
 // exactly as one of them.
-export default function AddressAutocomplete({ value, onChange, onSelect, onSuggestions, placeholder }) {
+export default function AddressAutocomplete({value, onChange, onSelect, onSuggestions, placeholder, hint = null, hintClassName = '' }) {
   const [suggestions, setSuggestions] = useState([]);
   const [open, setOpen] = useState(false);
   const [fetching, setFetching] = useState(false);
@@ -93,6 +93,11 @@ export default function AddressAutocomplete({ value, onChange, onSelect, onSugge
     <div ref={boxRef} className="relative flex-1">
       <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <input
+        role="combobox"
+        aria-expanded={open && suggestions.length > 0}
+        aria-controls="address-suggestions"
+        aria-autocomplete="list"
+        aria-activedescendant={open && active >= 0 ? `address-option-${active}` : undefined}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
@@ -104,10 +109,13 @@ export default function AddressAutocomplete({ value, onChange, onSelect, onSugge
         <Loader2 className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
       )}
       {open && suggestions.length > 0 && (
-        <ul className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 overflow-hidden rounded-2xl border border-border bg-card py-1.5 shadow-[0_24px_50px_-24px_rgba(16,35,28,0.5)]">
+        <ul id="address-suggestions" role="listbox" className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 overflow-hidden rounded-2xl border border-border bg-card py-1.5 shadow-[0_24px_50px_-24px_rgba(16,35,28,0.5)]">
           {suggestions.map((hit, i) => (
-            <li key={`${hit.lat},${hit.lng}`}>
+            <li key={`${hit.lat},${hit.lng}`} role="presentation">
               <button
+                id={`address-option-${i}`}
+                role="option"
+                aria-selected={i === active}
                 type="button"
                 onMouseEnter={() => setActive(i)}
                 onClick={() => pick(hit)}
@@ -122,6 +130,8 @@ export default function AddressAutocomplete({ value, onChange, onSelect, onSugge
           ))}
         </ul>
       )}
+      {/* Why Locate is still grey; only while the list is closed, so it's never under it. */}
+      {hint && !(open && suggestions.length > 0) && <p role="status" className={`mt-2 text-[12.5px] ${hintClassName}`}>{hint}</p>}
     </div>
   );
 }

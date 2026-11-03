@@ -27,6 +27,12 @@ const PHASE_FRACTIONS = [
   { f: 0.5, key: 'plant' },
 ];
 
+// "2-week build" -> "2 weeks", "1-week build" -> "1 week", for the title.
+const duration = (label) => {
+  const [, n, unit] = label.match(/^([\d.]+)-(\w+)/) || [];
+  return n ? `${n} ${unit}${n === '1' ? '' : 's'}` : label;
+};
+
 export function buildSchedule(sqft = 0) {
   const area = Math.max(1, Number(sqft) || 0);
   // ~150 sq ft of installed bed per working day for a small crew, with a floor
@@ -59,6 +65,6 @@ export function buildSchedule(sqft = 0) {
     establishYears,
     establishLabel,
     buildLabel,
-    title: `From lawn to garden in ${buildLabel}`,
+    title: `From lawn to garden in about ${duration(buildLabel)}`,
   };
 }

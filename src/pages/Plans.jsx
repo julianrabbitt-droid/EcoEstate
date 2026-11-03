@@ -67,8 +67,9 @@ export default function Plans() {
         to run a lawn-replacement program.
       </p>
 
-      <div className="mt-10 overflow-x-auto">
-        <table className="w-full min-w-[600px] border-collapse text-[14px]">
+      <p className="mt-8 text-[12px] text-muted-foreground sm:hidden">Swipe the table sideways to compare all four plans →</p>
+      <div className="mt-2 overflow-x-auto sm:mt-10">
+        <table className="w-full min-w-[720px] border-collapse text-[14px]">
           <caption className="sr-only">Features included in each plan</caption>
           <thead>
             <tr>

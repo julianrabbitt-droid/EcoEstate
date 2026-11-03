@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { usePageMeta } from '@/hooks/usePageMeta';
 import { Link } from 'react-router-dom';
 import { CalendarDays, Clock, HandHeart, Loader2, MapPin, Printer, Search, Sprout, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -46,6 +47,7 @@ export function InstallCard({ install }) {
 // Community installs: planting days hosts post for their lawn conversions,
 // open to anyone who wants to help, and each helper's volunteer hours.
 export default function Installs() {
+  usePageMeta({ title: 'Community installs', description: 'Help a neighbour turn a lawn into a native garden: join a planting day near you and earn volunteer hours.' });
   const { user, isAuthenticated, navigateToLogin } = useAuth();
   const [installs, setInstalls] = useState(null);
   const [error, setError] = useState('');

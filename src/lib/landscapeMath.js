@@ -42,6 +42,14 @@ export function mulchPerPlant(plant) {
   return canopySqft * MULCH_DEPTH_FT;
 }
 
+// Mulch for the converted beds: a 3-inch layer over the whole area (sheet
+// mulching covers the bed, not just rings round the plants). The Design and
+// Build steps both quote this.
+export function bedMulch(turfSqft = 0) {
+  const cuft = Math.max(0, turfSqft) * MULCH_DEPTH_FT;
+  return { cuft: Math.round(cuft), cuyd: Math.round((cuft / 27) * 10) / 10, bags: Math.ceil(cuft / MULCH_BAG_CUFT) };
+}
+
 export function mulchTotals(entries = []) {
   let cuft = 0;
   entries.forEach((entry) => {
@@ -110,7 +118,7 @@ export function financials(project, entries = [], incentives = null) {
 export function environmental(project, entries = []) {
   const turfSqft = project?.breakdown?.turf || 0;
   const plants = entries.map((e) => plantById(e.speciesId)).filter(Boolean);
-  const birds = plants.filter((p) => p.wildlife.includes('Birds')).length;
+  const birds = plants.filter((p) => p.wildlife.includes('Birds') || p.wildlife.includes('Hummingbirds')).length;
   const pollinators = plants.filter(
     (p) => p.wildlife.includes('Native bees') || p.wildlife.includes('Butterflies') || p.wildlife.includes('Hummingbirds')
   ).length;

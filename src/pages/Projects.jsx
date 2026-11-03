@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { usePageMeta } from '@/hooks/usePageMeta';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, MapPin, Sprout, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,6 +14,7 @@ import { cleanAddress } from '@/lib/geo';
 // My properties is a Pro feature (or free with a school email); scanning
 // and the 3D view stay free, and a scan's own pages open from its link.
 export default function Projects() {
+  usePageMeta({ title: 'My properties' });
   const { member, loading: accessLoading, refresh } = usePremiumAccess();
   if (accessLoading) {
     return (
@@ -90,7 +92,7 @@ function PropertyList() {
               <li key={project.id} className="surface group relative p-5">
                 <Link to={`/project/${project.id}`} className="block">
                   <p className="text-[12px] text-muted-foreground">
-                    {project.city || 'Property'} · {new Date(project.createdAt || Date.now()).toLocaleDateString()}
+                    {project.city || 'Property'} · {new Date(project.createdAt || Date.now()).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                   </p>
                   <p className="mt-1.5 pr-8 font-display text-[19px] leading-snug tracking-tight">{cleanAddress(project.address)}</p>
                   <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-[11.5px] text-muted-foreground">

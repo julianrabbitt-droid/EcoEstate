@@ -128,7 +128,7 @@ export default async function (req) {
     const plants = entries
       .map((e) => ({ ...e, wildlife: Array.isArray(e?.wildlife) ? e.wildlife : [] }))
       .filter((e) => e && e.speciesId);
-    const birds = plants.filter((p) => p.wildlife.includes('Birds')).length;
+    const birds = plants.filter((p) => p.wildlife.includes('Birds') || p.wildlife.includes('Hummingbirds')).length;
     const pollinators = plants.filter(
       (p) => p.wildlife.includes('Native bees') || p.wildlife.includes('Butterflies') || p.wildlife.includes('Hummingbirds')
     ).length;

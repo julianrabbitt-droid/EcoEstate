@@ -174,7 +174,7 @@ export default function LawnApiResult({ data, preview, onConfirm, onFix, onEdit,
       <div>
         {createPortal(
           <Suspense fallback={null}>
-            <Garden3DView project={preview} mode="check" fill viewShift={viewShift} lawnLabel={lawnLabel} onReady={() => setModelReady(true)} />
+            <Garden3DView project={preview} mode="check" fill toolbarTop viewShift={viewShift} lawnLabel={lawnLabel} onReady={() => setModelReady(true)} />
           </Suspense>,
           stage,
         )}

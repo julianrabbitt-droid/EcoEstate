@@ -24,7 +24,8 @@ async function photoCredits(files) {
       const info = pg?.imageinfo?.[0];
       if (!info) continue;
       const meta = info.extmetadata || {};
-      const artist = String(meta.Artist?.value || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 80);
+      // The author's name only: Wikimedia appends user-page links such as "(talk)" and "(Uploads)".
+      const artist = String(meta.Artist?.value || '').replace(/<[^>]*>/g, '').replace(/\((talk|uploads|contribs|contributions|user page)\)/gi, '').replace(/\s+/g, ' ').trim().slice(0, 80);
       out[String(pg.title).replace(/^File:/, '').replace(/ /g, '_')] = out[String(pg.title).replace(/^File:/, '')] = {
         artist: artist || 'Unknown author',
         license: String(meta.LicenseShortName?.value || '').trim() || 'see source',

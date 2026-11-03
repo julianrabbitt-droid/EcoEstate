@@ -94,6 +94,8 @@ export default function Analysis() {
   }
 
   const total = Number(breakdown.turf || 0) + Number(breakdown.beds || 0) + Number(breakdown.bare || 0);
+  // A grass the scan named or the person picked; the scan's own guess is 'Unidentified turf'.
+  const turfKnown = Boolean(turf.name) && turf.name !== 'Unidentified turf';
 
   const setArea = (key, value) => {
     autosave.markDirty();
@@ -131,7 +133,7 @@ export default function Analysis() {
       <div className="rounded-2xl border border-border/60 bg-background/40 p-3">
         <p className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><Droplets className="h-3.5 w-3.5 text-chart-2" aria-hidden />Water it drinks</p>
         <p className="mt-1 font-display text-[1.6rem] leading-none tracking-tight">{num(gallons)}<span className="ml-1 text-[13px] text-muted-foreground">gal/yr</span></p>
-        <p className="mt-1 text-[11px] text-muted-foreground">{turf.name || 'Unknown turf'}</p>
+        <p className="mt-1 text-[11px] text-muted-foreground">{turfKnown ? turf.name : 'Typical lawn'}</p>
       </div>
     </div>
   );
@@ -178,7 +180,7 @@ export default function Analysis() {
             </div>
             {figures}
             <dl className="space-y-2 rounded-2xl border border-border/60 bg-background/40 p-4 text-[12.5px]">
-              <div className="flex justify-between"><dt className="text-muted-foreground">Turf</dt><dd>{turf.name || 'Unknown turf'}</dd></div>
+              <div className="flex justify-between"><dt className="text-muted-foreground">Turf</dt><dd>{turfKnown ? turf.name : 'Not identified'}</dd></div>
               <div className="flex justify-between"><dt className="text-muted-foreground">Ornamental beds</dt><dd className="tabular-nums">{num(breakdown.beds)} sq ft</dd></div>
               <div className="flex justify-between"><dt className="text-muted-foreground">Bare soil or gravel</dt><dd className="tabular-nums">{num(breakdown.bare)} sq ft</dd></div>
               <div className="flex justify-between"><dt className="text-muted-foreground">Sun · soil</dt><dd>{sun} · {soil}</dd></div>
@@ -258,16 +260,22 @@ export default function Analysis() {
           </div>
 
           <div className="mt-4 rounded-xl border border-border bg-secondary/30 p-4">
+            {/* Only what the scan actually knows: no species or certainty is
+                shown for turf it couldn't identify. */}
             <div className="flex items-baseline justify-between">
-              <p className="font-display text-xl tracking-tight">{turf.name || 'Unknown turf'}</p>
-              <span className="text-[13px] font-medium text-accent">
-                {Math.round((turf.confidence || 0.72) * 100)}%
-              </span>
+              <p className="font-display text-xl tracking-tight">{turfKnown ? turf.name : 'Turf type not identified'}</p>
+              {turfKnown && typeof turf.confidence === 'number' && (
+                <span className="text-[13px] font-medium text-accent">{Math.round(turf.confidence * 100)}%</span>
+              )}
             </div>
-            <p className="mt-0.5 font-display text-[12.5px] italic text-muted-foreground">
-              {turf.scientific || 'Festuca arundinacea'}
-            </p>
-            <ConfidenceBar value={turf.confidence ?? 0.72} />
+            {turfKnown ? (
+              <>
+                {turf.scientific && <p className="mt-0.5 font-display text-[12.5px] italic text-muted-foreground">{turf.scientific}</p>}
+                {typeof turf.confidence === 'number' && <ConfidenceBar value={turf.confidence} />}
+              </>
+            ) : (
+              <p className="mt-0.5 text-[12px] text-muted-foreground">Water use assumes a typical California lawn. Pick the grass below if you know it.</p>
+            )}
             <div className="mt-3 flex flex-wrap gap-1.5 text-[10.5px]">
               <span className="rounded-full bg-card px-2 py-0.5">{turf.nativeStatus || 'Non-native'}</span>
               <span className="rounded-full bg-card px-2 py-0.5">{turf.galPerSqft ?? 46} gal / sq ft / yr</span>

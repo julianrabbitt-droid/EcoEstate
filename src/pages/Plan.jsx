@@ -13,7 +13,7 @@ import StepNav from '@/components/StepNav';
 import { Button } from '@/components/ui/button';
 import { organizationsFor, NURSERIES } from '@/data/organizations';
 import { plantById } from '@/data/nativePlants';
-import { designOrDefault, financials, money, num } from '@/lib/landscapeMath';
+import { bedMulch, designOrDefault, financials, money, num } from '@/lib/landscapeMath';
 import { buildSchedule } from '@/lib/buildSchedule';
 import ProjectExports from '@/components/ProjectExports';
 import { useRebates } from '@/hooks/useRebates';
@@ -44,7 +44,7 @@ export default function Plan() {
   const [planView, setPlanView] = useState(false);
   const design = useMemo(() => (project ? designOrDefault(project) : []), [project]);
   useStage(
-    loading ? null : !project ? { missing: true } : { project, entries: design, scene: 'build', highlight, planView, viewShift: wide && asideOpen ? [-220, 20] : [0, 70] },
+    loading ? null : !project ? { missing: true } : { project, entries: design, scene: 'build', highlight, planView, viewShift: wide && asideOpen ? [-220, planView ? -30 : 20] : [0, planView ? 20 : 70] },
     [loading, project, design, highlight, planView, wide, asideOpen],
   );
   // This property's community install, if its owner is hosting one.
@@ -101,7 +101,7 @@ export default function Plan() {
   };
   const RANGE_LABEL = ['in your city', 'across your county', 'across your region', 'across California'][orgTier];
   const fin = financials(project, design, rebates);
-  const mulchYards = Math.max(1, Math.round((fin.turfSqft * 0.25) / 27));
+  const mulch = bedMulch(fin.turfSqft);
 
   const rows = [
     ...design.map((entry) => {
@@ -109,7 +109,7 @@ export default function Plan() {
       if (!plant) return null;
       return { label: plant.common, note: `${plant.spacing} ft spacing`, qty: `${entry.quantity} plants`, cost: entry.quantity * plant.cost };
     }).filter(Boolean),
-    { label: 'Arborist mulch', note: '3 inches deep', qty: `${mulchYards} cu yd`, cost: fin.mulch },
+    { label: 'Arborist mulch', note: '3 inches deep', qty: `${mulch.cuyd} cu yd · ${mulch.bags} bags`, cost: fin.mulch },
     { label: 'Drip irrigation kit', note: 'Pressure-regulated, 12–18 in spacing', qty: `${num(fin.turfSqft)} sq ft`, cost: fin.irrigation },
     { label: 'Installation labor', note: 'Planting, grading, mulch spread', qty: 'Crew', cost: fin.install },
   ];
@@ -137,7 +137,11 @@ export default function Plan() {
   const key = speciesKey(design);
   const plantRows = design.map((entry) => ({ entry, plant: plantById(entry.speciesId), k: key.get(entry.speciesId) })).filter((r) => r.plant && r.k);
   const plantCount = plantRows.reduce((a, r) => a + r.entry.quantity, 0);
-  const toInstall = () => document.getElementById('community-install')?.scrollIntoView({ behavior: 'smooth' });
+  // Straight to the form when there's no planting day yet (and they're signed in).
+  const toInstall = () => {
+    if (isAuthenticated && (!install || install.status === 'cancelled' || install.status === 'done')) setHostForm(true);
+    document.getElementById('community-install')?.scrollIntoView({ behavior: 'smooth' });
+  };
   const viewSwitch = (
     <div role="group" aria-label="View" className="flex rounded-full border border-border bg-background/40 p-0.5 text-[11.5px]">
       {[[false, '3D garden', Box], [true, 'Planting plan', LayoutGrid]].map(([on, l, Icon]) => (

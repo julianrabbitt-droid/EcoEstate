@@ -1087,7 +1087,9 @@ function buildPlant(plant, mature, detail = 'normal', { spacing = 0 } = {}) {
 // arrangementsEl: a page's own place for the arrangements and "design from
 // text" (the Design step's side panel), instead of a panel over the view.
 // onWalkChange(walking): so a page can clear its panels away during a walk.
-export default function Garden3DView({ entries = NO_ENTRIES, project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady, fill = false, viewShift = null, scene: step = 'design', payoff = null, highlight = null, planView = false, arrangementsEl = null, onWalkChange }) {
+// toolbarTop: on phones the view controls go at the top (the scan's result
+// panel takes the bottom of the screen there).
+export default function Garden3DView({ entries = NO_ENTRIES, project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady, fill = false, viewShift = null, scene: step = 'design', payoff = null, highlight = null, planView = false, arrangementsEl = null, onWalkChange, toolbarTop = false }) {
   const fillRef = useRef(fill);
   const stepRef = useRef(step);
   stepRef.current = step;
@@ -1109,7 +1111,9 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   // Before and after: today's lawn (the beds as turf, no plants) or the native garden.
   const [before, setBefore] = useState(false);
   const [showArr, setShowArr] = useState(false); // full screen: the arrangements panel
-  const [toolsOpen, setToolsOpen] = useState(true); // full screen: the view controls, or just their pill
+  // Full screen: the view controls, or just their pill. Phones start with the
+  // pill on the project steps, where the panels already take the screen.
+  const [toolsOpen, setToolsOpen] = useState(() => !fill || mode === 'check' || typeof window === 'undefined' || window.innerWidth >= 640);
   const showLawn = checking || before;
   const wildlifeRef = useRef(null); // { group, counts, update } while the garden has visitors
   const [visitors, setVisitors] = useState(null);
@@ -2517,12 +2521,14 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     const clearAspect = Math.max(0.3, (el.clientWidth - 2 * sx) / Math.max(1, el.clientHeight - 2 * sy));
     const vfov = THREE.MathUtils.degToRad(camera.fov) * Math.max(0.5, 1 - (2 * sy) / Math.max(1, el.clientHeight));
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * clearAspect);
-    const fit = (r) => (r / Math.sin(Math.min(vfov, hfov) / 2)) * 0.92;
+    const fit = (r) => (r / Math.sin(Math.min(vfov, hfov) / 2)) * (clearAspect < 0.8 ? 1.15 : 1.02);
     let pos;
     let tgt;
     if (step === 'payoff' && pb) {
-      tgt = new THREE.Vector3(pb.x, ground(pb.x, pb.z), pb.z);
-      pos = tgt.clone().addScaledVector(new THREE.Vector3(f.dx * 1.25, 0.72, f.dz * 1.25).normalize(), Math.max(fit(pb.radius), 45));
+      // The stacks and their labels stand tall: frame their height too.
+      const tall = pb.height || 0;
+      tgt = new THREE.Vector3(pb.x, ground(pb.x, pb.z) + tall * 0.35, pb.z);
+      pos = tgt.clone().addScaledVector(new THREE.Vector3(f.dx * 1.25, 0.72, f.dz * 1.25).normalize(), Math.max(fit(Math.max(pb.radius, tall * 0.8)), 45));
     } else if (step === 'build' && bedsRef.current.length) {
       const beds = bedsRef.current;
       const [minX, maxX] = [Math.min(...beds.map((b) => b.x - b.radius)), Math.max(...beds.map((b) => b.x + b.radius))];
@@ -2531,7 +2537,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
       const r = Math.max(12, Math.hypot(maxX - minX, maxZ - minZ) / 2);
       tgt = new THREE.Vector3(x, ground(x, z), z);
       pos = planViewRef.current
-        ? new THREE.Vector3(x, tgt.y + fit(r) * 1.1, z + 0.01)
+        ? new THREE.Vector3(x, tgt.y + fit(r) * 1.25, z + 0.01)
         : tgt.clone().addScaledVector(new THREE.Vector3(f.dx * 1.25, 1.3, f.dz * 1.25).normalize(), Math.max(fit(r), 28));
     } else {
       const ov = t.overview();
@@ -2983,20 +2989,20 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
           type="button"
           onClick={() => setToolsOpen(true)}
           aria-expanded={false}
-          className={`absolute left-3 z-20 inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/90 px-4 py-2 text-[12.5px] shadow-lg backdrop-blur-md transition hover:bg-card sm:left-5 ${checking ? 'top-3 lg:bottom-4 lg:top-auto' : 'bottom-4'}`}
+          className={`absolute left-3 z-20 inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/90 px-4 py-2 text-[12.5px] shadow-lg backdrop-blur-md transition hover:bg-card sm:left-5 ${toolbarTop ? 'top-3 lg:bottom-4 lg:top-auto' : 'bottom-4'}`}
         >
           <SlidersHorizontal className="h-4 w-4" aria-hidden />
           View options
         </button>
       ) : (
-      <div className={fill ? `absolute left-3 z-20 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 rounded-2xl border border-border/60 bg-card/88 p-1.5 shadow-xl backdrop-blur-md sm:left-5 lg:max-w-[calc(100%-29rem)] ${checking ? 'top-3 lg:bottom-4 lg:top-auto' : 'bottom-4'}` : 'flex flex-wrap items-center justify-between gap-3'}>
+      <div className={fill ? `absolute left-3 z-20 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 rounded-2xl border border-border/60 bg-card/88 p-1.5 shadow-xl backdrop-blur-md sm:left-5 lg:max-w-[calc(100%-29rem)] ${toolbarTop ? 'top-3 lg:bottom-4 lg:top-auto' : 'bottom-4'}` : 'flex flex-wrap items-center justify-between gap-3'}>
         {fill && walkMode ? (
           <Button variant="default" onClick={() => setWalkMode(false)} className="rounded-full" size="sm">
             Exit walk
           </Button>
         ) : (
         <>
-        {!checking && (
+        {!checking && !planView && (
         <div className="inline-flex rounded-full border border-border bg-card/90 p-0.5 backdrop-blur">
           {[{ k: 'before', l: 'Today’s lawn' }, { k: 'new', l: 'Newly planted' }, { k: 'mature', l: 'Native garden, grown' }].map((o) => {
             const on = o.k === 'before' ? before : !before && (o.k === 'mature') === mature;
@@ -3016,7 +3022,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
         <div className="flex flex-wrap gap-2">
           {GOOGLE_TILES_KEY && origin && (
             <Button
-              variant={photoReal ? 'default' : 'outline'}
+              variant={photoReal && photoStatus !== 'failed' ? 'default' : 'outline'}
               onClick={togglePhotoReal}
               className="rounded-full"
               size="sm"
@@ -3035,6 +3041,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
             </Button>
           )}
           <ReportScan
+            placement={toolbarTop ? 'below' : 'above'}
             getContext={() => ({
               address: project?.address || null,
               projectId: project?.id || null,
@@ -3064,7 +3071,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
               {moveMode ? 'Done moving' : 'Move plants'}
             </Button>
           )}
-          {checking ? null : walkMode ? (
+          {checking || planView ? null : walkMode ? (
             <Button variant="default" onClick={() => setWalkMode(false)} className="rounded-full" size="sm">
               Exit walk
             </Button>

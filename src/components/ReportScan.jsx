@@ -7,7 +7,10 @@ const PROBLEMS = ['Lawn outline', 'House shape', 'Roof', 'Driveway or paving', '
 
 // "This scan looks wrong": what's off, in which view, sent with the scan's own
 // details (address, outlines, roof, view) so the scanner can be improved.
-export default function ReportScan({ getContext, className = '' }) {
+// placement: where the form opens from the button, 'above' (a toolbar at the
+// bottom of the view) or 'below' (one at the top), over the view, never
+// stretching the toolbar it sits in.
+export default function ReportScan({ getContext, className = '', placement = 'above' }) {
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState([]);
   const [note, setNote] = useState('');
@@ -32,16 +35,18 @@ export default function ReportScan({ getContext, className = '' }) {
     }
   };
 
-  if (!open) {
-    return (
-      <Button variant="outline" size="sm" className={`rounded-full ${className}`} onClick={() => { setOpen(true); setState('idle'); setPicked([]); setNote(''); }}>
+  const toggle = () => {
+    if (!open) { setState('idle'); setPicked([]); setNote(''); }
+    setOpen(!open);
+  };
+  return (
+    <div className="relative">
+      <Button variant={open ? 'default' : 'outline'} size="sm" className={`rounded-full ${className}`} onClick={toggle} aria-expanded={open}>
         <Flag className="mr-1.5 h-4 w-4" aria-hidden />
         Report this scan
       </Button>
-    );
-  }
-  return (
-    <div role="dialog" aria-label="Report a scan problem" className="w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-border bg-card/95 p-4 text-left shadow-2xl backdrop-blur-md">
+      {open && (
+    <div role="dialog" aria-label="Report a scan problem" className={`absolute left-0 z-30 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-border bg-card/95 p-4 text-left shadow-2xl backdrop-blur-md ${placement === 'below' ? 'top-[calc(100%+0.5rem)]' : 'bottom-[calc(100%+0.5rem)]'}`}>
       <div className="flex items-center justify-between">
         <p className="text-[14px] font-medium">What looks wrong here?</p>
         <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
@@ -76,6 +81,8 @@ export default function ReportScan({ getContext, className = '' }) {
             Send report
           </Button>
         </>
+      )}
+    </div>
       )}
     </div>
   );

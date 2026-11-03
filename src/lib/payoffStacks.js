@@ -120,7 +120,8 @@ export const PURCHASES = [
   { min: 15000, name: 'a used electric car', price: 15000, model: 'car' },
   { min: 1500, name: 'an e-bike', price: 1500, model: 'ebike' },
   { min: 450, name: 'a new bike', price: 500, model: 'bike' },
-  { min: 0, name: 'a garden bench', price: 300, model: 'bench' },
+  { min: 200, name: 'a garden bench', price: 300, model: 'bench' },
+  { min: 0, name: 'a cedar birdhouse', price: 60, model: 'birdhouse' },
 ];
 export const purchaseFor = (dollars) => PURCHASES.find((p) => dollars >= p.min) || PURCHASES[PURCHASES.length - 1];
 
@@ -182,6 +183,19 @@ function purchaseModel(kind) {
     for (const m of [body, cabin, roof]) { m.castShadow = true; m.receiveShadow = true; g.add(m); }
     const hub = mat(0xa7aaa4, 0.35, 0.7);
     for (const x of [-4.6, 4.6]) for (const z of [-3.05, 3.05]) g.add(wheel(1.15, 0.7, x, 1.15, z, rubber, hub));
+  } else if (kind === 'birdhouse') {
+    const cedar = mat(0xa8774e, 0.8);
+    const roofMat = mat(0x5b4a3b, 0.7);
+    g.add(tube([0, 0, 0], [0, 5, 0], 0.12, mat(0x6d5a48, 0.9)));
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1.2, 1), cedar);
+    box.position.y = 5.6;
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.95, 0.7, 4), roofMat);
+    roof.position.y = 6.55;
+    roof.rotation.y = Math.PI / 4;
+    const hole = new THREE.Mesh(new THREE.CircleGeometry(0.16, 16), mat(0x1d1f1c, 1));
+    hole.position.set(0, 5.75, 0.51);
+    for (const m of [box, roof]) { m.castShadow = true; g.add(m); }
+    g.add(hole);
   } else {
     const wood = mat(0x9a6b45, 0.85);
     const iron = mat(0x2b2d2a, 0.5, 0.6);
@@ -204,7 +218,7 @@ function purchaseModel(kind) {
   return g;
 }
 
-const SIZE = { bench: [5.2, 2.2], bike: [6, 1.6], ebike: [6, 1.6], car: [14.6, 7.4] }; // footprint [long, deep]
+const SIZE = { birdhouse: [1.2, 1.2], bench: [5.2, 2.2], bike: [6, 1.6], ebike: [6, 1.6], car: [14.6, 7.4] }; // footprint [long, deep]
 
 /**
  * dollars, gallons: saved over `years`. lotPts: the lot in scene feet [[x, z]];
@@ -310,7 +324,7 @@ export function createPayoffStacks({ dollars, gallons, years, lotPts, house, fro
     const objLabel = tagSprite([`That buys ${buy.name}`, `about $${fmt(buy.price)}, drawn to scale`], 13);
     objLabel.position.set(ox, 0, oz);
     group.add(objLabel);
-    labels.push({ sprite: objLabel, top: obj.position.y + (buy.model === 'car' ? 5.4 : 3.6), world: true });
+    labels.push({ sprite: objLabel, top: obj.position.y + ({ car: 5.4, birdhouse: 7 }[buy.model] || 3.6), world: true });
     framed.push(place(objSide - len / 2, frontLine + dep + 1), place(objSide + len / 2, frontLine));
     zone(objSide - len / 2 - 3, objSide + len / 2 + 3, frontLine - 2, frontLine + VIEW_FT);
   }
@@ -365,5 +379,6 @@ export function createPayoffStacks({ dollars, gallons, years, lotPts, house, fro
   const bx = (Math.min(...xs) + Math.max(...xs)) / 2;
   const bz = (Math.min(...zs) + Math.max(...zs)) / 2;
   const radius = Math.max(20, ...framed.map((p) => Math.hypot(p[0] - bx, p[1] - bz)));
-  return { group, items, zones, bounds: { x: bx, z: bz, radius } };
+  const height = Math.max(0, ...labels.map((l) => l.sprite.position.y + l.sprite.userData.halfHeight)) - Math.min(...anchor.map(([x, z]) => at(x, z)));
+  return { group, items, zones, bounds: { x: bx, z: bz, radius, height } };
 }

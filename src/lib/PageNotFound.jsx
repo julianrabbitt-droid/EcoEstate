@@ -1,10 +1,12 @@
 import { Link, useLocation } from 'react-router-dom';
+import { usePageMeta } from '@/hooks/usePageMeta';
 import { Crosshair, Sprout } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 // A page that doesn't exist: the same aerial and dusk palette as the rest of the site,
 // and a way back to scanning.
 export default function PageNotFound() {
+  usePageMeta({ title: 'Page not found' });
   const { pathname } = useLocation();
   return (
     <div className="relative isolate flex min-h-screen items-center justify-center px-5 text-center">

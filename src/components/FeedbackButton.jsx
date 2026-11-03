@@ -48,7 +48,7 @@ export default function FeedbackButton() {
         className={`fixed bottom-4 right-4 z-40 items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-[13px] text-primary-foreground shadow-lg transition hover:scale-[1.03] ${immersive ? 'hidden sm:inline-flex' : 'inline-flex'}`}
       >
         <MessageSquare className="h-4 w-4" aria-hidden />
-        Feedback
+        <span className="sr-only sm:not-sr-only">Feedback</span>
       </button>
     );
   }

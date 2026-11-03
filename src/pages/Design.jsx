@@ -11,7 +11,7 @@ import { base44 } from '@/api/base44Client';
 import { GOALS, matchesGoal, plantById } from '@/data/nativePlants';
 import { plantsForProject } from '@/data/regions';
 import NativeSourcePanel from '@/components/NativeSourcePanel';
-import { autoPlan, clearanceOf, fitDesignToArea, money, mulchPerPlant, mulchTotals, num, plantTotals, quantityForShare, suggestedQuantity } from '@/lib/landscapeMath';
+import { autoPlan, bedMulch, clearanceOf, fitDesignToArea, money, num, plantTotals, quantityForShare, suggestedQuantity } from '@/lib/landscapeMath';
 import { updateProject } from '@/lib/projectStore';
 import { useProject } from '@/hooks/useProjects';
 import { usePlantPhotos } from '@/hooks/usePlantPhotos';
@@ -135,7 +135,7 @@ export default function Design() {
   const propertyName =
     (/^\d+[a-z]?$/i.test(nameParts[0] || '') && nameParts[1] ? `${nameParts[0]} ${nameParts[1]}` : nameParts[0]) || 'Your property';
   const totals = plantTotals(entries);
-  const mulch = mulchTotals(entries);
+  const mulch = bedMulch(turfSqft);
 
   const togglePlant = (speciesId) => {
     autosave.markDirty();
@@ -316,9 +316,6 @@ export default function Design() {
                       <p className="text-[11px] text-muted-foreground">
                         {money(plant.cost)} ea · {money(plant.cost * entry.quantity)}
                       </p>
-                      <p className="text-[10.5px] text-muted-foreground/80">
-                        ≈{mulchPerPlant(plant).toFixed(1)} cu ft mulch/plant
-                      </p>
                     </div>
                     <div className="flex items-center gap-1 rounded-full border border-border">
                       <button
@@ -436,9 +433,6 @@ export default function Design() {
                       <p className="text-[11px] text-muted-foreground">
                         {money(plant.cost)} ea · {money(plant.cost * entry.quantity)}
                       </p>
-                      <p className="text-[10.5px] text-muted-foreground/80">
-                        ≈{mulchPerPlant(plant).toFixed(1)} cu ft mulch/plant
-                      </p>
                     </div>
                     <div className="flex items-center gap-1 rounded-full border border-border">
                       <button
@@ -506,10 +500,10 @@ export default function Design() {
 
       <section className="mt-9">
         <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
+          <div className="w-full min-w-0 sm:w-auto">
             <p className="label-xs">Recommended for your location</p>
             <h2 className="mt-1.5 font-display text-2xl tracking-tight">Species worth planting here</h2>
-            <div className="mt-3 max-w-md">
+            <div className="mt-3 w-full max-w-md">
               <NativeSourcePanel project={project} />
             </div>
           </div>

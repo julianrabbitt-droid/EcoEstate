@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { usePageMeta } from '@/hooks/usePageMeta';
 import { Check, Copy, Gift, Loader2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
@@ -6,6 +7,7 @@ import { Button } from '@/components/ui/button';
 // Referral program: share a link; each friend who subscribes gets $5 off their
 // first month and gives you one free month of Pro.
 export default function Invite() {
+  usePageMeta({ title: 'Invite friends' });
   const [info, setInfo] = useState(null);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState('');

@@ -541,7 +541,6 @@ export default function Scan() {
   // Typed but not yet picked: say why Locate is still grey.
   const mustPick = query.trim().length > 3 && !chosen && !loading;
   const addressForm = (dark) => (
-    <>
     <form onSubmit={handleScan} className="flex flex-col gap-2.5 sm:flex-row">
       <AddressAutocomplete
         value={query}
@@ -552,17 +551,13 @@ export default function Scan() {
           locate(hit.label || query, hit);
         }}
         placeholder="Enter your address"
+        hint={mustPick ? (hits.length ? 'Pick your address from the list to locate it.' : 'Keep typing, then pick your address from the list.') : null}
+        hintClassName={dark ? 'text-white/90 drop-shadow' : 'text-muted-foreground'}
       />
       <Button type="submit" disabled={loading || !chosen} className={`h-12 rounded-full px-6 text-[15px] ${dark ? 'disabled:opacity-80' : ''}`}>
         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Crosshair className="mr-1.5 h-4 w-4" aria-hidden />Locate property</>}
       </Button>
     </form>
-    {mustPick && (
-      <p className={`mt-2 text-[12.5px] ${dark ? 'text-white/90 drop-shadow' : 'text-muted-foreground'}`} role="status">
-        {hits.length ? 'Pick your address from the list to locate it.' : 'Keep typing: pick your address from the list when it appears.'}
-      </p>
-    )}
-    </>
   );
 
   return (

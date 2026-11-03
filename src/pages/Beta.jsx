@@ -68,7 +68,10 @@ export default function Beta() {
             </div>
           </>
         ) : (
-          <p role="alert" className="text-[14px] text-destructive">{error || 'That tester link is not valid. Ask for a new one.'}</p>
+          <p role="alert" className="text-[14px] text-destructive">
+            {error || 'That tester link is not valid.'}{' '}
+            <a href="mailto:support@ecoestate.org?subject=EcoEstate%20tester%20link" className="underline underline-offset-2">Email support@ecoestate.org</a> for a new one.
+          </p>
         )}
       </div>
 

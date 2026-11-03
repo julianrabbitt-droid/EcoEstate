@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { usePageMeta } from '@/hooks/usePageMeta';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Check, Clock, Loader2, Mail, MapPin, Pencil, Send, Sprout, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -58,6 +59,7 @@ export default function Install() {
   const [hoursSaved, setHoursSaved] = useState(false);
 
   const isHost = Boolean(user?.id && install?.created_by_id === user.id);
+  usePageMeta({ title: install ? `${install.title} · ${install.city}` : 'Community install' });
   const load = useCallback(async () => {
     try {
       setInstall(await getInstall(id));

@@ -1,4 +1,5 @@
 import { useSearchParams } from 'react-router-dom';
+import { usePageMeta } from '@/hooks/usePageMeta';
 import { cn } from '@/lib/utils';
 import Community from '@/pages/Community';
 import Messages from '@/pages/Messages';
@@ -13,6 +14,7 @@ const TABS = [
 // Community feed + map and private messages, switched by the `tab` query param.
 // Members only (Pro or student unlock); everyone else sees an upsell.
 export default function Social() {
+  usePageMeta({ title: 'Community' });
   const [params, setParams] = useSearchParams();
   const { member, loading, refresh } = usePremiumAccess();
   const tab = params.get('tab') === 'messages' ? 'messages' : 'community';

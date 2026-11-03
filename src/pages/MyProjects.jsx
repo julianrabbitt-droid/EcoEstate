@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { usePageMeta } from '@/hooks/usePageMeta';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowUpRight, Droplets, Loader2, Plus, Sprout, Trash2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
@@ -16,6 +17,7 @@ import { cleanAddress } from '@/lib/geo';
 // `?project=<scanned property id>` (from Build / Legacy / My properties) starts
 // tracking that property, or opens its existing tracked project.
 export default function MyProjects() {
+  usePageMeta({ title: 'My projects' });
   const confirm = useConfirm();
   const { user } = useAuth();
   const navigate = useNavigate();

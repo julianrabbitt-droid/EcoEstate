@@ -35,7 +35,7 @@ export default function LawnImpact({ lawnSqft, impact, updating = false, error =
       </div>
       <div className="grid grid-cols-3 gap-2">
         <ScanStat label="Water saved / yr" value={impact ? `${num(impact.gallonsSavedPerYear)} gal` : '—'} />
-        <DollarStat label="Saved / yr" amount={impact?.dollarsSavedPerYear} hasImpact={!!impact} />
+        <DollarStat label="Water bill / yr" amount={impact?.dollarsSavedPerYear} hasImpact={!!impact} />
         <DollarStat label="Est. rebate" amount={impact?.estimatedRebate} hasImpact={!!impact} />
       </div>
       {error && (

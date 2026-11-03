@@ -23,15 +23,18 @@ export default function StepNav({ projectId, current, project }) {
                 to={step.path(projectId)}
                 state={project ? { project } : undefined}
                 aria-current={active ? 'step' : undefined}
+                aria-label={step.label}
                 className={cn(
-                  'flex items-center gap-2 rounded-full px-3.5 py-1.5 transition',
+                  'flex items-center gap-2 rounded-full py-1.5 transition',
+                  // Phones: the other steps are just their numbers, so all four fit.
+                  active ? 'px-3.5' : 'px-1.5 sm:px-3.5',
                   active ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
                 )}
               >
                 <span className={cn('flex h-5 w-5 items-center justify-center rounded-full font-mono text-[10px]', active ? 'bg-background text-foreground' : done ? 'bg-foreground/10 text-foreground' : 'bg-secondary')}>
                   {done ? '✓' : i + 1}
                 </span>
-                {step.label}
+                <span className={active ? '' : 'hidden sm:inline'}>{step.label}</span>
               </Link>
             </li>
           );
