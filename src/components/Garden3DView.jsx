@@ -325,7 +325,10 @@ function asphaltTexture() {
 // connect to nothing else are found; a piece is dropped when it is small, sits
 // well above the lowest ground around it, and doesn't reach the tile's edge
 // (where it might carry on into the next tile, like half a roof).
-const FLOATER = { maxSizeFt: 25, minLiftFt: 5, maxTris: 3000, cellFt: 6, maxTileFt: 1500 };
+// Loose fragments: pieces up to maxSizeFt and maxTris hanging minLiftFt or more
+// above the ground. Spikes: triangles longer than spikeMinFt and over
+// spikeThinness times longer than they are wide, standing up.
+const FLOATER = { maxSizeFt: 30, minLiftFt: 4, maxTris: 4000, cellFt: 6, maxTileFt: 1500, spikeMinFt: 8, spikeThinness: 10 };
 function removeFloaters(model, toScene) {
   model.updateMatrixWorld(true);
   const m = new THREE.Matrix4();
@@ -384,7 +387,6 @@ function removeFloaters(model, toScene) {
       }
       b[6]++;
     }
-    if (box.size < 2) return;
     const edge = 0.5;
     const drop = new Set();
     for (const [r, b] of box) {
@@ -408,13 +410,28 @@ function removeFloaters(model, toScene) {
       }
       if (covered) drop.add(r);
     }
-    if (!drop.size) return;
+    // Spikes: long, needle-thin triangles standing up out of roofs and yards
+    // (where the photogrammetry stretched a surface between far-apart points).
+    const spike = (t) => {
+      const [a, b, c] = [corner(t, 0), corner(t, 1), corner(t, 2)];
+      const ab = Math.hypot(xs[b] - xs[a], ys[b] - ys[a], zs[b] - zs[a]);
+      const bc = Math.hypot(xs[c] - xs[b], ys[c] - ys[b], zs[c] - zs[b]);
+      const ca = Math.hypot(xs[a] - xs[c], ys[a] - ys[c], zs[a] - zs[c]);
+      const longest = Math.max(ab, bc, ca);
+      if (longest < FLOATER.spikeMinFt) return false;
+      const sp = (ab + bc + ca) / 2;
+      const area = Math.sqrt(Math.max(0, sp * (sp - ab) * (sp - bc) * (sp - ca)));
+      const width = (2 * area) / longest; // the triangle's height across its longest side
+      const rise = Math.max(ys[a], ys[b], ys[c]) - Math.min(ys[a], ys[b], ys[c]);
+      return width < longest / FLOATER.spikeThinness && rise > longest * 0.5;
+    };
     const kept = [];
+    let removed = 0;
     for (let t = 0; t < triCount; t++) {
-      if (drop.has(find(id[corner(t, 0)]))) continue;
+      if (drop.has(find(id[corner(t, 0)])) || spike(t)) { removed++; continue; }
       kept.push(corner(t, 0), corner(t, 1), corner(t, 2));
     }
-    g.setIndex(kept);
+    if (removed) g.setIndex(kept);
   });
 }
 
