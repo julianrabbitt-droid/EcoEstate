@@ -10,6 +10,7 @@ import { TilesRenderer } from '3d-tiles-renderer';
 import { GLTFExtensionsPlugin, GoogleCloudAuthPlugin, ReorientationPlugin, TileCompressionPlugin } from '3d-tiles-renderer/plugins';
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bird, Box, Leaf, Loader2, Lock, Move, ScanEye, Sun, Wand2 } from 'lucide-react';
 import WalkThroughHandle from '@/components/WalkThroughHandle';
+import ReportScan from '@/components/ReportScan';
 import WalkSpeedControl from '@/components/WalkSpeedControl';
 import WalkMiniMap from '@/components/WalkMiniMap';
 import { Button } from '@/components/ui/button';
@@ -1342,7 +1343,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
         for (const c of scene.children) {
           const u = c.userData;
           if (u && (u.satellite || (u.offLot && !u.inFront))) c.visible = !t3;
-          if (u && (u.outline || u.modelOnly)) c.visible = !t3;
+          if (u && (u.outline || u.modelOnly || u.building)) c.visible = !t3; // Real 3D shows Google's real house
           if (u && u.realOnly) c.visible = !!t3;
           if (u && u.skirt) c.visible = !!t3;
           if (u && u.lotGround) c.visible = !t3;
@@ -1510,8 +1511,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     ctx.fillStyle = '#fff';
     ctx.strokeStyle = '#fff';
     ctx.lineJoin = 'round';
-    ctx.lineWidth = 2 * HOUSE_CUT_MARGIN_FT * ftPx;
-    houses.forEach((h) => { trace(h); ctx.fill(); ctx.stroke(); });
+    // Google's own house stays (it is the real one); only the lawn is replaced.
     ctx.lineWidth = 2 * 1 * ftPx;
     beds.forEach((h) => { trace(h); ctx.fill(); ctx.stroke(); });
     const tex = new THREE.CanvasTexture(c);
@@ -1566,6 +1566,24 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       });
       tctx.closePath();
       tctx.fill();
+      // The house and its eaves are never cut: Google's real house stands there.
+      tctx.globalCompositeOperation = 'multiply';
+      tctx.fillStyle = '#000000';
+      tctx.strokeStyle = '#000000';
+      tctx.lineJoin = 'round';
+      tctx.lineWidth = (2 * HOUSE_CUT_MARGIN_FT * W) / (nx1 - nx0);
+      houses.forEach((hp) => {
+        tctx.beginPath();
+        hp.forEach(([x, z], i) => {
+          const px = ((x - nx0) / (nx1 - nx0)) * W;
+          const py = (1 - (z - nz0) / (nz1 - nz0)) * W;
+          if (i) tctx.lineTo(px, py);
+          else tctx.moveTo(px, py);
+        });
+        tctx.closePath();
+        tctx.fill();
+        tctx.stroke();
+      });
       tctx.globalCompositeOperation = 'source-over';
     }
     const treeTex = new THREE.CanvasTexture(tc);
@@ -2619,6 +2637,24 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
               Reset view
             </Button>
           )}
+          <ReportScan
+            getContext={() => ({
+              address: project?.address || null,
+              projectId: project?.id || null,
+              center: project?.center || null,
+              view: showReal ? 'real3d' : 'model',
+              screen: checking ? 'scan check' : 'design',
+              lawnSqft: project?.breakdown?.turf ?? project?.totalSqft ?? null,
+              lawnAreas: polys.length,
+              buildings: buildings.length,
+              buildingHeightsFt: project?.buildingHeightsFt || null,
+              buildingRoofs: project?.buildingRoofs || null,
+              trees: trees.length,
+              fences: fences.length,
+              paths: paths.map((q) => q.kind),
+              camera: threeRef.current ? threeRef.current.camera.position.toArray().map((v) => Math.round(v)) : null,
+            })}
+          />
           {!checking && (
             <Button variant={moveMode ? 'default' : 'outline'} onClick={() => setMoveMode((m) => !m)} className="rounded-full" size="sm">
               <Move className="mr-1.5 h-4 w-4" />

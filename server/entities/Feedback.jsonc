@@ -23,6 +23,14 @@
     "beta": {
       "type": "boolean",
       "title": "From a beta tester"
+    },
+    "kind": {
+      "type": "string",
+      "title": "general, or scan (a report on how a property was scanned or drawn)"
+    },
+    "context": {
+      "type": "object",
+      "title": "What was on screen: address, view, scan details"
     }
   },
   "required": [
