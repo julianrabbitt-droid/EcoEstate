@@ -8,7 +8,9 @@
 //
 // Writes <outDir>/<slug>.jsonl (one line per home: lawn, paving, buildings,
 // roads, trees, seconds, or the error) and <outDir>/<slug>/<n>.json scan files
-// in the API's shape, which scripts/layout-check.mjs (repo root) reads.
+// in the API's shape, which scripts/layout-check.mjs and
+// scripts/real3d-holes.mjs (repo root) read. scripts/analyze-runs.mjs sums a
+// run up; scripts/serve-run.mjs serves it for compare.html and /dev/render.
 import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -73,6 +75,7 @@ while (done < count && tries < count * 8) {
       lawnShare: parcel.areaSqft ? Math.round((r.totalSqft / parcel.areaSqft) * 100) / 100 : null,
       poolSqft: (r.pools?.features || []).reduce((a, f) => a + f.properties.areaSqft, 0),
       lidar: r.lidar ? r.lidar.source : null,
+      terrain: Boolean(r.terrain),
       diag: diagnose(r),
       survey: r.surveyDate,
       seconds: Math.round((Date.now() - t) / 100) / 10,

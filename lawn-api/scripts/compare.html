@@ -1,0 +1,91 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Scan vs photo</title>
+<style>
+body{margin:0;font:11px/1.3 -apple-system,Helvetica,sans-serif;background:#1d1f1c;color:#eee}
+#grid{display:grid;grid-template-columns:repeat(var(--cols,2),1fr);gap:8px;padding:8px}
+.c{background:#2a2c28;border-radius:6px;overflow:hidden}
+.pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:2px}
+canvas{width:100%;display:block;background:#000}
+.t{padding:4px 6px}
+</style></head><body>
+<!-- A city-test run, home by home (serve-run.mjs serves it): the scan over the
+     survey photo it used (NAIP), the same outlines over a current, sharper
+     photo (Esri World Imagery, for looking only), and what decided each pixel
+     (scan-diagnose.mjs reasonImage). ?city=<slug>&n=1,2,3&cols=2&z=19 -->
+<div style="padding:6px 8px">Third panel: <b style="color:#46e63c">lawn</b> · <b style="color:#ff961e">rough green</b> · <b style="color:#be5aff">groundcover/beds (laser)</b> · <b style="color:#fff03c">green dropped (fragment)</b> · <b style="color:#146e28">trees</b> · <b style="color:#828c28">shrubs</b> · <b style="color:#e62828">roof</b> · <b style="color:#aaa">paving</b> · <b style="color:#00dcff">pool</b> · <b style="color:#cdaa78">bare</b></div>
+<div id="grid"></div>
+<script>
+const params = new URLSearchParams(location.search);
+const slug = params.get('city');
+const list = (params.get('n') || '1').split(',').map(Number);
+const grid = document.getElementById('grid');
+grid.style.setProperty('--cols', params.get('cols') || 2);
+const rings = (g) => !g ? [] : g.type === 'Polygon' ? [g.coordinates[0]] : g.type === 'MultiPolygon' ? g.coordinates.map((p) => p[0]) : [];
+const load = (src) => new Promise((r) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => r(i); i.onerror = () => r(null); i.src = src; });
+const Z = Number(params.get('z') || 19);
+const tileX = (lon) => ((lon + 180) / 360) * 2 ** Z;
+const tileY = (lat) => { const s = Math.sin((lat * Math.PI) / 180); return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 2 ** Z; };
+function overlay(ctx, d, px) {
+  const draw = (ring, stroke, fill, width = 2, dash = []) => {
+    ctx.beginPath(); ring.forEach((p, i) => { const [x, y] = px(p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    ctx.setLineDash(dash); ctx.strokeStyle = stroke; ctx.lineWidth = width; ctx.stroke(); ctx.setLineDash([]);
+  };
+  (d.paved?.features || []).forEach((f) => rings(f.geometry).forEach((r) => draw(r, 'rgba(255,170,60,.9)', 'rgba(255,170,60,.18)', 1.5)));
+  (d.paths?.features || []).forEach((f) => rings(f.geometry).forEach((r) => draw(r, 'rgba(200,200,200,.9)', 'rgba(200,200,200,.15)', 1, [3, 3])));
+  (d.lawn?.features || []).forEach((f) => rings(f.geometry).forEach((r) => draw(r, '#7CFC00', 'rgba(124,252,0,.25)', 2)));
+  (d.buildings?.features || []).forEach((f) => rings(f.geometry).forEach((r) => draw(r, '#ff3b3b', null, 2)));
+  (d.pools?.features || []).forEach((f) => rings(f.geometry).forEach((r) => draw(r, '#00e5ff', 'rgba(0,229,255,.35)', 2)));
+  rings(d.parcel?.geometry).forEach((r) => draw(r, '#ffffff', null, 2, [6, 4]));
+  (d.trees || []).forEach((t) => {
+    const [x, y] = px([t.lon, t.lat]);
+    const [x2] = px([t.lon + ((t.radiusFt || 6) * 0.3048) / (111320 * Math.cos((t.lat * Math.PI) / 180)), t.lat]);
+    ctx.beginPath(); ctx.arc(x, y, Math.abs(x2 - x), 0, 7); ctx.strokeStyle = t.street ? '#c58cff' : '#ffe14d'; ctx.lineWidth = 1.5; ctx.stroke();
+  });
+}
+(async () => {
+  for (const n of list) {
+    let d;
+    try { d = await (await fetch(`${slug}/${n}.json`)).json(); } catch { continue; }
+    const gi = d.groundImage;
+    if (!gi) continue;
+    const c = document.createElement('div'); c.className = 'c';
+    const pair = document.createElement('div'); pair.className = 'pair';
+    const x0 = tileX(gi.west), x1 = tileX(gi.east), y0 = tileY(gi.north), y1 = tileY(gi.south);
+    const W = 640, H = Math.round(W * ((y1 - y0) / (x1 - x0)));
+    const canvas = () => { const cv = document.createElement('canvas'); cv.width = W; cv.height = H; return cv; };
+    const px = ([lon, lat]) => [((lon - gi.west) / (gi.east - gi.west)) * W, ((tileY(lat) - y0) / (y1 - y0)) * H];
+    const a = canvas(); const b = canvas();
+    const ax = a.getContext('2d'); const bx = b.getContext('2d');
+    const naip = await load(`${slug}/${n}.png`);
+    if (naip) ax.drawImage(naip, 0, 0, W, H);
+    const s = W / (x1 - x0);
+    const tiles = [];
+    for (let ty = Math.floor(y0); ty <= Math.floor(y1); ty++) for (let tx = Math.floor(x0); tx <= Math.floor(x1); tx++) tiles.push([tx, ty]);
+    await Promise.all(tiles.map(async ([tx, ty]) => {
+      const img = await load(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${Z}/${ty}/${tx}`);
+      if (img) bx.drawImage(img, (tx - x0) * s, (ty - y0) * s, s, s);
+    }));
+    overlay(ax, d, px);
+    overlay(bx, d, px);
+    pair.append(a, b);
+    if (d.whyImage) {
+      const cw = canvas(); const cx = cw.getContext('2d');
+      const why = await load(`${slug}/${n}.why.png`);
+      if (why) {
+        const [l, t] = px([d.whyImage.west, d.whyImage.north]);
+        const [r, btm] = px([d.whyImage.east, d.whyImage.south]);
+        cx.imageSmoothingEnabled = false;
+        cx.drawImage(why, l, t, r - l, btm - t);
+      }
+      rings(d.parcel?.geometry).forEach((r) => { cx.beginPath(); r.forEach((p, i) => { const [x, y] = px(p); i ? cx.lineTo(x, y) : cx.moveTo(x, y); }); cx.closePath(); cx.setLineDash([6, 4]); cx.strokeStyle = '#fff'; cx.lineWidth = 2; cx.stroke(); });
+      pair.append(cw);
+    }
+    const t = document.createElement('div'); t.className = 't';
+    const bh = d.buildings?.features?.map((f) => `${Math.round(f.properties.areaSqft)}sf ${f.properties.heightFt}ft`).join(', ');
+    t.textContent = `${n} ${d.address} · lot ${d.parcel?.areaSqft} · lawn ${d.lawnSqft} · ${bh || 'no building'} · pools ${(d.pools?.features || []).map((f) => f.properties.areaSqft).join('/') || 0}`;
+    c.append(pair, t);
+    grid.append(c);
+  }
+})();
+</script></body></html>
