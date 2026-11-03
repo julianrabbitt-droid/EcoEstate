@@ -23,6 +23,13 @@ export default function Design() {
   const navigate = useNavigate();
   const location = useLocation();
   const { project, loading } = useProject(id, location.state);
+  // Wide screens keep the planting list beside the garden, so the view shifts left.
+  const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
+  useEffect(() => {
+    const on = () => setWide(window.innerWidth >= 1024);
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
   const [entries, setEntries] = useState([]);
   const [goals, setGoals] = useState([]);
   const [arrangement, setArrangement] = useState(null);
@@ -173,51 +180,36 @@ export default function Design() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-5 py-10">
-      <StepNav projectId={id} project={project} current="design" />
-
-      <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="label-xs">Native design</p>
-          <h1 className="mt-2 font-display text-3xl leading-tight tracking-tight sm:text-[2.4rem]">
-            {propertyName}, <em className="italic text-accent">reimagined</em>
-          </h1>
-          <p className="mt-1.5 text-[13px] text-muted-foreground">
-            {num(turfSqft)} sq ft of lawn becomes native garden · {totals.speciesCount} species · {totals.count} plants · {money(totals.cost)} in plants
-          </p>
-          {project.nativeListAdjusted && (
-            <p className="mt-2 max-w-lg text-[12px] text-muted-foreground">
-              This preview corrects an older plant list to match your location. Your saved choices stay unchanged until you continue with See the payoff.
+    <div>
+      {/* The garden fills the screen; the planting list floats beside it. */}
+      <section className="relative h-[calc(100svh-4rem)] min-h-[560px] overflow-hidden">
+        <Garden3DView
+          entries={entries}
+          project={viewProject}
+          activeArrangement={arrangement}
+          onApplyArrangement={applyArrangement}
+          fill
+          viewShift={wide ? [-230, 40] : [0, 40]}
+        />
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3 sm:p-5">
+          <div className="pointer-events-auto inline-block max-w-full"><StepNav projectId={id} project={project} current="design" /></div>
+          <div className="pointer-events-auto mt-3 w-fit max-w-[min(34rem,calc(100vw-1.5rem))] rounded-2xl border border-border/60 bg-card/85 px-4 py-3 shadow-lg backdrop-blur-md lg:max-w-[calc(100vw-30rem)]">
+            <h1 className="font-display text-[1.6rem] leading-tight tracking-tight sm:text-[2rem]">
+              {propertyName}, <em className="italic text-accent">reimagined</em>
+            </h1>
+            <p className="mt-1 text-[12.5px] text-muted-foreground">
+              {num(turfSqft)} sq ft of lawn becomes native garden · {totals.speciesCount} species · {totals.count} plants · {money(totals.cost)} in plants
             </p>
-          )}
-        </div>
-        <Button onClick={save} className="rounded-full" size="lg">
-          See the payoff
-          <ArrowRight className="ml-2 h-4 w-4" />
-        </Button>
-      </div>
-
-      <div className="mt-7 grid gap-5 lg:grid-cols-[1.35fr_1fr] lg:items-start">
-        <section className="surface p-4">
-          <Garden3DView
-            entries={entries}
-            project={viewProject}
-            activeArrangement={arrangement}
-            onApplyArrangement={applyArrangement}
-          />
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-secondary/60 px-4 py-3">
-            <p className="text-[13px] text-foreground">
-              3D model not right? It's built from your 2D plan: fix the lawn, buildings or trees there and it rebuilds.
-            </p>
-            <Button asChild variant="outline" size="sm" className="rounded-full">
-              <Link to={`/project/${id}?edit=1`} state={{ project }}>
-                Fix the 2D plan
-              </Link>
-            </Button>
+            {project.nativeListAdjusted && (
+              <p className="mt-1.5 max-w-lg text-[11.5px] text-muted-foreground">
+                This preview corrects an older plant list to match your location. Your saved choices stay unchanged until you continue with See the payoff.
+              </p>
+            )}
           </div>
-        </section>
+        </div>
+        <aside className="absolute bottom-3 right-3 top-3 z-20 hidden w-[26rem] flex-col overflow-hidden rounded-3xl border border-border/60 bg-card/92 shadow-2xl backdrop-blur-md lg:flex">
+          <div className="flex-1 overflow-y-auto p-5">
 
-        <section className="surface p-5 lg:sticky lg:top-24">
           <div className="flex items-baseline justify-between">
             <h2 className="text-[15px] font-medium tracking-tight">Your planting list</h2>
             <span className="text-[11px] text-muted-foreground">{totals.count} plants</span>
@@ -327,8 +319,139 @@ export default function Design() {
           <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
             Installation and drip irrigation are added on the next screen.
           </p>
+
+          </div>
+          <div className="border-t border-border/70 p-4">
+            <Button onClick={save} className="w-full rounded-full" size="lg">
+              See the payoff
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+            <Link to={`/project/${id}?edit=1`} state={{ project }} className="mt-2 block text-center text-[12px] text-muted-foreground underline underline-offset-4 hover:text-foreground">
+              3D not right? Fix the 2D plan
+            </Link>
+          </div>
+        </aside>
+      </section>
+
+      <div className="mx-auto w-full max-w-6xl px-5 py-10">
+        {/* Phones: the planting list below the garden. */}
+        <section className="surface p-5 lg:hidden">
+
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-[15px] font-medium tracking-tight">Your planting list</h2>
+            <span className="text-[11px] text-muted-foreground">{totals.count} plants</span>
+          </div>
+
+          {entries.length > 0 && turfSqft > 0 && (
+            <label className="mt-3 block">
+              <span className="flex items-baseline justify-between text-[12px]">
+                <span className="text-foreground">Plant density</span>
+                <span className="text-muted-foreground">{cover}% of the lawn covered when grown</span>
+              </span>
+              <input
+                type="range"
+                min={25}
+                max={100}
+                step={5}
+                value={Math.max(25, Math.min(100, cover))}
+                onChange={(e) => setCover(Number(e.target.value))}
+                className="mt-1.5 w-full accent-[hsl(var(--primary))]"
+                aria-label="Plant density"
+              />
+              <span className="flex justify-between text-[10.5px] text-muted-foreground">
+                <span>Sparse, lower cost</span>
+                <span>Full</span>
+              </span>
+            </label>
+          )}
+
+          {entries.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                autosave.markDirty();
+                setEntries([]);
+              }}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[11px] text-muted-foreground transition hover:border-destructive/40 hover:text-destructive"
+            >
+              <Trash2 className="h-3 w-3" />
+              Clear all plants
+            </button>
+          )}
+
+          {entries.length === 0 ? (
+            <p className="mt-4 text-[12.5px] leading-relaxed text-muted-foreground">
+              Add species below and they appear in the garden view at their mature size.
+            </p>
+          ) : (
+            <ul className="mt-3 divide-y divide-border/70">
+              {entries.map((entry) => {
+                const plant = plantById(entry.speciesId);
+                if (!plant) return null;
+                return (
+                  <li key={entry.speciesId} className="flex items-center gap-2.5 py-2.5">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: plant.color }} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[12.5px] font-medium leading-tight">{plant.common}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {money(plant.cost)} ea · {money(plant.cost * entry.quantity)}
+                      </p>
+                      <p className="text-[10.5px] text-muted-foreground/80">
+                        ≈{mulchPerPlant(plant).toFixed(1)} cu ft mulch/plant
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 rounded-full border border-border">
+                      <button
+                        type="button"
+                        onClick={() => setQuantity(entry.speciesId, -1)}
+                        className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                        aria-label={`One fewer ${plant.common}`}
+                      >
+                        <Minus className="h-3 w-3" />
+                      </button>
+                      <span className="w-5 text-center text-[11.5px] tabular-nums">{entry.quantity}</span>
+                      <button
+                        type="button"
+                        onClick={() => setQuantity(entry.speciesId, 1)}
+                        className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                        aria-label={`One more ${plant.common}`}
+                      >
+                        <Plus className="h-3 w-3" />
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => togglePlant(entry.speciesId)}
+                      className="text-muted-foreground hover:text-destructive"
+                      aria-label={`Remove ${plant.common}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          <div className="mt-4 flex items-center justify-between border-t border-border/70 pt-3">
+            <span className="text-[12px] text-muted-foreground">Plants</span>
+            <span className="font-display text-lg">{money(totals.cost)}</span>
+          </div>
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-[12px] text-muted-foreground">Mulch (3" layer)</span>
+            <span className="text-[12px] tabular-nums text-foreground">
+              {num(mulch.cuft)} cu ft · {num(mulch.bags)} bags
+            </span>
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            Installation and drip irrigation are added on the next screen.
+          </p>
+
+          <Button onClick={save} className="mt-4 w-full rounded-full" size="lg">
+            See the payoff
+            <ArrowRight className="ml-2 h-4 w-4" />
+          </Button>
         </section>
-      </div>
 
       <section className="mt-9 surface p-5">
         <p className="label-xs">Before / after</p>
@@ -413,6 +536,7 @@ export default function Design() {
           </p>
         )}
       </section>
+      </div>
     </div>
   );
 }

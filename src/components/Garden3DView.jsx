@@ -1036,6 +1036,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
   const checking = mode === 'check';
   // Before and after: today's lawn (the beds as turf, no plants) or the native garden.
   const [before, setBefore] = useState(false);
+  const [showArr, setShowArr] = useState(false); // full screen: the arrangements panel
   const showLawn = checking || before;
   const wildlifeRef = useRef(null); // { group, counts, update } while the garden has visitors
   const [visitors, setVisitors] = useState(null);
@@ -2727,6 +2728,12 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
               camera: threeRef.current ? threeRef.current.camera.position.toArray().map((v) => Math.round(v)) : null,
             })}
           />
+          {fill && !checking && (
+            <Button variant={showArr ? 'default' : 'outline'} onClick={() => setShowArr((v) => !v)} className="rounded-full" size="sm">
+              <Leaf className="mr-1.5 h-4 w-4" />
+              Arrangements
+            </Button>
+          )}
           {!checking && (
             <Button variant={moveMode ? 'default' : 'outline'} onClick={() => setMoveMode((m) => !m)} className="rounded-full" size="sm">
               <Move className="mr-1.5 h-4 w-4" />
@@ -2754,13 +2761,13 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
             Imagery © Esri, Maxar, Earthstar Geographics
           </span>
         )}
-        {showReal && (
+        {showReal && !fill && (
           <p className="pointer-events-none absolute left-3 top-3 z-10 max-w-[80%] rounded-lg bg-background/75 px-3 py-1.5 text-[11px] text-muted-foreground shadow backdrop-blur">
             Surroundings from Google 3D. Your property is our model of it, so the plan is never hidden.
           </p>
         )}
         {photoReal && photoStatus === 'loading' && (
-          <p role="status" className="pointer-events-none absolute left-3 top-3 z-10 flex max-w-[85%] items-center gap-1.5 rounded-full bg-background/80 px-3 py-1 text-[11px] text-muted-foreground shadow backdrop-blur">
+          <p role="status" className={`pointer-events-none absolute z-10 flex max-w-[85%] items-center gap-1.5 rounded-full bg-background/80 px-3 py-1 text-[11px] text-muted-foreground shadow backdrop-blur ${fill ? 'bottom-20 left-1/2 -translate-x-1/2' : 'left-3 top-3'}`}>
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
             Setting up Real 3D in the background. It appears here once it’s ready.
           </p>
@@ -2814,9 +2821,9 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
             : 'Drag to rotate · click a lawn to focus · scroll to zoom · tap the person, or drag it onto the property, to walk it.'}
       </p>
 
-      {!checking && (
-      <>
-      <div className="mt-4 border-t border-border/70 pt-3">
+      {!checking && (!fill || showArr) && (
+      <div className={fill ? 'absolute bottom-20 left-4 z-20 max-h-[55%] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-border/60 bg-card/92 p-4 shadow-2xl backdrop-blur-md sm:left-6 lg:max-w-[calc(100vw-30rem)]' : ''}>
+      <div className={fill ? '' : 'mt-4 border-t border-border/70 pt-3'}>
         <div className="flex items-center gap-2">
         <Leaf className="h-3.5 w-3.5 text-accent" />
         <p className="label-xs">Agronomist arrangements</p>
@@ -2880,7 +2887,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
           </span>
         ))}
       </div>
-      </>
+      </div>
       )}
     </div>
   );
