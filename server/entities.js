@@ -59,9 +59,12 @@ function defaultsFor(schema) {
 // Fields some callers can't see (a field-level read rule). Filtering or sorting
 // on them must only use what the caller can see, or results would leak them.
 function hiddenFieldNames(schema) {
-  return Object.entries(schema?.properties || {})
-    .filter(([, prop]) => prop.rls?.read)
-    .map(([k]) => k);
+  return [
+    'created_by', // the creator's email (see hideFields)
+    ...Object.entries(schema?.properties || {})
+      .filter(([, prop]) => prop.rls?.read)
+      .map(([k]) => k),
+  ];
 }
 
 function mentionsField(query, names) {
@@ -75,6 +78,9 @@ function mentionsField(query, names) {
 
 function hideFields(schema, record, user) {
   const out = { ...record };
+  // The creator's email is theirs (and admins'): public records such as posts,
+  // comments and community installs show who made them only by user id.
+  if (!user || (user.id !== record.created_by_id && user.role !== 'admin')) delete out.created_by;
   for (const [k, prop] of Object.entries(schema?.properties || {})) {
     if (prop.rls?.read && !evalRule(prop.rls.read, record, user)) delete out[k];
   }
