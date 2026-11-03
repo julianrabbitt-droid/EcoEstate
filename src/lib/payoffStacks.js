@@ -3,9 +3,9 @@ import * as THREE from 'three';
 // The Payoff step's 3D picture: what the garden gives back, standing in front
 // of the property. Money saved is a stack of cash bundles; water saved is a
 // block of water at its true volume (7.48 gallons to a cubic foot), one layer
-// per year. Both sit on level pads out front, toward the street, one to each
-// side, so the garden between them stays in view (and in Real 3D they stand
-// where Google's trees and cars are already cleared away).
+// per year. Both sit on level pads in one row beside the house, on the same
+// side, so they compare at a glance and the garden stays in view (and in Real
+// 3D they stand where Google's trees and cars are already cleared away).
 
 const GAL_PER_FT3 = 7.48052;
 // One person's indoor water for a year: California's residential standard is
@@ -458,9 +458,9 @@ const TALL = { birdhouse: 7, bench: 3.6, bike: 3.6, ebike: 3.6, kayak: 2.6, gree
  * dollars, gallons: saved over `years`. lotPts: the lot in scene feet [[x, z]];
  * house: the main building's outline there, if known. front: { dx, dz }, the
  * unit direction from the property toward its street. at(x, z): ground height.
- * The water stands on one side of the house and the cash (with what it could
- * buy) on the other, their fronts in line with the house front, so the three
- * read as one row from the street. Without a house they stand at the front
+ * The cash, what it could buy, the water and the people it serves stand in
+ * one row on one side of the house, outward from it in that order, their
+ * fronts in line with the house front. Without a house they stand at the front
  * corners of the lot. Returns { group, items, zones, bounds }: items are the bundles
  * and water layers in the order they appear ({ obj, at: 0..1 }); zones are
  * their footprints with room around them ([[x, z] x 4] each); bounds
@@ -478,7 +478,6 @@ export function createPayoffStacks({ dollars, gallons, years, lotPts, house, fro
   const along = (p, v) => (p[0] - c[0]) * v.dx + (p[1] - c[1]) * v.dz;
   const frontLine = Math.max(...anchor.map((p) => along(p, f)));
   const minS = Math.min(...anchor.map((p) => along(p, s)));
-  const maxS = Math.max(...anchor.map((p) => along(p, s)));
   const place = (sideOffset, frontOffset) => [c[0] + s.dx * sideOffset + f.dx * frontOffset, c[1] + s.dz * sideOffset + f.dz * frontOffset];
   const facing = Math.atan2(f.dx, f.dz); // local +z toward the street
   const lowHigh = (x, z, hw, hd) => {
@@ -496,6 +495,10 @@ export function createPayoffStacks({ dollars, gallons, years, lotPts, house, fro
   const zones = [];
   const zone = (s0, s1, f0, f1) => zones.push([place(s0, f0), place(s1, f0), place(s1, f1), place(s0, f1)]);
 
+  // Each piece takes the next place out from the house on the same side, so
+  // none of them runs into the house or another: `nextAt` is where the next starts.
+  let nextAt = minS - GAP_FT;
+
   // Money: a tower of bundles beside the house, filled column by column.
   const { denom, count } = cashPlan(dollars);
   if (count > 0) {
@@ -504,7 +507,8 @@ export function createPayoffStacks({ dollars, gallons, years, lotPts, house, fro
     const deep = Math.ceil(cols / across);
     const w = across * (BUNDLE.w + 0.25) + 1.2;
     const d = deep * (BUNDLE.d + 0.25) + 1.2;
-    const sideAt = minS - GAP_FT - w / 2;
+    const sideAt = nextAt - w / 2;
+    nextAt = sideAt - w / 2 - GAP_FT;
     const [x, z] = place(sideAt, frontLine - d / 2);
     const [lo, hi] = lowHigh(x, z, w / 2, d / 2);
     const base = pad(w, d, lo, hi);
@@ -573,20 +577,17 @@ export function createPayoffStacks({ dollars, gallons, years, lotPts, house, fro
     const back = frontLine + 1 - (rows - 1) * (dep + 1.5);
     framed.push(place(last - len / 2, frontLine + dep + 1), place(first + len / 2, back));
     zone(last - len / 2 - 3, first + len / 2 + 3, back - 2, frontLine + VIEW_FT);
+    nextAt = Math.min(nextAt, last - len / 2 - GAP_FT); // the water comes after what the cash buys
   }
 
-  // Each piece grows outward from the house (cash and what it buys to one
-  // side, the water and the people it serves to the other), so none of them
-  // ever runs into the house or each other.
-  let rightEdge = maxS + GAP_FT;
-  // Water: the true volume beside the house on the other side, a clear blue
-  // block of layers, one per year (or per month for a single year).
+  // Water: the true volume past the cash and what it buys, a clear blue block
+  // of layers, one per year (or per month for a single year).
   const ft3 = Math.max(0, gallons) / GAL_PER_FT3;
   if (ft3 > 1) {
     const side = Math.cbrt(ft3);
     const layers = years <= 1 ? 12 : Math.min(30, Math.round(years));
     const layerH = side / layers;
-    const sideAt = maxS + GAP_FT + side / 2 + 0.6;
+    const sideAt = nextAt - side / 2 - 0.6;
     const [x, z] = place(sideAt, frontLine - side / 2 - 0.6);
     const [lo, hi] = lowHigh(x, z, side / 2 + 0.6, side / 2 + 0.6);
     const base = pad(side + 1.2, side + 1.2, lo, hi);
@@ -612,9 +613,9 @@ export function createPayoffStacks({ dollars, gallons, years, lotPts, house, fro
     block.add(label);
     labels.push({ sprite: label, top: base.top + side });
     group.add(block);
-    framed.push(place(sideAt + side / 2 + 0.6, frontLine), place(sideAt - side / 2, frontLine - side - 1.2));
+    framed.push(place(sideAt - side / 2 - 0.6, frontLine), place(sideAt + side / 2, frontLine - side - 1.2));
     zone(sideAt - side / 2 - 3.6, sideAt + side / 2 + 3.6, frontLine - side - 4.2, frontLine + VIEW_FT);
-    rightEdge = sideAt + side / 2 + 0.6;
+    nextAt = sideAt - side / 2 - 0.6;
   }
 
   // Who that water would serve: a figure per person's indoor water for a
@@ -625,11 +626,11 @@ export function createPayoffStacks({ dollars, gallons, years, lotPts, house, fro
     const perRow = Math.min(figures, 8);
     const rows = Math.ceil(figures / perRow);
     const step = 2.6;
-    const first = rightEdge + 4 + 0.8;
+    const first = nextAt - 4 - 0.8;
     const width = (perRow - 1) * step + 1.6;
     let top = 0;
     for (let k = 0; k < figures; k++) {
-      const [px, pz] = place(first + (k % perRow) * step, frontLine - 1 - Math.floor(k / perRow) * step);
+      const [px, pz] = place(first - (k % perRow) * step, frontLine - 1 - Math.floor(k / perRow) * step);
       const fig = person(k);
       fig.position.set(px, at(px, pz), pz);
       fig.rotation.y = facing + (Math.sin(k * 7.1) * 0.25);
@@ -643,12 +644,12 @@ export function createPayoffStacks({ dollars, gallons, years, lotPts, house, fro
       ? `${Math.max(1, Math.round(people * 12))} months of one person’s water`
       : `Water for ${fmt(whole)} ${whole === 1 ? 'person' : 'people'} for a year`;
     const label = tagSprite([headline, `${GAL_PER_PERSON_DAY} gal a day each, indoors${unit > 1 ? ` · each figure ${fmt(unit)} people` : ''}`], 14);
-    const [lx, lz] = place(first + width / 2 - 0.8, frontLine - 1 - ((rows - 1) * step) / 2);
+    const [lx, lz] = place(first - width / 2 + 0.8, frontLine - 1 - ((rows - 1) * step) / 2);
     label.position.set(lx, 0, lz);
     group.add(label);
     labels.push({ sprite: label, top, world: true });
-    framed.push(place(first - 1, frontLine), place(first + width, frontLine - 1 - rows * step));
-    zone(first - 3, first + width + 3, frontLine - rows * step - 4, frontLine + VIEW_FT);
+    framed.push(place(first + 1, frontLine), place(first - width, frontLine - 1 - rows * step));
+    zone(first - width - 3, first + 3, frontLine - rows * step - 4, frontLine + VIEW_FT);
   }
 
   // The cash and water labels in one row, just above the taller of the two;
