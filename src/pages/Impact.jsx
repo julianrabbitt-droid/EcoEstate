@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { purchaseFor } from '@/lib/payoffStacks';
+import { applyPayoffInputs, breakEvenYears, PAYOFF_FIELDS, payoffEstimates, readPayoffInputs, savedBy, savePayoffInputs } from '@/lib/payoffNumbers';
+import { peopleFor, purchaseFor } from '@/lib/payoffStacks';
 import { StageAside, StageOverlay, StageTitle, useStage, useStagePanels, useWide } from '@/components/ProjectStage';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useProject } from '@/hooks/useProjects';
@@ -11,6 +12,8 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceArea,
+  ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -26,12 +29,20 @@ import { defaultMixForProject, plantsForProject } from '@/data/regions';
 import { buildSchedule } from '@/lib/buildSchedule';
 import RebatesSection from '@/components/RebatesSection';
 
-// Long-term view: savings compound as water rates rise.
-const INFLATION = 0.03;
 const HORIZONS = [1, 5, 10, 30];
+// A biodiversity score from here up is a good result for an average home
+// garden: about five native species in a few layers, feeding bees, butterflies
+// and birds, in place of the lawn (see computeLandscape for the score).
+const GOOD_SCORE = 60;
 
 const axisTick = { fontSize: 10, fill: 'hsl(var(--muted-foreground))' };
 const yearTick = (v) => (v === 0 ? 'Now' : `Yr ${v}`);
+// Whole years along the axis: every year up to 10, every 5 beyond.
+const yearTicks = (horizon) => {
+  const step = horizon > 10 ? 5 : 1;
+  return Array.from({ length: Math.floor(horizon / step) + 1 }, (_, i) => i * step);
+};
+const gallonTick = (v) => (Math.abs(v) >= 1000 ? `${Math.round(v / 100) / 10}k` : `${Math.round(v)}`);
 const dollarTick = (v) => {
   const a = Math.abs(v);
   const body = a >= 1000 ? `$${Math.round(a / 100) / 10}k` : `$${Math.round(a)}`;
@@ -50,7 +61,12 @@ export default function Impact() {
   const { project, loading } = useProject(id, location.state);
   const wide = useWide();
   const { asideOpen } = useStagePanels() || { asideOpen: true };
-  const [fin, setFin] = useState(null);
+  const [serverFin, setServerFin] = useState(null); // our estimates for the property
+  // The person's own numbers, in place of any of ours (kept in this browser).
+  const [mine, setMine] = useState(() => readPayoffInputs(id));
+  useEffect(() => savePayoffInputs(id, mine), [id, mine]);
+  const fin = useMemo(() => applyPayoffInputs(serverFin, mine), [serverFin, mine]);
+  const estimates = useMemo(() => (serverFin ? payoffEstimates(serverFin) : null), [serverFin]);
   const [env, setEnv] = useState(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -79,7 +95,7 @@ export default function Impact() {
       .then(({ data }) => {
         if (cancelled) return;
         if (!data?.financials || !data?.environmental) throw new Error('The numbers came back empty.');
-        setFin(data.financials);
+        setServerFin(data.financials);
         setEnv(data.environmental);
       })
       .catch((e) => {
@@ -93,7 +109,7 @@ export default function Impact() {
     if (!fin || !env) return null;
     const co2PerYear = Math.round(fin.turfSqft * 0.8 + (env.canopySqft || 0) * 1.2); // lbs CO2 / yr
     const series = Array.from({ length: 31 }, (_, y) => {
-      const saved = fin.annualSavings > 0 ? (fin.annualSavings * (Math.pow(1 + INFLATION, y) - 1)) / INFLATION : 0;
+      const saved = savedBy(fin.annualSavings, fin.increase, y);
       const grown = Math.min(1, y / Math.max(1, sched.establishYears));
       return {
         year: y,
@@ -183,7 +199,12 @@ export default function Impact() {
     });
   };
   const net = series[horizon].net;
-  const breakEven = projection.series.find((p) => p.year > 0 && p.net >= 0)?.year ?? null;
+  // When the running total crosses zero (fractional years), and the year it happens in.
+  const crossing = breakEvenYears(projection.series);
+  const breakEven = crossing == null ? null : Math.max(0, Math.ceil(crossing - 1e-9));
+  const paysBack = breakEven == null ? null : breakEven === 0 ? 'right away' : `in year ${breakEven}`;
+  const ticks = yearTicks(horizon);
+  const setMineField = (key, value) => setMine((m) => ({ ...m, [key]: value }));
   const toBuild = () => navigate(`/project/${id}/plan`, { state: { project } });
   const years = (n) => `${n} year${n === 1 ? '' : 's'}`;
   const horizonSwitch = (
@@ -194,7 +215,7 @@ export default function Impact() {
           type="button"
           onClick={() => setHorizon(h)}
           aria-pressed={horizon === h}
-          className={`flex-1 rounded-full px-3 py-1 transition ${horizon === h ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+          className={`flex-1 whitespace-nowrap rounded-full px-3 py-1 transition ${horizon === h ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
         >
           {years(h)}
         </button>
@@ -211,7 +232,10 @@ export default function Impact() {
       <div className="rounded-2xl border border-border/60 bg-background/40 p-3">
         <p className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><Droplets className="h-3.5 w-3.5 text-chart-2" aria-hidden />Water saved</p>
         <p className="mt-1 font-display text-[1.6rem] leading-none tracking-tight">{num(series[horizon].water)}<span className="ml-1 text-[13px] text-muted-foreground">gal</span></p>
-        <p className="mt-1 text-[11px] text-muted-foreground">{num(fin.gallonsSaved)} a year · {fin.reductionPct}% less</p>
+        <p className="mt-1 text-[11px] text-muted-foreground">{num(fin.gallonsSaved)} a year · {fin.reductionPct}% less · {(() => {
+          const { people } = peopleFor(series[horizon].water);
+          return people < 1 ? `${Math.max(1, Math.round(people * 12))} months of one person’s water` : `a year’s water for ${num(Math.round(people))} ${Math.round(people) === 1 ? 'person' : 'people'}`;
+        })()}</p>
       </div>
     </div>
   );
@@ -229,7 +253,7 @@ export default function Impact() {
             )}
           >
             <p className="mt-1 text-[12.5px] text-muted-foreground">
-              {num(fin.turfSqft)} sq ft converted · {num(fin.plantCount)} native plants · {breakEven ? `pays for itself in year ${breakEven}` : 'no payback at today’s rates'}
+              {num(fin.turfSqft)} sq ft converted · {num(fin.plantCount)} native plants · {paysBack ? `pays for itself ${paysBack}` : 'no payback at these numbers'}
             </p>
             {/* Phones: the two numbers and the years here, the view below them. */}
             <div className="mt-3 space-y-2 lg:hidden">
@@ -261,11 +285,15 @@ export default function Impact() {
             {horizonSwitch}
             {figures}
             <dl className="space-y-2 rounded-2xl border border-border/60 bg-background/40 p-4 text-[12.5px]">
+              <div className="flex justify-between text-[11.5px]">
+                <dt className="text-muted-foreground">{fin.edited ? 'With your numbers' : 'Our estimates'}</dt>
+                <dd><button type="button" onClick={() => document.getElementById('your-numbers')?.scrollIntoView({ behavior: 'smooth' })} className="text-primary underline underline-offset-2">Use your own numbers</button></dd>
+              </div>
               <div className="flex justify-between"><dt className="text-muted-foreground">Estimated cost</dt><dd className="tabular-nums">{money(fin.totalCost)}</dd></div>
               <div className="flex justify-between text-accent"><dt>Rebates and incentives</dt><dd className="tabular-nums">−{money(fin.rebate)}</dd></div>
               <div className="flex justify-between border-t border-border/60 pt-2 font-medium"><dt>Your cost</dt><dd className="tabular-nums">{money(fin.outOfPocket)}</dd></div>
               <div className="flex justify-between"><dt className="text-muted-foreground">Back each year</dt><dd className="tabular-nums text-primary">{money(fin.annualSavings)}</dd></div>
-              <div className="flex justify-between"><dt className="text-muted-foreground">Break-even</dt><dd className="tabular-nums">{breakEven ? `Year ${breakEven}` : 'Not at today’s rates'}</dd></div>
+              <div className="flex justify-between"><dt className="text-muted-foreground">Break-even</dt><dd className="tabular-nums">{breakEven == null ? 'Not at these numbers' : breakEven === 0 ? 'Right away' : `Year ${breakEven}`}</dd></div>
             </dl>
             <div className="grid grid-cols-2 gap-2 text-[12px]">
               <div className="rounded-2xl border border-border/60 bg-background/40 p-3">
@@ -297,8 +325,53 @@ export default function Impact() {
         <StatTile label="Estimated cost" value={money(fin.totalCost)} sub="Plants, mulch, drip and installation" />
         <StatTile label="Rebates available" value={money(fin.rebate)} sub="Programs that serve this address" />
         <StatTile label="Annual savings" value={money(fin.annualSavings)} sub="Water, mowing and inputs" accent />
-        <StatTile label={`${horizon}-year net`} value={money(net)} sub={breakEven ? `Break-even in year ${breakEven}` : 'No payback at current rates'} />
+        <StatTile label={`${horizon}-year net`} value={money(net)} sub={paysBack ? `Pays for itself ${paysBack}` : 'No payback at these numbers'} />
       </div>
+
+      <section id="your-numbers" className="mt-5 scroll-mt-24 surface p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h2 className="text-[15px] font-medium tracking-tight">Your numbers</h2>
+            <p className="mt-1 max-w-2xl text-[12.5px] text-muted-foreground">
+              These start as our estimates for {num(fin.turfSqft)} sq ft at this address. Put in your own (your water bill,
+              your gardener, a quote) and every figure and chart on this page follows. Kept in this browser.
+            </p>
+          </div>
+          {fin.edited && (
+            <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setMine({})}>
+              Reset to our estimates
+            </Button>
+          )}
+        </div>
+        <div className="mt-4 grid gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+          {PAYOFF_FIELDS.map((f) => {
+            const own = mine[f.key] !== undefined && mine[f.key] !== '';
+            return (
+              <label key={f.key} className="block text-[12.5px]">
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="font-medium">{f.label}</span>
+                  {own && <button type="button" onClick={() => setMineField(f.key, '')} className="text-[11px] text-muted-foreground underline underline-offset-2">use ours ({estimates[f.key].toLocaleString('en-US', { maximumFractionDigits: 2 })})</button>}
+                </span>
+                <span className="mt-1 flex items-center gap-2">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step={f.step}
+                    value={own ? mine[f.key] : ''}
+                    placeholder={String(estimates[f.key])}
+                    onChange={(e) => setMineField(f.key, e.target.value)}
+                    className={`h-9 w-28 rounded-lg border bg-card px-2.5 text-right tabular-nums shadow-sm outline-none transition placeholder:text-foreground/55 hover:border-foreground/30 focus:ring-2 focus:ring-ring ${own ? 'border-primary/70 font-medium' : 'border-border'}`}
+                    aria-label={`${f.label} (${f.unit})`}
+                  />
+                  <span className="text-[11.5px] text-muted-foreground">{f.unit}</span>
+                </span>
+                {f.hint && <span className="mt-1 block text-[11px] text-muted-foreground">{f.hint}</span>}
+              </label>
+            );
+          })}
+        </div>
+      </section>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_1.1fr]">
         <section className="surface p-5">
@@ -357,21 +430,25 @@ export default function Impact() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 6" stroke="hsl(var(--border))" vertical={false} />
-                <XAxis dataKey="year" tickFormatter={yearTick} tick={axisTick} axisLine={false} tickLine={false} />
+                <XAxis type="number" dataKey="year" domain={[0, horizon]} ticks={ticks} tickFormatter={yearTick} tick={axisTick} axisLine={false} tickLine={false} />
                 <YAxis tickFormatter={dollarTick} tick={axisTick} axisLine={false} tickLine={false} width={52} />
                 <Tooltip formatter={(value) => [money(value), 'Net position']} labelFormatter={(label) => `Year ${label}`} contentStyle={tooltipStyle} />
                 <ReferenceLine y={0} stroke="hsl(var(--accent))" strokeDasharray="4 4" />
-                {breakEven && breakEven <= horizon && (
-                  <ReferenceLine x={breakEven} stroke="hsl(var(--accent))" strokeDasharray="4 4" label={{ value: 'Break-even', fontSize: 10, fill: 'hsl(var(--accent))', position: 'top' }} />
+                {/* Straight lines between the yearly points, so the marker sits exactly where the line crosses zero. */}
+                <Area type="linear" dataKey="net" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#netFill)" />
+                {crossing != null && crossing > 0 && crossing <= horizon && (
+                  <ReferenceLine x={crossing} stroke="hsl(var(--accent))" strokeDasharray="4 4" label={{ value: `Break-even · ${crossing < 1 ? `${Math.max(1, Math.round(crossing * 12))} mo` : `${Math.round(crossing * 10) / 10} yr`}`, fontSize: 10, fill: 'hsl(var(--accent))', position: 'insideTopLeft' }} />
                 )}
-                <Area type="monotone" dataKey="net" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#netFill)" />
+                {crossing != null && crossing > 0 && crossing <= horizon && (
+                  <ReferenceDot x={crossing} y={0} r={4} fill="hsl(var(--accent))" stroke="hsl(var(--card))" strokeWidth={2} />
+                )}
               </AreaChart>
             </ResponsiveContainer>
           </div>
           <p className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
             <TrendingUp className="mr-1 inline h-3 w-3" aria-hidden />
-            Savings grow about 3% a year as water rates rise.
-            {breakEven ? ` The project pays for itself in year ${breakEven}.` : ''}
+            Savings grow {Math.round(fin.increase * 1000) / 10}% a year as water and lawn-care prices rise.
+            {paysBack ? ` The project pays for itself ${paysBack}.` : ''}
           </p>
         </section>
       </div>
@@ -403,10 +480,10 @@ export default function Impact() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 6" stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis dataKey="year" tickFormatter={yearTick} tick={axisTick} axisLine={false} tickLine={false} />
-                  <YAxis tickFormatter={(v) => `${Math.round(v / 1000)}k`} tick={axisTick} axisLine={false} tickLine={false} width={40} />
+                  <XAxis type="number" dataKey="year" domain={[0, horizon]} ticks={ticks} tickFormatter={yearTick} tick={axisTick} axisLine={false} tickLine={false} />
+                  <YAxis tickFormatter={gallonTick} tick={axisTick} axisLine={false} tickLine={false} width={40} />
                   <Tooltip formatter={(value) => [`${num(value)} gal`, 'Water saved']} labelFormatter={(label) => `Year ${label}`} contentStyle={tooltipStyle} />
-                  <Area type="monotone" dataKey="water" stroke="hsl(var(--chart-2))" strokeWidth={2} fill="url(#waterFill)" />
+                  <Area type="linear" dataKey="water" stroke="hsl(var(--chart-2))" strokeWidth={2} fill="url(#waterFill)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -417,11 +494,14 @@ export default function Impact() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={series} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 6" stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis dataKey="year" tickFormatter={yearTick} tick={axisTick} axisLine={false} tickLine={false} />
-                  <YAxis domain={[0, 100]} tick={axisTick} axisLine={false} tickLine={false} width={32} />
+                  <XAxis type="number" dataKey="year" domain={[0, horizon]} ticks={ticks} tickFormatter={yearTick} tick={axisTick} axisLine={false} tickLine={false} />
+                  <YAxis domain={[0, 100]} ticks={[0, 25, 50, GOOD_SCORE, 75, 100]} tick={axisTick} axisLine={false} tickLine={false} width={32} />
+                  {/* Green: a good score for an average home garden. */}
+                  <ReferenceArea y1={GOOD_SCORE} y2={100} fill="hsl(var(--chart-1))" fillOpacity={0.14} stroke="none" label={{ value: `Good for an average home: ${GOOD_SCORE}+`, fontSize: 10, fill: 'hsl(var(--chart-1))', position: 'insideTopLeft' }} />
+                  <ReferenceLine y={GOOD_SCORE} stroke="hsl(var(--chart-1))" strokeOpacity={0.6} />
                   <Tooltip formatter={(value) => [`${value}/100`, 'Biodiversity']} labelFormatter={(label) => `Year ${label}`} contentStyle={tooltipStyle} />
-                  <ReferenceLine y={env.before} stroke="hsl(var(--muted-foreground))" strokeDasharray="4 4" />
-                  <Line type="monotone" dataKey="score" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
+                  <ReferenceLine y={env.before} stroke="hsl(var(--muted-foreground))" strokeDasharray="4 4" label={{ value: 'Lawn today', fontSize: 10, fill: 'hsl(var(--muted-foreground))', position: 'insideBottomRight' }} />
+                  <Line type="linear" dataKey="score" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -435,7 +515,9 @@ export default function Impact() {
         <p className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
           The biodiversity score (0–100) estimates how much habitat your yard supports for pollinators, birds and soil
           life, from the number and variety of native plants, the canopy and groundcover layers they form, and how much
-          lawn they replace.
+          lawn they replace. The green band, {GOOD_SCORE} and up, is a good score for an average home garden: about
+          five native species in a few layers, feeding bees, butterflies and birds.{' '}
+          {env.after >= GOOD_SCORE ? 'This design gets there.' : `This design reaches ${env.after}; more native species, especially ones that feed birds and pollinators, would lift it.`}
         </p>
       </section>
 

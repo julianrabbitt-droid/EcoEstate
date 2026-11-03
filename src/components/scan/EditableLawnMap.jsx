@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { Circle, MapContainer, Marker, Polygon, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { House, PenLine, Plus, RotateCcw, Trash2, TreePine } from 'lucide-react';
+import { House, PenLine, Plus, RotateCcw, Sprout, Trash2, TreePine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { polygonAreaSqFt } from '@/lib/geo';
 
@@ -98,10 +98,13 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
     const buildings = (initialBuildings || []).filter((pts) => Array.isArray(pts) && pts.length >= 3).map((pts, i) => ({ id: `bseed${i}`, type: 'building', points: pts }));
     return [...lawns, ...buildings];
   });
-  const [active, setActive] = useState(initialShapes && initialShapes.length ? 'seed0' : null);
+  const [active, setActive] = useState(null);
   const [picking, setPicking] = useState(false);
-  const [type, setType] = useState('lawn');
-  const [placingTree, setPlacingTree] = useState(false);
+  // One layer is edited at a time (lawns, buildings, trees or the property
+  // line); the others stay on the map, faint, and ignore clicks.
+  const [layer, setLayer] = useState('lawn');
+  const placingTree = layer === 'tree';
+  const editingLot = layer === 'lot';
   const lastAdded = useRef(null); // { kind: 'tree', id } — what Undo takes back when nothing is selected
   const [trees, setTrees] = useState(
     () => (initialTrees || []).filter((t) => Array.isArray(t?.latLng)).map((t, i) => ({ id: `tseed${i}`, latLng: t.latLng, radiusFt: Math.max(2, Number(t.radiusFt) || 6), heightFt: t.heightFt ?? null })),
@@ -109,7 +112,6 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
   const [activeTree, setActiveTree] = useState(null);
   const [showLot, setShowLot] = useState(true);
   const [lot, setLot] = useState(() => (lotOutline && lotOutline.length >= 3 ? lotOutline.map((p) => [...p]) : null));
-  const [editingLot, setEditingLot] = useState(false);
 
   const activeShape = shapes.find((s) => s.id === active) || null;
   const selectedTree = trees.find((t) => t.id === activeTree) || null;
@@ -146,17 +148,16 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
     setShapes([]);
     setActive(null);
     setPicking(false);
-    setPlacingTree(false);
   };
 
   const trace = (latlng) => {
-    if (placingTree) return;
+    if (layer !== 'lawn' && layer !== 'building') return;
     setShapes((prev) => {
-      const current = prev.find((s) => s.id === active);
+      const current = prev.find((s) => s.id === active && s.type === layer);
       if (!current) {
         const id = newId();
         setActive(id);
-        return [...prev, { id, type, points: [latlng] }];
+        return [...prev, { id, type: layer, points: [latlng] }];
       }
       return prev.map((s) => (s.id === active ? { ...s, points: [...s.points, latlng] } : s));
     });
@@ -170,16 +171,11 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
     setActive(null);
   };
 
-  const newShape = (t) => {
-    setType(t);
-    setPlacingTree(false);
-    setEditingLot(false);
-    if (activeShape && activeShape.points.length === 0) {
-      setShapes((prev) => prev.map((s) => (s.id === active ? { ...s, type: t } : s)));
-      return;
-    }
+  // A fresh outline in the layer being edited; clicks on the map add its corners.
+  const newShape = () => {
+    if (activeShape && activeShape.type === layer && activeShape.points.length === 0) return;
     const id = newId();
-    setShapes((prev) => [...prev, { id, type: t, points: [] }]);
+    setShapes((prev) => [...prev, { id, type: layer, points: [] }]);
     setActive(id);
     setActiveTree(null);
   };
@@ -191,15 +187,16 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
     }
     // Nothing selected: undo the most recent change (the last tree placed, or
     // the last corner of the last shape traced).
-    const recentTree = lastAdded.current?.kind === 'tree' && trees.some((t) => t.id === lastAdded.current.id);
-    if (!activeShape && recentTree) {
+    if (layer === 'tree') {
+      const recentTree = lastAdded.current?.kind === 'tree' && trees.some((t) => t.id === lastAdded.current.id);
+      if (!recentTree) return;
       const treeId = lastAdded.current.id;
       setTrees((prev) => prev.filter((t) => t.id !== treeId));
       setActiveTree(null);
       lastAdded.current = null;
       return;
     }
-    const target = activeShape || [...shapes].reverse().find((sh) => sh.points.length);
+    const target = (activeShape?.type === layer ? activeShape : null) || [...shapes].reverse().find((sh) => sh.type === layer && sh.points.length);
     if (!target) return;
     const np = target.points.slice(0, -1);
     if (np.length === 0) {
@@ -230,21 +227,11 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
 
   const traceLot = (latlng) => setLot((prev) => (prev ? [...prev, latlng] : [latlng]));
   const setLotVertex = (vi, latlng) => setLot((prev) => (prev ? prev.map((p, j) => (j === vi ? latlng : p)) : prev));
-  const toggleEditLot = () => {
-    if (!editingLot) {
-      setPlacingTree(false);
-      setActive(null);
-      setActiveTree(null);
-      if (!lot && lotSizeSqft > 0) setLot(rectPoints(propCenter, lotSizeSqft));
-      setEditingLot(true);
-    } else {
-      setEditingLot(false);
-    }
-  };
-
-  const labelActive = (t) => {
-    setType(t);
-    if (activeShape) setShapes((prev) => prev.map((s) => (s.id === active ? { ...s, type: t } : s)));
+  const pickLayer = (l) => {
+    setLayer(l);
+    setActive(null);
+    setActiveTree(null);
+    if (l === 'lot' && !lot && lotSizeSqft > 0) setLot(rectPoints(propCenter, lotSizeSqft));
   };
 
   const setTreeRadius = (r) => {
@@ -257,78 +244,59 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-border/70 px-4 py-3">
-        <Button size="sm" variant="outline" onClick={() => newShape('lawn')} className="rounded-full" disabled={picking || placingTree}>
-          <Plus className="mr-1.5 h-3.5 w-3.5" /> New lawn
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => newShape('building')} className="rounded-full" disabled={picking || placingTree}>
-          <House className="mr-1.5 h-3.5 w-3.5" /> Outline building
-        </Button>
-        <Button size="sm" variant={placingTree ? 'default' : 'outline'} onClick={() => { setEditingLot(false); setPlacingTree((v) => !v); setActive(null); }} className="rounded-full" disabled={picking || editingLot}>
-          <TreePine className="mr-1.5 h-3.5 w-3.5" /> {placingTree ? 'Placing trees…' : 'Add tree'}
-        </Button>
-        <Button size="sm" variant={editingLot ? 'default' : 'outline'} onClick={toggleEditLot} className="rounded-full" disabled={picking || placingTree}>
-          <PenLine className="mr-1.5 h-3.5 w-3.5" /> {editingLot ? 'Editing line…' : 'Edit property line'}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={undo} className="rounded-full text-muted-foreground" disabled={picking || placingTree || (editingLot ? !lot : !activeShape && !trees.length && !shapes.some((sh) => sh.points.length))}>
-          <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Undo
-        </Button>
-        <Button size="sm" variant="ghost" onClick={removeActive} className="rounded-full text-muted-foreground" disabled={picking || placingTree || (editingLot ? !lot : (!activeShape && !activeTree))}>
-          <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete
-        </Button>
-        {lotSizeSqft > 0 && (
-          <Button size="sm" variant={showLot ? 'default' : 'outline'} onClick={() => setShowLot((v) => !v)} className="rounded-full">
-            Lot outline
+      {/* Which layer to fix: one at a time, each with only its own buttons. */}
+      <div className="border-b border-border/70 px-4 py-3">
+        <div role="tablist" aria-label="What to fix" className="flex flex-wrap gap-1 rounded-2xl bg-secondary/70 p-1">
+          {[
+            { k: 'lawn', label: 'Lawns', Icon: Sprout, n: shapes.filter((sh) => sh.type === 'lawn').length },
+            { k: 'building', label: 'Buildings', Icon: House, n: buildingCount },
+            { k: 'tree', label: 'Trees', Icon: TreePine, n: trees.length },
+            { k: 'lot', label: 'Property line', Icon: PenLine, n: null },
+          ].map(({ k, label, Icon, n }) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={layer === k}
+              onClick={() => pickLayer(k)}
+              className={`inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-1.5 text-[12.5px] transition ${layer === k ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              <Icon className="h-3.5 w-3.5" aria-hidden />
+              {label}
+              {n !== null && <span className={`rounded-full px-1.5 text-[10.5px] tabular-nums ${layer === k ? 'bg-secondary' : 'bg-background/60'}`}>{n}</span>}
+            </button>
+          ))}
+        </div>
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          {(layer === 'lawn' || layer === 'building') && (
+            <Button size="sm" variant="outline" onClick={newShape} className="rounded-full" disabled={picking}>
+              <Plus className="mr-1.5 h-3.5 w-3.5" /> {layer === 'lawn' ? 'New lawn' : 'New building'}
+            </Button>
+          )}
+          {layer === 'tree' && selectedTree && (
+            <span className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1">
+              <span className="text-[12px] text-muted-foreground">Canopy</span>
+              <input type="range" min={3} max={20} value={selectedTree.radiusFt} onChange={(e) => setTreeRadius(Number(e.target.value))} className="garden-slider w-24" aria-label="Canopy radius" />
+              <span className="text-[11px] tabular-nums text-muted-foreground">{selectedTree.radiusFt} ft</span>
+            </span>
+          )}
+          {layer === 'lot' && lotSizeSqft > 0 && (
+            <Button size="sm" variant={showLot ? 'default' : 'outline'} onClick={() => setShowLot((v) => !v)} className="rounded-full">
+              {showLot ? 'Hide estimate' : 'Show estimate'}
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={undo} className="rounded-full text-muted-foreground" disabled={picking || (layer === 'lot' ? !lot : layer === 'tree' ? !(lastAdded.current?.kind === 'tree') : !shapes.some((sh) => sh.type === layer && sh.points.length))}>
+            <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> {layer === 'lot' || layer === 'lawn' || layer === 'building' ? 'Undo corner' : 'Undo'}
           </Button>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-border/70 px-4 py-2.5">
-        {activeShape ? (
-          <>
-            <span className="mr-1 text-[12px] text-muted-foreground">Label</span>
-            {['lawn', 'building'].map((t) => {
-              const st = featureStyle(t);
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => labelActive(t)}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] capitalize transition ${activeShape.type === t ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-muted-foreground hover:text-foreground'}`}
-                >
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: st.color }} />
-                  {t}
-                </button>
-              );
-            })}
-          </>
-        ) : selectedTree ? (
-          <>
-            <span className="mr-1 text-[12px] text-muted-foreground">Canopy</span>
-            <input
-              type="range"
-              min={3}
-              max={20}
-              value={selectedTree.radiusFt}
-              onChange={(e) => setTreeRadius(Number(e.target.value))}
-              className="garden-slider w-28"
-            />
-            <span className="text-[11px] tabular-nums text-muted-foreground">{selectedTree.radiusFt} ft</span>
-          </>
-        ) : editingLot ? (
-          <span className="text-[11px] text-muted-foreground">
-            Click the map to add property-line corners · drag corners to adjust
-          </span>
-        ) : (
-          <span className="text-[11px] text-muted-foreground">
-            {placingTree ? 'Click the map to drop a tree (keeps placing until you pick another tool)' : 'Trace lawns, outline the building, or add trees'}
-          </span>
-        )}
-        <div className="ml-auto flex items-baseline gap-1.5 rounded-full bg-secondary px-3.5 py-1.5">
-          <span className="font-display text-lg leading-none tracking-tight">
-            {measuredSqft !== null ? Math.round(measuredSqft).toLocaleString() : lawnArea > 0 ? Math.round(lawnArea).toLocaleString() : '—'}
-          </span>
-          <span className="text-[12px] text-muted-foreground">lawn sq ft</span>
+          <Button size="sm" variant="ghost" onClick={removeActive} className="rounded-full text-muted-foreground" disabled={picking || (layer === 'lot' ? !lot : layer === 'tree' ? !activeTree : !(activeShape && activeShape.type === layer))}>
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" /> {layer === 'lot' ? 'Clear line' : layer === 'tree' ? 'Delete tree' : layer === 'lawn' ? 'Delete lawn' : 'Delete building'}
+          </Button>
+          <div className="ml-auto flex items-baseline gap-1.5 rounded-full bg-secondary px-3.5 py-1.5">
+            <span className="font-display text-lg leading-none tracking-tight">
+              {measuredSqft !== null ? Math.round(measuredSqft).toLocaleString() : lawnArea > 0 ? Math.round(lawnArea).toLocaleString() : '—'}
+            </span>
+            <span className="text-[12px] text-muted-foreground">lawn sq ft</span>
+          </div>
         </div>
       </div>
 
@@ -371,10 +339,11 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
               key={`c-${t.id}`}
               center={t.latLng}
               radius={t.radiusFt * 0.3048}
-              pathOptions={{ color: '#3f5d2e', weight: 1, fillColor: '#5a7344', fillOpacity: t.id === activeTree ? 0.45 : 0.3 }}
+              interactive={false}
+              pathOptions={{ color: '#3f5d2e', weight: 1, opacity: layer === 'tree' ? 1 : 0.4, fillColor: '#5a7344', fillOpacity: t.id === activeTree ? 0.45 : layer === 'tree' ? 0.3 : 0.12 }}
             />
           ))}
-          {trees.map((t) => (
+          {layer === 'tree' && trees.map((t) => (
             <Marker
               key={`t-${t.id}`}
               position={t.latLng}
@@ -386,25 +355,28 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
               }}
             />
           ))}
-          {shapes.map((shape, i) => {
+          {shapes.map((shape) => {
             const st = featureStyle(shape.type);
             const isActive = shape.id === active;
+            const editing = shape.type === layer;
             return (
               <Polygon
-                key={shape.id}
+                key={`${shape.id}-${editing}`}
                 positions={shape.points}
+                interactive={editing}
                 pathOptions={{
                   color: st.stroke,
-                  weight: isActive ? 3 : 2.5,
+                  weight: isActive ? 3 : editing ? 2.5 : 1.5,
+                  opacity: editing ? 1 : 0.45,
                   fillColor: st.color,
-                  fillOpacity: isActive ? 0.55 : 0.45,
+                  fillOpacity: isActive ? 0.55 : editing ? 0.45 : 0.15,
                 }}
-                eventHandlers={{ click: () => selectShape(shape.id) }}
+                eventHandlers={editing ? { click: () => selectShape(shape.id) } : {}}
               />
             );
           })}
           {shapes.map((shape, i) =>
-            shape.points.map((pt, j) => (
+            shape.type !== layer ? null : shape.points.map((pt, j) => (
               <Marker
                 key={`v-${shape.id}-${j}`}
                 position={pt}
@@ -419,23 +391,16 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
             ))
           )}
         </MapContainer>
-        {picking ? (
-          <div className="pointer-events-none absolute bottom-3 left-1/2 z-[500] -translate-x-1/2 rounded-full bg-foreground/85 px-3.5 py-1.5 text-[11px] text-background backdrop-blur">
-            Click your house on the map to center the outline there
-          </div>
-        ) : placingTree ? (
-          <div className="pointer-events-none absolute bottom-3 left-1/2 z-[500] -translate-x-1/2 rounded-full bg-foreground/85 px-3.5 py-1.5 text-[11px] text-background backdrop-blur">
-            Click the map to drop a tree (keeps placing) · drag to move · click a tree to resize or delete it
-          </div>
-        ) : editingLot ? (
-          <div className="pointer-events-none absolute bottom-3 left-1/2 z-[500] -translate-x-1/2 rounded-full bg-foreground/85 px-3.5 py-1.5 text-[11px] text-background backdrop-blur">
-            Click to add property-line corners · drag corners to adjust · Undo removes the last · click Edit property line again to finish
-          </div>
-        ) : (
-          <div className="pointer-events-none absolute bottom-3 left-1/2 z-[500] -translate-x-1/2 rounded-full bg-foreground/85 px-3.5 py-1.5 text-[11px] text-background backdrop-blur">
-            Trace lawns · outline the building · add trees · drag corners to fine-tune · {buildingCount} building{buildingCount === 1 ? '' : 's'} · {trees.length} tree{trees.length === 1 ? '' : 's'}
-          </div>
-        )}
+        <div className="pointer-events-none absolute bottom-3 left-1/2 z-[500] max-w-[92%] -translate-x-1/2 rounded-full bg-foreground/85 px-3.5 py-1.5 text-center text-[11px] text-background backdrop-blur">
+          {picking
+            ? 'Click your house on the map to center the outline there'
+            : {
+                lawn: 'Click the map to trace a lawn’s corners · drag corners to adjust · New lawn starts another',
+                building: 'Click the map to trace a building’s corners · drag corners to adjust · New building starts another',
+                tree: 'Click the map to add a tree · drag to move · click one to resize or delete it',
+                lot: 'Click to add property-line corners · drag corners to adjust',
+              }[layer]}
+        </div>
       </div>
     </div>
   );

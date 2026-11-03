@@ -50,7 +50,7 @@ export function useStagePanels() {
 
 // The step's side panel (wide screens): a header that folds it away to a pill
 // at the top right, its contents, and a footer for the step's main buttons.
-export function StageAside({ label, summary, children, footer, width = 'w-[25rem]' }) {
+export function StageAside({ label, summary, children, footer, width = 'w-[23.5rem]' }) {
   const { asideOpen, setAsideOpen } = useStagePanels() || NO_PANELS;
   if (!asideOpen) {
     return (
@@ -68,14 +68,14 @@ export function StageAside({ label, summary, children, footer, width = 'w-[25rem
   }
   return (
     <aside aria-label={label} className={`pointer-events-auto absolute bottom-16 right-3 top-3 z-20 hidden ${width} flex-col overflow-hidden rounded-3xl border border-border/60 bg-card/90 shadow-2xl backdrop-blur-md lg:flex`}>
-      <div className="flex items-center justify-between gap-2 border-b border-border/60 py-2 pl-5 pr-2">
+      <div className="flex items-center justify-between gap-2 border-b border-border/60 py-1.5 pl-4 pr-1.5">
         <p className="label-xs">{label}</p>
         <button type="button" onClick={() => setAsideOpen(false)} aria-expanded aria-label={`Fold away ${label.toLowerCase()}`} title="Fold away" className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground">
           <Minus className="h-4 w-4" />
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-5">{children}</div>
-      {footer && <div className="space-y-2 border-t border-border/60 p-4">{footer}</div>}
+      <div className="flex-1 overflow-y-auto p-4">{children}</div>
+      {footer && <div className="space-y-2 border-t border-border/60 p-3">{footer}</div>}
     </aside>
   );
 }
@@ -86,18 +86,27 @@ export function StageAside({ label, summary, children, footer, width = 'w-[25rem
 export function StageTitle({ title, children }) {
   const { titleOpen, setTitleOpen } = useStagePanels() || NO_PANELS;
   const toDetails = () => document.getElementById('step-details')?.scrollIntoView({ behavior: 'smooth' });
+  // Its arrow bobs until the page has been scrolled once.
+  const [scrolled, setScrolled] = useState(() => typeof window !== 'undefined' && window.scrollY > 40);
+  useEffect(() => {
+    if (scrolled) return undefined;
+    const on = () => { if (window.scrollY > 40) setScrolled(true); };
+    window.addEventListener('scroll', on, { passive: true });
+    return () => window.removeEventListener('scroll', on);
+  }, [scrolled]);
   return (
     <div className="pointer-events-auto mt-3 w-fit max-w-[min(34rem,calc(100vw-1.5rem))] rounded-2xl border border-border/60 bg-card/88 shadow-lg backdrop-blur-md lg:max-w-[calc(100vw-29rem)]">
-      <div className="flex items-start gap-2 px-4 pt-3">
+      <div className="flex items-start gap-2 px-3.5 pt-2.5">
         <div className="min-w-0 flex-1">{title}</div>
         <button type="button" onClick={() => setTitleOpen(!titleOpen)} aria-expanded={titleOpen} aria-label={titleOpen ? 'Fold away the details' : 'Show the details'} title={titleOpen ? 'Fold away' : 'Show more'} className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground">
           {titleOpen ? <Minus className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
       </div>
-      {titleOpen && children && <div className="px-4 pt-1">{children}</div>}
-      <div className="px-4 pb-3 pt-2">
-        <button type="button" onClick={toDetails} className="inline-flex items-center gap-1.5 rounded-full border border-border/70 px-3 py-1 text-[11.5px] text-muted-foreground transition hover:border-foreground/40 hover:text-foreground">
-          In depth <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+      {titleOpen && children && <div className="px-3.5 pt-1">{children}</div>}
+      <div className="px-3.5 pb-2.5 pt-2">
+        {/* Everything about the step is below the view: this says so, and takes you there. */}
+        <button type="button" onClick={toDetails} className="group inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/50 px-3 py-1 text-[11.5px] text-muted-foreground transition hover:border-foreground/40 hover:text-foreground">
+          Scroll for the details <ChevronDown className={`h-3.5 w-3.5 ${scrolled ? '' : 'scroll-cue'}`} aria-hidden />
         </button>
       </div>
     </div>
@@ -171,6 +180,8 @@ export default function ProjectStage() {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           )}
+          {/* The view melts into the page below it, a hint there's more down there. */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[5] h-12 bg-gradient-to-b from-transparent to-background/85" aria-hidden />
           {/* The step's panels. Out of the way during a walk-through, when they can't be used. */}
           <div ref={setOverlay} className={`pointer-events-none absolute inset-x-0 bottom-0 z-10 transition-opacity duration-300 ${walking ? 'invisible opacity-0' : ''}`} style={{ top: 'var(--header-h, 4rem)' }} />
         </section>

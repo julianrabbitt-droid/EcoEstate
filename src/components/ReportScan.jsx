@@ -10,7 +10,7 @@ const PROBLEMS = ['Lawn outline', 'House shape', 'Roof', 'Driveway or paving', '
 // placement: where the form opens from the button, 'above' (a toolbar at the
 // bottom of the view) or 'below' (one at the top), over the view, never
 // stretching the toolbar it sits in.
-export default function ReportScan({ getContext, className = '', placement = 'above' }) {
+export default function ReportScan({ getContext, className = '', placement = 'above', compact = false }) {
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState([]);
   const [note, setNote] = useState('');
@@ -41,9 +41,9 @@ export default function ReportScan({ getContext, className = '', placement = 'ab
   };
   return (
     <div className="relative">
-      <Button variant={open ? 'default' : 'outline'} size="sm" className={`rounded-full ${className}`} onClick={toggle} aria-expanded={open}>
-        <Flag className="mr-1.5 h-4 w-4" aria-hidden />
-        Report this scan
+      <Button variant={open ? 'default' : 'outline'} size="sm" className={`rounded-full ${compact ? 'h-8 w-8 p-0' : ''} ${className}`} onClick={toggle} aria-expanded={open} aria-label="Report a problem with this scan" title="Report a problem with this scan">
+        <Flag className={`h-4 w-4 ${compact ? '' : 'mr-1.5'}`} aria-hidden />
+        {!compact && 'Report this scan'}
       </Button>
       {open && (
     <div role="dialog" aria-label="Report a scan problem" className={`absolute left-0 z-30 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-border bg-card/95 p-4 text-left shadow-2xl backdrop-blur-md ${placement === 'below' ? 'top-[calc(100%+0.5rem)]' : 'bottom-[calc(100%+0.5rem)]'}`}>

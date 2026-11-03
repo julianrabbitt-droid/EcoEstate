@@ -202,6 +202,27 @@
   from { opacity: 0; transform: translateY(14px) scale(0.985); }
   to { opacity: 1; transform: none; }
 }
+/* Between pages (see smoothNavigate): the old page dissolves, softening and
+   lifting a touch, as the new one settles in. */
+::view-transition-old(root) {
+  animation: vt-out 0.42s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+::view-transition-new(root) {
+  animation: vt-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes vt-out {
+  to { opacity: 0; filter: blur(6px); transform: scale(1.015); }
+}
+@keyframes vt-in {
+  from { opacity: 0; filter: blur(4px); transform: scale(0.99); }
+}
+@keyframes scroll-cue {
+  0%, 100% { transform: translateY(0); opacity: 1; }
+  50% { transform: translateY(3px); opacity: 0.55; }
+}
+.scroll-cue {
+  animation: scroll-cue 1.6s ease-in-out infinite;
+}
 @keyframes radar-sweep {
   to { transform: rotate(360deg); }
 }
@@ -232,8 +253,11 @@
   animation: pollen-drift var(--t, 14s) ease-in-out var(--d, 0s) infinite;
 }
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root),
   .page-enter,
   .panels-enter,
+  .scroll-cue,
   .radar-sweep,
   .pollen {
     animation: none;

@@ -450,11 +450,40 @@ export function plantsForProject(project) {
     (!plant.nativeStates || (state && plant.nativeStates.some((value) => value.toLowerCase() === state)))
   );
 }
+// Bigger gardens hold more kinds of plants, and so feed more kinds of
+// wildlife: from 1,500 sq ft of lawn a few more natives join the mix (those
+// feeding the most wildlife first, keeping a spread of plant forms).
+const extraSpeciesFor = (sqft) => (sqft >= 4000 ? 6 : sqft >= 1500 ? 3 : 0);
+
 export function defaultMixForProject(project) {
   const catalog = plantsForProject(project);
   const allowed = new Set(catalog.map((plant) => plant.id));
   const curated = regionForProject(project).defaultDesign.filter((entry) => allowed.has(entry.speciesId));
-  const picks = curated.length >= 3 ? curated : catalog.slice(0, 8).map((plant) => ({ speciesId: plant.id, share: 1 }));
+  let picks = curated.length >= 3 ? curated : catalog.slice(0, 8).map((plant) => ({ speciesId: plant.id, share: 1 }));
+  const extra = extraSpeciesFor(project?.breakdown?.turf || 0);
+  if (extra) {
+    const byId = new Map(catalog.map((plant) => [plant.id, plant]));
+    const have = new Set(picks.map((entry) => entry.speciesId));
+    const forms = new Map();
+    picks.forEach((entry) => {
+      const form = byId.get(entry.speciesId)?.form;
+      forms.set(form, (forms.get(form) || 0) + 1);
+    });
+    const pool = catalog
+      .filter((plant) => !have.has(plant.id) && plant.form !== 'tree')
+      .sort((a, b) => (b.wildlife?.length || 0) - (a.wildlife?.length || 0));
+    const added = [];
+    while (added.length < extra && pool.length) {
+      // The least-represented form next, its most wildlife-rich plant.
+      let at = 0;
+      pool.forEach((plant, i) => { if ((forms.get(plant.form) || 0) < (forms.get(pool[at].form) || 0)) at = i; });
+      const [plant] = pool.splice(at, 1);
+      forms.set(plant.form, (forms.get(plant.form) || 0) + 1);
+      added.push(plant);
+    }
+    const mean = picks.reduce((sum, entry) => sum + entry.share, 0) / Math.max(1, picks.length);
+    picks = [...picks, ...added.map((plant) => ({ speciesId: plant.id, share: mean * 0.6 }))];
+  }
   const total = picks.reduce((sum, entry) => sum + entry.share, 0) || 1;
   return picks.map((entry) => ({ ...entry, share: entry.share / total }));
 }

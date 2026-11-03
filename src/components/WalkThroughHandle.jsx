@@ -5,7 +5,7 @@ import { disposeObject } from '@/lib/disposeThree';
 // A small 3D person figure that lives in the toolbar next to the buttons.
 // Drag it onto the 3D property to become the person and enter first-person there,
 // or tap/click it (touch has no HTML5 drag) to walk in from the last spot.
-export default function WalkThroughHandle({ size = 50, onActivate }) {
+export default function WalkThroughHandle({ size = 50, onActivate, compact = false }) {
   const mountRef = useRef(null);
 
   useEffect(() => {
@@ -126,15 +126,20 @@ export default function WalkThroughHandle({ size = 50, onActivate }) {
       tabIndex={0}
       onClick={() => onActivate?.()}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onActivate?.(); } }}
-      className="flex items-center gap-2 rounded-full border border-border bg-card pl-1.5 pr-3 py-1 cursor-grab active:cursor-grabbing hover:border-primary/40 transition"
+      className={`flex items-center rounded-full border border-border bg-card cursor-grab active:cursor-grabbing hover:border-primary/40 transition ${compact ? 'gap-1 py-0 pl-0.5 pr-2.5' : 'gap-2 py-1 pl-1.5 pr-3'}`}
       title="Tap to walk through, or drag onto the property to start at a spot"
+      aria-label="Walk through: tap, or drag onto the property"
     >
       <div ref={mountRef} style={{ width: size, height: size }} className="shrink-0" />
-      <span className="text-[11px] leading-tight text-muted-foreground">
-        Tap to walk, or
-        <br />
-        drag onto the lot
-      </span>
+      {compact ? (
+        <span className="text-[11.5px] text-muted-foreground">Walk</span>
+      ) : (
+        <span className="text-[11px] leading-tight text-muted-foreground">
+          Tap to walk, or
+          <br />
+          drag onto the lot
+        </span>
+      )}
     </div>
   );
 }

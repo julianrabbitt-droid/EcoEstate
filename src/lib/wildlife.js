@@ -4,17 +4,26 @@ import * as THREE from 'three';
 // native bees working the flowers, hummingbirds hovering at blooms, and
 // songbirds hopping through the beds and perching on shrubs. Only animals the
 // chosen plants feed (each plant's `wildlife` list) appear, and more of them as
-// the biodiversity score rises. Low-poly and drawn a little larger than life so
-// they read at garden scale (SIZE). Plan feet; the 3D view's frame (z = -north).
+// the biodiversity score rises. Bigger gardens (areaSqft) shelter animals that
+// need more room: a covey of California quail, desert cottontails and western
+// fence lizards. Low-poly and drawn a little larger than life so they read at
+// garden scale (SIZE). Plan feet; the 3D view's frame (z = -north).
 
 // How much larger than life each is drawn, so it can be spotted from the
 // overview of a whole yard.
-const SIZE = { butterfly: 2.6, bee: 3, hummingbird: 2.4, songbird: 1.8 };
+const SIZE = { butterfly: 2.6, bee: 3, hummingbird: 2.4, songbird: 1.8, quail: 1.6, rabbit: 1.4, lizard: 2.2 };
 const KINDS = {
   butterfly: { tag: 'Butterflies', max: 10 },
   bee: { tag: 'Native bees', max: 12 },
   hummingbird: { tag: 'Hummingbirds', max: 4 },
   songbird: { tag: 'Birds', max: 6 },
+};
+// Animals of bigger gardens: from minSqft of planting, up to max of them
+// (reached at fullSqft); `tag` (if any) must be among what the plants feed.
+const ROOMY = {
+  quail: { tag: 'Birds', minSqft: 800, fullSqft: 4000, max: 7 },
+  rabbit: { tag: null, minSqft: 1200, fullSqft: 5000, max: 3 },
+  lizard: { tag: null, minSqft: 600, fullSqft: 3000, max: 4 },
 };
 // California natives: monarch, western tiger swallowtail, California dogface,
 // west coast lady. Hummingbird: Anna's. Songbirds: California towhee, California
@@ -24,7 +33,10 @@ const BIRDS = [
   { body: 0x8a6a4f, head: 0x7a5c44, belly: 0xc9a27a },
   { body: 0x3d6fb3, head: 0x3d6fb3, belly: 0xd8d2c4 },
   { body: 0x8f9b3a, head: 0x2b2b2b, belly: 0xe2d34a },
+  { body: 0x3b6fc4, head: 0x3b6fc4, belly: 0xc9773a }, // western bluebird
 ];
+
+const GROUND = new Set(['quail', 'rabbit', 'lizard']); // they walk, hop and scuttle; they never fly
 
 const shared = new Map();
 const mat = (color, opts = {}) => {
@@ -130,13 +142,115 @@ function songbird({ body: bodyColor, head: headColor, belly }) {
   return g;
 }
 
-/** How many of each animal a planting draws: by the share of its plants that feed it, scaled by the score. */
-export function wildlifeCounts(plants, score) {
+// California quail: plump and grey-brown with a scaled belly and the
+// forward-curling black topknot.
+function quail() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), mat(0x6f6f73));
+  body.scale.set(0.95, 0.85, 1.25);
+  body.position.y = 0.2;
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), mat(0xb59060));
+  belly.position.set(0, 0.13, 0.05);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), mat(0x4a4038));
+  head.position.set(0, 0.36, 0.2);
+  const face = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), mat(0x1c1a18));
+  face.position.set(0, 0.33, 0.27);
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.06, 5), mat(0x2a2622));
+  beak.rotation.x = Math.PI / 2;
+  beak.position.set(0, 0.34, 0.31);
+  const plume = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.012, 5, 10, Math.PI * 1.2), mat(0x141210));
+  plume.position.set(0, 0.47, 0.24);
+  plume.rotation.set(0, Math.PI / 2, -0.4);
+  const legs = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.03), mat(0x6b5a48));
+  legs.position.y = 0.05;
+  g.add(body, belly, head, face, beak, plume, legs);
+  g.userData.flap = (t, moving) => {
+    body.position.y = 0.2 + (moving ? Math.abs(Math.sin(t * 16)) * 0.03 : 0); // the quick scurrying bob
+    head.position.z = 0.2 + (moving ? Math.sin(t * 16) * 0.02 : Math.sin(t * 2) * 0.01);
+  };
+  return g;
+}
+
+// Desert cottontail: grey-brown, long ears, a white powder-puff tail.
+function rabbit() {
+  const g = new THREE.Group();
+  const fur = mat(0x9b8a74);
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), fur);
+  body.scale.set(0.85, 0.85, 1.25);
+  body.position.y = 0.22;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), fur);
+  head.position.set(0, 0.36, 0.25);
+  const ears = [-1, 1].map((side) => {
+    const e = new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.18, 3, 6), mat(0x8c7b66));
+    e.position.set(side * 0.05, 0.55, 0.22);
+    e.rotation.set(-0.25, 0, side * 0.12);
+    return e;
+  });
+  const tail = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), mat(0xf2efe8));
+  tail.position.set(0, 0.25, -0.27);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 4), mat(0x111111));
+  eye.position.set(0.08, 0.4, 0.33);
+  const eye2 = eye.clone();
+  eye2.position.x = -0.08;
+  g.add(body, head, ...ears, tail, eye, eye2);
+  g.userData.flap = (t, moving) => {
+    const hop = moving ? Math.abs(Math.sin(t * 9)) * 0.25 : 0;
+    body.position.y = 0.22 + hop;
+    head.position.y = 0.36 + hop;
+    tail.position.y = 0.25 + hop;
+    eye.position.y = eye2.position.y = 0.4 + hop;
+    ears.forEach((e) => { e.position.y = 0.55 + hop; e.rotation.x = -0.25 + (moving ? 0 : Math.sin(t * 1.5) * 0.08); });
+  };
+  return g;
+}
+
+// Western fence lizard: slim, grey-brown, with the blue belly flash.
+function lizard() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.04, 0.22, 3, 6), mat(0x6a6052));
+  body.rotation.x = Math.PI / 2;
+  body.position.y = 0.04;
+  const belly = new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.14, 3, 6), mat(0x3d6fa8));
+  belly.rotation.x = Math.PI / 2;
+  belly.position.set(0, 0.015, 0);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), mat(0x5e5548));
+  head.scale.set(0.9, 0.7, 1.3);
+  head.position.set(0, 0.05, 0.17);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.3, 6), mat(0x6a6052));
+  tail.rotation.x = -Math.PI / 2;
+  tail.position.set(0, 0.035, -0.27);
+  const legs = [[-1, 0.08], [1, 0.08], [-1, -0.08], [1, -0.08]].map(([side, z]) => {
+    const l = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.015, 0.02), mat(0x5e5548));
+    l.position.set(side * 0.06, 0.02, z);
+    return l;
+  });
+  g.add(body, belly, head, tail, ...legs);
+  g.userData.flap = (t, moving) => {
+    const w = moving ? Math.sin(t * 30) * 0.35 : 0; // the side-to-side scuttle
+    tail.rotation.y = w;
+    head.position.y = 0.05 + (moving ? 0 : Math.max(0, Math.sin(t * 2.5)) * 0.03); // push-ups in the sun
+  };
+  return g;
+}
+
+/**
+ * How many of each animal a planting draws: by the share of its plants that
+ * feed it, scaled by the score; the roomier animals also by the garden's size.
+ */
+export function wildlifeCounts(plants, score, areaSqft = 0) {
   const strength = Math.max(0, Math.min(1, (score - 23) / 70));
+  const roomy = Math.max(0, Math.min(1, (areaSqft - 1000) / 4000)); // big gardens draw more birds too
   const out = {};
   for (const [kind, { tag, max }] of Object.entries(KINDS)) {
     const feeding = plants.filter((p) => p.wildlife?.includes(tag)).length;
-    out[kind] = feeding ? Math.max(1, Math.round(max * strength * Math.min(1, 0.4 + feeding / Math.max(1, plants.length)))) : 0;
+    const most = kind === 'songbird' ? Math.round(max * (1 + roomy)) : max;
+    out[kind] = feeding ? Math.max(1, Math.round(most * strength * Math.min(1, 0.4 + feeding / Math.max(1, plants.length)))) : 0;
+  }
+  for (const [kind, { tag, minSqft, fullSqft, max }] of Object.entries(ROOMY)) {
+    const fed = !tag || plants.some((p) => p.wildlife?.includes(tag));
+    out[kind] = fed && areaSqft >= minSqft && strength > 0
+      ? Math.max(1, Math.round(max * Math.min(1, (areaSqft - minSqft) / (fullSqft - minSqft) + 0.15)))
+      : 0;
   }
   return out;
 }
@@ -145,10 +259,10 @@ export function wildlifeCounts(plants, score) {
  * Animals for a placed planting. spots: [{ x, z, top, wildlife }] in scene
  * feet (top = the plant's height there). Returns { group, counts, update(t) }.
  */
-export function createWildlife(spots, score, groundAt) {
+export function createWildlife(spots, score, groundAt, areaSqft = 0) {
   const group = new THREE.Group();
   const plants = spots.map((s) => ({ wildlife: s.wildlife }));
-  const counts = wildlifeCounts(plants, score);
+  const counts = wildlifeCounts(plants, score, areaSqft);
   const random = (() => {
     let seed = 1234567;
     return () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -160,7 +274,8 @@ export function createWildlife(spots, score, groundAt) {
     model.scale.setScalar(SIZE[kind]);
     group.add(model);
     const start = targets[Math.floor(random() * targets.length)];
-    const pos = new THREE.Vector3(start.x, groundAt(start.x, start.z) + start.top + (kind === 'songbird' ? 0 : 0.3), start.z);
+    const onGround = GROUND.has(kind);
+    const pos = new THREE.Vector3(start.x + (onGround ? 1.5 : 0), groundAt(start.x, start.z) + (onGround ? 0.05 : start.top + (kind === 'songbird' ? 0 : 0.3)), start.z);
     model.position.copy(pos);
     animals.push({ kind, model, targets, from: null, to: start, end: null, pos, wait: random() * 3, t: Math.random() * 10, ...opts });
   };
@@ -168,6 +283,9 @@ export function createWildlife(spots, score, groundAt) {
   for (let i = 0; i < counts.bee; i++) add('bee', bee(), feedingOn('Native bees'), { speed: 3.5, hover: 0.15 });
   for (let i = 0; i < counts.hummingbird; i++) add('hummingbird', hummingbird(), feedingOn('Hummingbirds'), { speed: 9, hover: 0.4 });
   for (let i = 0; i < counts.songbird; i++) add('songbird', songbird(BIRDS[i % BIRDS.length]), feedingOn('Birds'), { speed: 7 });
+  for (let i = 0; i < counts.quail; i++) add('quail', quail(), feedingOn('Birds').length ? feedingOn('Birds') : spots, { speed: 2.4 });
+  for (let i = 0; i < counts.rabbit; i++) add('rabbit', rabbit(), spots, { speed: 3 });
+  for (let i = 0; i < counts.lizard; i++) add('lizard', lizard(), spots, { speed: 4 });
 
   let last = null;
   const update = (time) => {
@@ -178,7 +296,7 @@ export function createWildlife(spots, score, groundAt) {
       if (a.wait > 0) {
         // Feeding or perched: a small hover over the plant (birds stand still and look about).
         a.wait -= dt;
-        if (a.kind === 'songbird') {
+        if (a.kind === 'songbird' || GROUND.has(a.kind)) {
           model.rotation.y += Math.sin(time * 3 + a.t) * 0.02;
           model.userData.flap(time, false);
         } else {
@@ -189,8 +307,9 @@ export function createWildlife(spots, score, groundAt) {
           // Off to another plant: birds land on its top or the ground beside it.
           a.from = model.position.clone();
           a.to = a.targets[Math.floor(random() * a.targets.length)];
-          const land = a.kind === 'songbird' ? (random() < 0.5 ? a.to.top : 0) : a.to.top + 0.3;
-          const off = a.kind === 'songbird' && !land ? 1 : 0.3;
+          const ground = GROUND.has(a.kind);
+          const land = ground ? 0.05 : a.kind === 'songbird' ? (random() < 0.5 ? a.to.top : 0) : a.to.top + 0.3;
+          const off = ground ? 1.8 : a.kind === 'songbird' && !land ? 1 : 0.3;
           a.end = new THREE.Vector3(a.to.x + (random() - 0.5) * off * 2, groundAt(a.to.x, a.to.z) + land, a.to.z + (random() - 0.5) * off * 2);
           a.t = 0;
         }
@@ -200,8 +319,9 @@ export function createWildlife(spots, score, groundAt) {
       const dist = a.from.distanceTo(a.end) || 1;
       a.t = Math.min(1, a.t + (dt * a.speed) / dist);
       const p = a.from.clone().lerp(a.end, a.t);
-      const lift = a.kind === 'songbird' ? 3 : a.kind === 'hummingbird' ? 1.2 : 1.5;
+      const lift = GROUND.has(a.kind) ? 0 : a.kind === 'songbird' ? 3 : a.kind === 'hummingbird' ? 1.2 : 1.5;
       p.y += Math.sin(a.t * Math.PI) * Math.min(lift, dist * 0.3);
+      if (GROUND.has(a.kind)) p.y = groundAt(p.x, p.z) + 0.05; // walking, hopping, scuttling over the ground
       if (a.kind === 'butterfly') p.y += Math.sin(time * 9) * 0.15; // the fluttering bob
       const dir = p.clone().sub(model.position);
       if (dir.lengthSq() > 1e-6) model.rotation.y = Math.atan2(dir.x, dir.z);
@@ -209,7 +329,7 @@ export function createWildlife(spots, score, groundAt) {
       model.userData.flap(time, true);
       if (a.t >= 1) {
         a.pos.copy(a.end);
-        a.wait = a.kind === 'hummingbird' ? 1 + random() * 1.5 : a.kind === 'songbird' ? 2 + random() * 4 : 1.5 + random() * 3;
+        a.wait = a.kind === 'hummingbird' ? 1 + random() * 1.5 : a.kind === 'songbird' ? 2 + random() * 4 : GROUND.has(a.kind) ? 3 + random() * 6 : 1.5 + random() * 3;
       }
     }
   };

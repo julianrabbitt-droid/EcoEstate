@@ -66,33 +66,64 @@ export function photo(name, kind, uvFt = 1) {
   return t;
 }
 
-// ---- Scanned shrub models ----
-// shrub_03 (17k triangles) and shrub_02 (52k) at 1k textures. Normalised to a
-// 1 ft footprint and 1 ft height, standing on the origin, so they scale like
-// the procedural plants. Loaded on first use.
-const SHRUBS = ['shrub_03', 'shrub_02'];
-const shrubModels = new Map(); // id -> THREE.Object3D (template) | 'loading'
+// ---- Scanned plant models (Real 3D) ----
+// Photo-scans of real plants (CC0, Poly Haven). Each file holds a few
+// variants of one plant laid out side by side; each becomes its own template,
+// normalised to a 1 ft footprint and 1 ft height standing on the origin, so
+// it scales like the drawn plants. Loaded only once Real 3D is turned on.
+const SCANS = {
+  grass: ['grass_medium_02'],
+  shrub: ['shrub_04', 'shrub_03', 'shrub_02'],
+  groundcover: ['periwinkle_plant'],
+  flowerWarm: ['flower_gazania'], // orange and red blooms
+  flowerYellow: ['flower_empodium'],
+  flowerLight: ['flower_heliophila'], // white blooms, tinted to the species' colour
+};
+const SCAN_MAX_TRIS = 40000; // a garden has hundreds of plants: heavier variants are left out
+const SCAN_MIN_SHARE = 0.3; // and so are seedlings (variants far lighter than the file's biggest)
+const scanFiles = new Map(); // id -> templates[] | 'loading'
 const gltf = new GLTFLoader();
 
-function normalise(scene) {
-  const box = new THREE.Box3().setFromObject(scene);
-  const size = box.getSize(new THREE.Vector3());
-  const holder = new THREE.Group();
-  scene.position.set(-(box.min.x + size.x / 2), -box.min.y, -(box.min.z + size.z / 2));
-  holder.add(scene);
-  holder.scale.set(1 / Math.max(size.x, size.z, 1e-3), 1 / Math.max(size.y, 1e-3), 1 / Math.max(size.x, size.z, 1e-3));
+const trisOf = (obj) => {
+  let n = 0;
+  obj.traverse((o) => {
+    if (o.isMesh) n += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
+  });
+  return n;
+};
+
+// Leaves cut out of photos thin away with distance (their edges blur into
+// the background in the smaller copies of the texture); a little more
+// opacity keeps the plant full from across the yard.
+function foliage(m) {
+  markShared(m);
+  Object.values(m).forEach((v) => v?.isTexture && markShared(v));
+  m.side = THREE.DoubleSide;
+  m.alphaTest = 0.3;
+  m.alphaToCoverage = true;
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.a = min(1.0, diffuseColor.a * 1.5);');
+  };
+  m.customProgramCacheKey = () => 'scan-foliage';
+  return m;
+}
+
+function template(node) {
+  const copy = node.clone(true);
+  copy.position.set(0, 0, 0); // each variant stands where its neighbour would in the file
   const outer = new THREE.Group();
+  const holder = new THREE.Group();
+  holder.add(copy);
   outer.add(holder);
+  outer.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(copy);
+  const size = box.getSize(new THREE.Vector3());
+  copy.position.set(-(box.min.x + size.x / 2), -box.min.y, -(box.min.z + size.z / 2));
+  holder.scale.set(1 / Math.max(size.x, size.z, 1e-3), 1 / Math.max(size.y, 1e-3), 1 / Math.max(size.x, size.z, 1e-3));
   outer.traverse((o) => {
     if (o.isMesh) {
       markShared(o.geometry);
-      const mats = Array.isArray(o.material) ? o.material : [o.material];
-      mats.forEach((m) => {
-        markShared(m);
-        Object.values(m).forEach((v) => v?.isTexture && markShared(v));
-        m.side = THREE.DoubleSide;
-        m.alphaTest = Math.max(m.alphaTest || 0, 0.4);
-      });
+      o.material = Array.isArray(o.material) ? o.material.map(foliage) : foliage(o.material);
       o.castShadow = true;
       o.receiveShadow = true;
     }
@@ -100,26 +131,71 @@ function normalise(scene) {
   return outer;
 }
 
-/** Start loading the shrub models (idempotent). */
-export function preloadShrubs() {
-  for (const id of SHRUBS) {
-    if (shrubModels.has(id)) continue;
-    shrubModels.set(id, 'loading');
+/** Start loading every scanned plant (idempotent). */
+export function preloadScans() {
+  for (const id of Object.values(SCANS).flat()) {
+    if (scanFiles.has(id)) continue;
+    scanFiles.set(id, 'loading');
     gltf.load(
       `${BASE}/${id}/${id}.gltf`,
       (g) => {
-        shrubModels.set(id, normalise(g.scene));
+        const variants = g.scene.children.filter((n) => trisOf(n) > 0);
+        const most = Math.max(...variants.map(trisOf));
+        const kept = variants.filter((n) => trisOf(n) <= SCAN_MAX_TRIS && trisOf(n) >= most * SCAN_MIN_SHARE);
+        scanFiles.set(id, (kept.length ? kept : variants).map(template));
         loaded('model');
       },
       undefined,
-      () => shrubModels.delete(id), // stays procedural
+      () => scanFiles.delete(id), // the drawn plant stays
     );
   }
 }
 
-/** A unit-sized scanned shrub (variant picks which), or null until loaded. */
-export function scannedShrub(variant = 0) {
-  const ready = SHRUBS.map((id) => shrubModels.get(id)).filter((m) => m && m !== 'loading');
+const tinted = new Map(); // `${id}:${index}:${hex}` -> template with tinted petals
+// Light petals (bright, nearly colourless in the photo) take the bloom colour;
+// leaves and stems keep theirs.
+function tintPetals(templ, bloom) {
+  const copy = templ.clone(true);
+  copy.traverse((o) => {
+    if (!o.isMesh) return;
+    const tint = (m) => {
+      const c = markShared(m.clone());
+      c.onBeforeCompile = (sh) => {
+        sh.uniforms.uBloom = { value: bloom };
+        sh.fragmentShader = `uniform vec3 uBloom;\n${sh.fragmentShader}`.replace(
+          '#include <map_fragment>',
+          `#include <map_fragment>
+  diffuseColor.a = min(1.0, diffuseColor.a * 1.5);
+  {
+    float lum = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+    float sat = max(max(diffuseColor.r, diffuseColor.g), diffuseColor.b) - min(min(diffuseColor.r, diffuseColor.g), diffuseColor.b);
+    float petal = smoothstep(0.3, 0.55, lum) * (1.0 - smoothstep(0.12, 0.3, sat));
+    diffuseColor.rgb = mix(diffuseColor.rgb, uBloom * (0.45 + 0.7 * lum), petal);
+  }`,
+        );
+      };
+      c.customProgramCacheKey = () => 'scan-petals';
+      return c;
+    };
+    o.material = Array.isArray(o.material) ? o.material.map(tint) : tint(o.material);
+  });
+  return copy;
+}
+
+/**
+ * A unit-sized scanned plant of a kind (grass, shrub, groundcover, flowerWarm,
+ * flowerYellow, flowerLight), `variant` picking which, or null until loaded.
+ * bloom (a THREE.Color) tints flowerLight's white petals.
+ */
+export function scannedPlant(kind, variant = 0, bloom = null) {
+  const ready = (SCANS[kind] || []).flatMap((id) => {
+    const v = scanFiles.get(id);
+    return Array.isArray(v) ? v.map((t, i) => ({ id, i, t })) : [];
+  });
   if (!ready.length) return null;
-  return ready[variant % ready.length].clone(true);
+  const { id, i, t } = ready[Math.abs(variant) % ready.length];
+  if (kind !== 'flowerLight' || !bloom || bloom.getHSL({}).l > 0.85) return t.clone(true);
+  const key = `${id}:${i}:${bloom.getHexString()}`;
+  if (!tinted.has(key)) tinted.set(key, tintPetals(t, bloom));
+  return tinted.get(key).clone(true);
 }

@@ -18,6 +18,7 @@ import { createProject } from '@/lib/projectStore';
 import { autoDesign, financials, money } from '@/lib/landscapeMath';
 import { useAutoScanAccess } from '@/hooks/useAutoScanAccess';
 import { usePageMeta } from '@/hooks/usePageMeta';
+import { smoothNavigate } from '@/lib/smoothNavigate';
 // "920, Moreno Avenue, Palo Alto, Santa Clara County, …" -> "920 Moreno Avenue, Palo Alto".
 function shortAddress(label) {
   const parts = String(label || '').split(',').map((p) => p.trim()).filter(Boolean);
@@ -29,12 +30,16 @@ const DEFAULT_CENTER = [37.4422168, -122.1189345]; // Greer Park, Palo Alto
 // The opening screen's backdrop: tree-lined lawns in Crescent Park, Palo Alto, from above.
 const HERO_VIEW = [37.4538, -122.1468];
 const HERO_IMAGERY = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-// Glides the backdrop to the property being scanned (or back to the neighbourhood).
+// Takes the backdrop to the property being scanned (or back to the
+// neighbourhood): a short glide nearby, straight there from anywhere further
+// (a long flight would sweep across other places first).
+const GLIDE_MAX_M = 3000;
 function Backdrop({ center, zoom = 18 }) {
   const map = useMap();
   const [lat, lng] = center;
   useEffect(() => {
-    map.flyTo([lat, lng], zoom, { duration: 1.4 });
+    if (map.getCenter().distanceTo([lat, lng]) > GLIDE_MAX_M) map.setView([lat, lng], zoom, { animate: false });
+    else map.flyTo([lat, lng], zoom, { duration: 1.4 });
   }, [map, lat, lng, zoom]);
   return null;
 }
@@ -441,7 +446,7 @@ export default function Scan() {
       },
     });
     clearSavedScan();
-    navigate(`/project/${rec.id}${edit ? '?edit=1' : ''}`, { state: { project: rec } });
+    smoothNavigate(navigate, `/project/${rec.id}${edit ? '?edit=1' : ''}`, { state: { project: rec } });
   };
 
   // Whenever the drawn lawn outlines change, recalculate size and impact with
@@ -514,7 +519,7 @@ export default function Scan() {
       lawnImpact: merged?.impact || areaCalc.impact || null,
     });
     clearSavedScan();
-    navigate(`/project/${rec.id}`, { state: { project: rec } });
+    smoothNavigate(navigate, `/project/${rec.id}`, { state: { project: rec } });
   };
 
   // Keep the scan in progress for this tab (see SAVED_SCAN).
@@ -627,7 +632,8 @@ export default function Scan() {
             className="h-full w-full"
           >
             <TileLayer url={HERO_IMAGERY} maxNativeZoom={19} maxZoom={21} />
-            <Backdrop center={phase === 'idle' ? HERO_VIEW : phase === 'confirm' && pin ? pin : center} zoom={phase === 'idle' ? 18 : 19} />
+            {/* While the address is being looked up it stays put, then goes straight to the property. */}
+            <Backdrop center={phase === 'idle' || phase === 'locating' ? HERO_VIEW : phase === 'confirm' && pin ? pin : center} zoom={phase === 'idle' || phase === 'locating' ? 18 : 19} />
             <PinLayer active={phase === 'confirm'} pin={pin} onPin={setPin} />
           </MapContainer>
           <div className={`pointer-events-none absolute inset-0 ${phase === 'confirm' ? 'bg-gradient-to-b from-black/35 via-transparent to-black/40' : 'bg-gradient-to-b from-black/45 via-black/30 to-black/65'}`} />

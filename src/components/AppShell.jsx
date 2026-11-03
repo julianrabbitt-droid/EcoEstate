@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { smoothLinkClick } from '@/lib/smoothNavigate';
 import { Loader2, Sprout } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import AccountMenu from '@/components/AccountMenu';
@@ -25,6 +26,7 @@ export default function AppShell() {
   // (clear, white text) until the page scrolls at all: then it's frosted, so
   // the panels sliding under it never show through its white text.
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const [scrolled, setScrolled] = useState(false);
   const [atTop, setAtTop] = useState(true);
   useEffect(() => {
@@ -106,6 +108,7 @@ export default function AppShell() {
                 key={to}
                 to={to}
                 end={exact}
+                onClick={smoothLinkClick(navigate, to)}
                 className={({ isActive }) =>
                   cn(
                     'shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 transition',

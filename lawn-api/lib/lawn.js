@@ -103,6 +103,10 @@ export const SETTINGS = {
   streetSlackM: 2, // how far off the straight line from property to road a tree may stand
   streetMaxResM: 1, // skipped on campuses and parks measured at a coarse grid
   neighbourRingM: 6, // trees this close to the property line on any side are included too
+  // And along the street the property faces, both sides of it (the 3D view's
+  // Real 3D draws everything from the lot to across the road itself).
+  acrossRoadM: 40, // within this far of the property line…
+  roadsideM: 14, // …and this close to that road
 };
 
 function widen([w, s, e, n], metres) {
@@ -148,12 +152,13 @@ const ringAreaSqft = (ring) => turfArea({ type: 'Polygon', coordinates: [ring] }
  * often hang over it), plus those between the property line and a bordering
  * road. A road-side spot counts when going from the property to a road through
  * it is barely longer than the shortest way across, so the neighbours' front
- * yards to either side are left out. The 3D view models these so it can hide
- * the real trees there whole instead of slicing them at the property line.
+ * yards to either side are left out; and trees lining that road on either side
+ * near the property (acrossRoadM, roadsideM). The 3D view models these so it
+ * can hide the real trees there whole instead of slicing them.
  */
 async function findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBuildings) {
   try {
-    const wide = makeGrid(grid.epsg, grid.res, box, SETTINGS.streetReachM + 5);
+    const wide = makeGrid(grid.epsg, grid.res, box, Math.max(SETTINGS.streetReachM, SETTINGS.acrossRoadM) + 5);
     const { w, h } = wide;
     const parcel = rasterize(wide, polygonsOf(parcelGeometry));
     const roofs = rasterizeLabels(wide, nearbyBuildings.map((b) => b.geometry));
@@ -163,6 +168,8 @@ async function findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBui
     const slackPx = SETTINGS.streetSlackM / wide.res;
     const include = new Uint8Array(w * h);
     const ringPx = SETTINGS.neighbourRingM / wide.res;
+    const acrossPx = SETTINGS.acrossRoadM / wide.res;
+    const roadsidePx = SETTINGS.roadsideM / wide.res;
     for (let k = 0; k < w * h; k++) if (!parcel[k] && !roofs[k] && fromParcel[k] <= ringPx) include[k] = 1;
     for (let label = 1; label <= nearbyRoads.features.length; label++) {
       const fromRoad = distanceTo(Uint8Array.from(roads, (v) => (v === label ? 1 : 0)), w, h);
@@ -170,7 +177,9 @@ async function findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBui
       for (let k = 0; k < w * h; k++) gap = Math.min(gap, fromParcel[k] + fromRoad[k]);
       if (gap > reachPx) continue;
       for (let k = 0; k < w * h; k++) {
-        if (!parcel[k] && !roofs[k] && fromParcel[k] <= reachPx && fromParcel[k] + fromRoad[k] <= gap + slackPx) include[k] = 1;
+        if (parcel[k] || roofs[k]) continue;
+        if (fromParcel[k] <= reachPx && fromParcel[k] + fromRoad[k] <= gap + slackPx) include[k] = 1;
+        else if (fromParcel[k] <= acrossPx && fromRoad[k] <= roadsidePx) include[k] = 1; // along the road, either side
       }
     }
     const canopy = await readCanopy(wide);

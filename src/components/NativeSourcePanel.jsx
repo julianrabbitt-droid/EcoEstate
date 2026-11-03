@@ -7,7 +7,7 @@ import { countryCodeFor } from '@/data/locationRegions';
 const FURTHER_SOURCES = [
   { label: 'USDA PLANTS Database', detail: 'federal range & plant profiles', url: 'https://plants.usda.gov/' },
   { label: 'NWF Native Plant Finder', detail: 'zip-level natives by wildlife supported', url: 'https://www.nwf.org/nativeplantfinder/' },
-  { label: 'Xerces Society', detail: 'pollinator-conservation plant lists', url: 'https://xerces.org/pollinator-conservation/native-plants' },
+  { label: 'Xerces Society', detail: 'pollinator-conservation plant lists', url: 'https://xerces.org/pollinator-conservation/pollinator-friendly-plant-lists' },
   { label: 'Audubon Native Plant Database', detail: 'plants that support local birds', url: 'https://www.audubon.org/native-plants' },
 ];
 
