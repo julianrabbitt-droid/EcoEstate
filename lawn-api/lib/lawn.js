@@ -19,7 +19,7 @@ import { dilate, distanceTo, erode, labelRegions, localStats } from './raster.js
 import { regionShape } from './shapes.js';
 import { separateLayers } from './layers.js';
 import { blank, png } from '../scripts/render.mjs';
-import { buildingsOnParcel, describeBuildings, describeNearbyRoads, describePaths, detectTrees, NEARBY } from './structures.js';
+import { buildingsOnParcel, describeBuildings, describeNearbyRoads, describePaths, detectBushes, detectTrees, NEARBY, STRUCTURES } from './structures.js';
 
 const SQM_TO_SQFT = 10.7639;
 
@@ -32,6 +32,13 @@ export const SETTINGS = {
   paveOpenM: 0.6, // specks and seams narrower than about twice this (1.2 m) are dropped; side walks are wider
   paveMinSqft: 80,
   paveMinCompactness: 0.15, // raggeder shapes are dirt, dry ground or beds, not paving
+  walkMinM2: 2, // a walk at least this big…
+  walkMinLengthM: 3, // …and this long…
+  walkWidthM: [0.6, 2.4], // …this wide on average…
+  walkMaxSpreadM: 4, // …within a band this wide (a gentle curve, not a blob)
+  walkBrightness: 85, // mixed with the planting beside it, a walk's pixels read a little darker than a patio's
+  bushNdviMin: 0.12, // shrubs read at least faintly green, even in a drought summer; walls, cars and fences don't
+  bushMinM: 0.5, // shorter is groundcover or a low bed planting
   houseMaxM2: 600, // ~6,500 sq ft: footprints up to this are houses…
   houseMaxHeightM: 15, // …and no house roof here stands over ~50 ft above its average ground
   neighbourHeightMin: 2, // a house the survey predates takes the median height of at least this many neighbouring houses
@@ -505,6 +512,7 @@ export function lidarHeights(grid, pts) {
   }
   const low = new Uint16Array(n);
   const high = new Uint16Array(n);
+  const shrubTop = new Float32Array(n); // the highest shrub-height return, m above the ground
   const nearGround = new Uint16Array(n); // returns just above the ground: groundcover and bed plantings, not mown grass
   const all = new Uint16Array(n);
   const any = new Uint8Array(n);
@@ -520,6 +528,7 @@ export function lidarHeights(grid, pts) {
     const above = pts.z[k] - ground[c];
     if (above >= SETTINGS.canopyMinM) high[c]++;
     else if (above > SETTINGS.understoryMinM) low[c]++;
+    if (above > SETTINGS.understoryMinM && above < STRUCTURES.minTreeM && above > shrubTop[c]) shrubTop[c] = above;
     else if (above > SETTINGS.groundcoverMinM) nearGround[c]++;
   }
   const obstacle = new Uint8Array(n);
@@ -553,7 +562,7 @@ export function lidarHeights(grid, pts) {
       known[c] = seen;
     }
   }
-  return { known, obstacle, canopy, flat, groundInt, ground };
+  return { known, obstacle, canopy, flat, groundInt, ground, shrubTop };
 }
 
 // Whether the survey predates a building: nearly all its returns over the
@@ -1132,6 +1141,57 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   }
   const paveKeep = Float64Array.from(pavePieces.labels, (l) =>
     l && pavePieces.sizes[l] * pxSqft >= SETTINGS.paveMinSqft && patchSum[l] / pavePieces.sizes[l] >= SETTINGS.pavePatchBrightness ? 1 : 0);
+  // Walks: the narrow strips of paving the patches leave out (a garden path
+  // is often a metre wide, two pixels), kept where long and even enough to be
+  // built and leading somewhere: to a house, other paving or the street.
+  const walkKeep = new Float64Array(n);
+  {
+    // Not the pixel ring round each house: past a footprint's edge its eaves
+    // read as bare and flat (the lidar there is set aside for the walls).
+    const roofMask = Uint8Array.from(roofLabels, (v) => (v ? 1 : 0));
+    const eaves = dilate(roofMask, w, h, 1);
+    const thin = Uint8Array.from(paveMask, (v, k) => (v && !paveKeep[k] && !eaves[k] ? 1 : 0));
+    const pieces = labelRegions(thin, w, h);
+    const m = pieces.sizes.length;
+    const [si, sj, sii, sjj, sij, lum, ends] = Array.from({ length: 7 }, () => new Float64Array(m));
+    const reach = Math.max(1, Math.round(1.2 / grid.res));
+    const roofish = dilate(roofMask, w, h, reach + 1);
+    const paveNear = dilate(Uint8Array.from(paveKeep, (v) => (v ? 1 : 0)), w, h, 1);
+    const offLot = dilate(Uint8Array.from(parcel, (v) => (v ? 0 : 1)), w, h, reach);
+    for (let k = 0; k < n; k++) {
+      const l = pieces.labels[k];
+      if (!l) continue;
+      const i = k % w;
+      const j = (k - i) / w;
+      si[l] += i; sj[l] += j; sii[l] += i * i; sjj[l] += j * j; sij[l] += i * j;
+      lum[l] += (naip.red[k] + naip.green[k] + naip.blue[k]) / 3;
+      if (roofish[k] || paveNear[k] || offLot[k]) ends[l] = 1;
+    }
+    const keepPiece = new Uint8Array(m);
+    for (let l = 1; l < m; l++) {
+      const c = pieces.sizes[l];
+      if (c * grid.res * grid.res < SETTINGS.walkMinM2 || !ends[l] || lum[l] / c < SETTINGS.walkBrightness) continue;
+      // The strip's length and spread from its second moments (a uniform bar
+      // of length L has variance L²/12 along it).
+      const [mi, mj] = [si[l] / c, sj[l] / c];
+      const [a, b, d] = [sii[l] / c - mi * mi, sij[l] / c - mi * mj, sjj[l] / c - mj * mj];
+      const tr = (a + d) / 2;
+      const disc = Math.sqrt(Math.max(0, tr * tr - (a * d - b * b)));
+      const lengthM = Math.sqrt(12 * (tr + disc)) * grid.res;
+      const widthM = (c * grid.res * grid.res) / Math.max(lengthM, 1e-6);
+      const spreadM = Math.sqrt(12 * Math.max(0, tr - disc)) * grid.res;
+      if (lengthM >= SETTINGS.walkMinLengthM && widthM >= SETTINGS.walkWidthM[0] && widthM <= SETTINGS.walkWidthM[1] && spreadM <= SETTINGS.walkMaxSpreadM) keepPiece[l] = 1;
+    }
+    for (let k = 0; k < n; k++) if (keepPiece[pieces.labels[k]]) walkKeep[k] = 1;
+  }
+  const [walkMulti] = contours().size([w, h]).thresholds([0.5])(walkKeep);
+  const walks = walkMulti.coordinates
+    .map((rings) => ({ type: 'Polygon', coordinates: [rings[0].map(toLonLat)] }))
+    .map((geometry) => {
+      const simple = simplify({ type: 'Feature', properties: {}, geometry }, { tolerance: 0.000003, highQuality: true }).geometry;
+      return { type: 'Feature', geometry: simple, properties: { kind: 'walk', areaSqft: Math.round(turfArea(simple) * SQM_TO_SQFT) } };
+    })
+    .filter((f) => f.properties.areaSqft >= SETTINGS.walkMinM2 * SQM_TO_SQFT);
   const [paveMulti] = contours().size([w, h]).thresholds([0.5])(paveKeep);
   const paved = {
     type: 'FeatureCollection',
@@ -1143,7 +1203,8 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
       })
       // Driveways, walks and patios are built shapes; a ragged blob (dirt,
       // dry ground or a planted bed between shrubs) isn't paving.
-      .filter((f) => f.properties.areaSqft >= SETTINGS.paveMinSqft && compactness(f.geometry) >= SETTINGS.paveMinCompactness),
+      .filter((f) => f.properties.areaSqft >= SETTINGS.paveMinSqft && compactness(f.geometry) >= SETTINGS.paveMinCompactness)
+      .concat(walks),
   };
 
   // The aerial photo of the property, so the 3D model's ground looks like the
@@ -1160,6 +1221,7 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   }
 
   const onParcelNotRoof = Uint8Array.from(parcel, (v, k) => (v && !roofLabels[k] ? 1 : 0));
+  const treeList = detectTrees(grid, canopy, onParcelNotRoof);
   const nearbyRoads = describeNearbyRoads(mappedPaths, parcelGeometry);
   // Fences, chimneys and solar panels aren't detected: they weren't reliable
   // enough. An empty list keeps the response's shape.
@@ -1216,6 +1278,32 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
       .filter((f) => f.properties.areaSqft >= SETTINGS.poolMinSqft),
   };
 
+  // Bushes and hedges: shrub-height (lidar) or low (canopy map) growth that
+  // reads green, on the property but not under a tree's crown, by a roof, on
+  // a path, in a pool or in the lawn. Modelled as shrubs in 3D (see detectBushes).
+  const pooled = rasterize(grid, pools.features.map((f) => f.geometry.coordinates));
+  const treePx = treeList.map((t) => {
+    const [X, Y] = grid.fromLonLat([t.lon, t.lat]);
+    return [(X - grid.x0) / grid.res, (grid.y0 - Y) / grid.res, (t.radiusFt * 0.3048) / grid.res];
+  });
+  // Not right at a house either: its walls and eaves return at shrub height.
+  const byRoof = dilate(Uint8Array.from(roofLabels, (v) => (v ? 1 : 0)), w, h, Math.round(1.5 / grid.res));
+  const bushMask = new Uint8Array(n);
+  const bushTop = new Float32Array(n);
+  for (let k = 0; k < n; k++) {
+    if (!usable[k] || green[k] || byRoof[k] || pooled[k] || ndvi[k] < SETTINGS.bushNdviMin) continue;
+    let top = 0;
+    if (measured?.known[k]) top = measured.shrubTop[k];
+    else if (canopy.known[k] && canopy.height[k] < STRUCTURES.minTreeM) top = canopy.height[k];
+    if (top < SETTINGS.bushMinM) continue;
+    const i = k % w;
+    const j = (k - i) / w;
+    if (treePx.some(([ti, tj, tr]) => Math.hypot(i + 0.5 - ti, j + 0.5 - tj) < tr)) continue;
+    bushMask[k] = 1;
+    bushTop[k] = top;
+  }
+  const bushes = detectBushes(grid, bushMask, bushTop);
+
   const streetTrees = grid.res <= SETTINGS.streetMaxResM ? await findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBuildings) : [];
   // Not worth holding the scan long for: without it the 3D view fetches coarser terrain itself.
   const terrain = await Promise.race([terrainLoad, new Promise((done) => setTimeout(() => done(null), SETTINGS.terrainExtraWaitMs))]);
@@ -1236,7 +1324,8 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     canopyIncomplete: canopy.failedTiles > 0 || buildingsFailed,
     buildings: buildingLayer,
     terrain,
-    trees: [...detectTrees(grid, canopy, onParcelNotRoof), ...streetTrees],
+    trees: [...treeList, ...streetTrees],
+    bushes,
     paths: layers.paths,
     paved,
     pools,

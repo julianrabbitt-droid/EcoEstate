@@ -12,6 +12,7 @@ import difference from '@turf/difference';
 import intersect from '@turf/intersect';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
 import { pixelCenter, polygonsOf } from './grid.js';
+import { distanceTo, labelRegions } from './raster.js';
 
 const M_TO_FT = 3.28084;
 const SQM_TO_SQFT = 10.7639;
@@ -26,6 +27,10 @@ export const STRUCTURES = {
   maxTrees: 800, // the tallest are kept on very large properties
   maxBuildings: 600, // the largest are kept on very large properties
   maxPaths: 1500,
+  bushMinM2: 0.8, // smaller patches are a stray return or a pot
+  bushMaxRadiusM: 1.6, // a wider patch is a hedge or a shrub bed: several bushes
+  bushMinRadiusM: 0.45,
+  maxBushes: 400,
 };
 
 const centroid = (geometry) => {
@@ -187,6 +192,53 @@ export function detectTrees(grid, canopy, include) {
     const [lon, lat] = grid.toLonLat(pixelCenter(grid, t.i, t.j));
     return { lat: Number(lat.toFixed(7)), lon: Number(lon.toFixed(7)), heightFt: Math.round(t.heightM * M_TO_FT), radiusFt: Math.round(t.radiusM * M_TO_FT * 10) / 10 };
   });
+}
+
+/**
+ * Bushes from a mask of shrub-height growth (top: its height in metres per
+ * pixel): each patch filled with round bushes, the widest first, each as wide
+ * as the patch allows (up to bushMaxRadiusM), so a lone shrub is one bush and
+ * a hedge a row of them. [{ lat, lon, heightFt, radiusFt }].
+ */
+export function detectBushes(grid, mask, top) {
+  const { w, h, res } = grid;
+  const n = w * h;
+  const pieces = labelRegions(mask, w, h);
+  const minPx = STRUCTURES.bushMinM2 / (res * res);
+  const keep = Uint8Array.from(pieces.labels, (l) => (l && pieces.sizes[l] >= minPx ? 1 : 0));
+  // Pixels from the patch's edge (a bush's centre is that far from open ground).
+  const inside = distanceTo(Uint8Array.from(keep, (v) => (v ? 0 : 1)), w, h);
+  const order = [];
+  for (let k = 0; k < n; k++) if (keep[k]) order.push(k);
+  order.sort((a, b) => inside[b] - inside[a]);
+  const covered = new Uint8Array(n);
+  const bushes = [];
+  const maxR = STRUCTURES.bushMaxRadiusM / res;
+  for (const k of order) {
+    if (covered[k] || bushes.length >= STRUCTURES.maxBushes) continue;
+    const rPx = Math.min(maxR, inside[k] + 0.5);
+    if (rPx * res < STRUCTURES.bushMinRadiusM && pieces.sizes[pieces.labels[k]] * res * res >= Math.PI * STRUCTURES.bushMinRadiusM ** 2 * 2) continue; // an edge pixel of a bigger patch
+    const i = k % w;
+    const j = (k - i) / w;
+    const heights = [];
+    const span = Math.ceil(rPx);
+    for (let dj = -span; dj <= span; dj++) {
+      for (let di = -span; di <= span; di++) {
+        const x = i + di;
+        const y = j + dj;
+        if (x < 0 || y < 0 || x >= w || y >= h || Math.hypot(di, dj) > rPx) continue;
+        const q = y * w + x;
+        if (keep[q]) heights.push(top[q]);
+        if (Math.hypot(di, dj) <= rPx * 0.9) covered[q] = 1;
+      }
+    }
+    heights.sort((a, b) => a - b);
+    const heightM = heights[Math.floor(heights.length * 0.75)] || 1;
+    const radiusM = Math.max(STRUCTURES.bushMinRadiusM, rPx * res);
+    const [lon, lat] = grid.toLonLat(pixelCenter(grid, i, j));
+    bushes.push({ lat: Number(lat.toFixed(7)), lon: Number(lon.toFixed(7)), heightFt: Math.round(Math.max(1.5, Math.min(radiusM * 2.4, heightM) * M_TO_FT) * 10) / 10, radiusFt: Math.round(radiusM * M_TO_FT * 10) / 10 });
+  }
+  return bushes;
 }
 
 // Split a centre line into open pieces before widening it. A path that loops

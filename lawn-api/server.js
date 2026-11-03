@@ -21,7 +21,7 @@ import turfArea from '@turf/area';
 import { ApiError, ConfigError, UpstreamError } from './lib/errors.js';
 import { geocode } from './lib/geocode.js';
 import { addressPoint, refineLocation } from './lib/addressPoint.js';
-import { COUNTIES, findCountyParcel } from './lib/parcels.js';
+import { COUNTIES, findCountyParcel, findNearbyCountyParcel } from './lib/parcels.js';
 import { estimateParcel } from './lib/estimate.js';
 import { placeById, placeByName } from './lib/places.js';
 import { detectLawn } from './lib/lawn.js';
@@ -133,7 +133,7 @@ app.get('/v1/lawn', async (req, res) => {
     let parcel = place?.boundary ?? null;
     let parcelSource = 'place';
     if (!parcel) {
-      parcel = await findCountyParcel(location.lat, location.lon);
+      parcel = (await findCountyParcel(location.lat, location.lon)) ?? (await findNearbyCountyParcel(location.lat, location.lon, location.label));
       parcelSource = 'county';
     }
     if (!parcel) {
@@ -235,6 +235,7 @@ async function lawnResponse({ address, location, parcel, parcelSource, query }) 
     method: 'naip',
     buildings: detection.buildings,
     trees: detection.trees,
+    bushes: detection.bushes || [],
     lidar: detection.lidar,
     dormant: detection.dormant,
     paths: detection.paths,
