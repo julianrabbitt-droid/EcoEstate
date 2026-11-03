@@ -8,7 +8,7 @@
     <link rel="manifest" href="/manifest.json" />
     <title>EcoEstate: turn your lawn into a native garden</title>
     <meta name="description" content="See your lawn outlined from satellite imagery, design a native garden for it, and find out what it could save in water and money, with your local rebates." />
-    <meta name="theme-color" content="#193329" />
+    <meta name="theme-color" content="#f3f1ec" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="EcoEstate" />
     <meta property="og:title" content="EcoEstate: turn your lawn into a native garden" />
@@ -16,6 +16,11 @@
     <meta property="og:image" content="https://ecoestate.org/logo.png" />
     <meta name="twitter:card" content="summary" />
     <link rel="canonical" href="https://ecoestate.org/" />
+    <!-- Early connections to the map tiles, address search and elevation services the scan uses. -->
+    <link rel="preconnect" href="https://server.arcgisonline.com" crossorigin />
+    <link rel="preconnect" href="https://photon.komoot.io" crossorigin />
+    <link rel="dns-prefetch" href="https://elevation.nationalmap.gov" />
+    <link rel="dns-prefetch" href="https://epqs.nationalmap.gov" />
   </head>
   <body>
     <div id="root"></div>

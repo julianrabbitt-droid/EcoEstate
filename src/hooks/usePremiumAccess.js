@@ -12,6 +12,20 @@ const LIVE_SITE = (() => {
 })();
 const purchaseCounts = (p) => p?.livemode !== false || !LIVE_SITE;
 
+// Several parts of a page ask at once (the header, the 3D view, the page):
+// one request per user every half minute serves them all.
+const PURCHASES_TTL_MS = 30_000;
+let purchases = { userId: null, at: 0, promise: null };
+function paidPurchases(userId, fresh = false) {
+  if (fresh || purchases.userId !== userId || Date.now() - purchases.at > PURCHASES_TTL_MS || !purchases.promise) {
+    const promise = base44.entities.Base44Purchase.filter({ appUserId: userId, status: 'paid' }, { limit: 50 })
+      .then(({ items }) => (Array.isArray(items) ? items : []));
+    promise.catch(() => { if (purchases.promise === promise) purchases = { userId: null, at: 0, promise: null }; });
+    purchases = { userId, at: Date.now(), promise };
+  }
+  return purchases.promise;
+}
+
 // Resolves the signed-in user's EcoEstate entitlements from their paid
 // Base44Purchase records (admin-only writes — the server-verified record is the
 // unlock, never a client flag):
@@ -27,7 +41,7 @@ export function usePremiumAccess() {
   const [state, setState] = useState({ premium: false, threeD: false, member: false, unlimited: false });
   const [loading, setLoading] = useState(true);
 
-  const check = useCallback(async () => {
+  const check = useCallback(async (fresh = false) => {
     if (!isAuthenticated || !user?.id) {
       setState({ premium: false, threeD: false, member: false, unlimited: false });
       setLoading(false);
@@ -37,11 +51,7 @@ export function usePremiumAccess() {
       let premiumRec = null;
       let threeDRec = null;
       if (user.role !== 'admin') {
-        const { items } = await base44.entities.Base44Purchase.filter(
-          { appUserId: user.id, status: 'paid' },
-          { limit: 50 },
-        );
-        const list = (Array.isArray(items) ? items : []).filter(purchaseCounts);
+        const list = (await paidPurchases(user.id, fresh)).filter(purchaseCounts);
         premiumRec = list.find((p) => p.productId === 'premium');
         threeDRec = list.find((p) => p.productId === '3d_view');
       }
@@ -71,7 +81,7 @@ export function usePremiumAccess() {
         timer = setInterval(async () => {
           if (cancelled) return;
           attempts++;
-          const s2 = await check();
+          const s2 = await check(true); // waiting for a purchase: always ask afresh
           if (s2?.premium || attempts >= 24) {
             clearInterval(timer);
             if (!s2?.premium) sessionStorage.removeItem(PENDING_FLAG);

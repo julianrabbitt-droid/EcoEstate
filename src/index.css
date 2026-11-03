@@ -187,3 +187,55 @@
 .leaflet-control-attribution a {
   color: rgba(20, 22, 19, 0.85) !important;
 }
+
+/* Motion: pages fade and rise in; a step's panels drift in; the scan's radar
+   sweeps; pollen drifts over the hero. All of it stills for people who ask
+   their system for less motion. */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes panels-enter {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes radar-sweep {
+  to { transform: rotate(360deg); }
+}
+@keyframes pollen-drift {
+  0% { transform: translate3d(0, 0, 0); opacity: 0; }
+  12% { opacity: 0.9; }
+  88% { opacity: 0.9; }
+  100% { transform: translate3d(var(--dx, 40px), -160px, 0); opacity: 0; }
+}
+.page-enter {
+  animation: page-enter 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.panels-enter {
+  animation: panels-enter 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.radar-sweep {
+  background: conic-gradient(from 0deg, rgba(255, 255, 255, 0) 0deg, rgba(255, 255, 255, 0) 280deg, rgba(255, 255, 255, 0.55) 360deg);
+  animation: radar-sweep 2.4s linear infinite;
+  -webkit-mask-image: radial-gradient(circle, #000 69%, transparent 70%);
+  mask-image: radial-gradient(circle, #000 69%, transparent 70%);
+}
+.pollen {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(255, 247, 214, 0.95) 0%, rgba(255, 247, 214, 0) 70%);
+  animation: pollen-drift var(--t, 14s) ease-in-out var(--d, 0s) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .panels-enter,
+  .radar-sweep,
+  .pollen {
+    animation: none;
+  }
+  .pollen {
+    display: none;
+  }
+}

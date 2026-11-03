@@ -12,7 +12,7 @@ import LawnApiResult from '@/components/scan/LawnApiResult';
 import LawnImpact from '@/components/scan/LawnImpact';
 import AutoScanNotice from '@/components/scan/AutoScanNotice';
 import { geocodeAddress, geoJsonOuterRings, outlinesToFeatureCollection, zoomForLotSize } from '@/lib/geo';
-import { carryBuildingHeights } from '@/lib/gardenLayout';
+import { carryBuildingHeights, carryBuildingRoofs } from '@/lib/gardenLayout';
 import AddressAutocomplete from '@/components/scan/AddressAutocomplete';
 import { createProject } from '@/lib/projectStore';
 import { autoDesign, financials, money } from '@/lib/landscapeMath';
@@ -101,27 +101,35 @@ function scannedStructures(d) {
     buildingRoofs.push({
       color: p.roofColor || null,
       shape: p.roofShape || null,
-      // What mappers recorded (OpenStreetMap via Overture), and chimneys found in lidar.
-      use: p.use || null,
+      // What mappers recorded (OpenStreetMap via Overture).
       mappedShape: p.mappedRoofShape || null,
       material: p.roofMaterial || null,
       facadeMaterial: p.facadeMaterial || null,
       facadeColor: p.facadeColor || null,
-      chimneys: (p.chimneys || []).map((c) => ({ latLng: [c.lat, c.lon], topFt: c.topFt })),
+      // The roof as lidar surveyed it, when it did (see the lawn API's roofHeightMap).
+      grid: p.roofGrid || null,
     });
   }
   const trees = (d?.trees || []).map((t) => ({ latLng: [t.lat, t.lon], radiusFt: t.radiusFt, heightFt: t.heightFt }));
   const paths = [...(d?.paths?.features || []), ...(d?.nearbyRoads?.features || []), ...(d?.paved?.features || [])]
     .map((f) => ({ polygonLatLng: geoJsonOuterRings(f.geometry)[0], kind: f.properties?.kind, name: f.properties?.name || null }))
     .filter((p) => p.polygonLatLng);
-  // Fences on the lot lines (from lidar), as [lat, lng] lines.
-  const fences = (d?.fences?.features || []).map((f) => f.geometry.coordinates.map(([lon, lat]) => [lat, lon]));
-  // Swimming pools, as [lat, lng] outlines.
-  const pools = (d?.pools?.features || []).map((f) => geoJsonOuterRings(f.geometry)[0]).filter((ring) => ring && ring.length >= 3);
   // The yard from above (public-domain NAIP), for the model's ground.
   const groundImage = d?.groundImage ? { url: `data:image/png;base64,${d.groundImage.png}`, west: d.groundImage.west, south: d.groundImage.south, east: d.groundImage.east, north: d.groundImage.north } : null;
-  return { buildings, buildingHeightsFt, buildingRoofs, trees, paths, fences, pools, groundImage };
+  return { buildings, buildingHeightsFt, buildingRoofs, trees, paths, groundImage };
 }
+
+// Pollen motes over the hero: [left %, top %, seconds to drift, delay, sideways px].
+const POLLEN = [[8, 72, 15, 0, 30], [17, 58, 18, 3, -20], [26, 84, 13, 6, 45], [34, 66, 17, 1.5, 25], [43, 78, 16, 8, -35], [52, 62, 19, 4, 40], [61, 86, 14, 2, -25], [69, 70, 17, 9, 30], [77, 60, 15, 5, -40], [85, 80, 18, 0.5, 20], [92, 68, 16, 7, -30], [22, 92, 20, 10, 35], [58, 94, 17, 12, -20], [88, 92, 19, 11, 25]];
+
+// The scan's stages, in the order it does them (shown while it runs).
+const SCAN_STAGES = [
+  'Reading the property line from the county map…',
+  'Looking at the aerial survey for green lawn…',
+  'Measuring roofs and trees with lidar…',
+  'Finding the street, the driveway and the paths…',
+  'Shaping the ground and building your property in 3D…',
+];
 
 const STEPS = [
   { t: 'Scan your lawn', d: 'Enter an address and we outline the lawn from aerial imagery. Adjust it if anything’s off.' },
@@ -163,8 +171,23 @@ export default function Scan() {
   const lastScan = useRef(saved.lastScan || null); // { address, hit } of the scan last started
   const [stageEl, setStageEl] = useState(null); // where the 3D model is drawn, full screen
   const [modelShown, setModelShown] = useState(false);
+  // What the scan is doing, told in turn while it runs.
+  const [scanStage, setScanStage] = useState(0);
+  useEffect(() => {
+    if (phase !== 'scanning') return undefined;
+    setScanStage(0);
+    const timer = setInterval(() => setScanStage((n) => Math.min(n + 1, SCAN_STAGES.length - 1)), 2600);
+    return () => clearInterval(timer);
+  }, [phase]);
   // The scan check's panel folds away to a pill, to see the whole property.
   const [checkOpen, setCheckOpen] = useState(true);
+  // The 3D view's code downloads while the person is still typing, so the
+  // model can appear the moment the scan is done.
+  useEffect(() => {
+    const warm = () => { import('@/components/Garden3DView').catch(() => {}); };
+    const id = window.requestIdleCallback ? window.requestIdleCallback(warm, { timeout: 4000 }) : setTimeout(warm, 2500);
+    return () => (window.cancelIdleCallback ? window.cancelIdleCallback(id) : clearTimeout(id));
+  }, []);
   const [pin, setPin] = useState(null); // the pin being checked on the aerial view
   // Scrolling down fades the aerial into the page's green.
   const [scrollY, setScrollY] = useState(0);
@@ -480,6 +503,11 @@ export default function Scan() {
         editSeed?.buildings,
         editSeed?.buildingHeightsFt,
       ),
+      buildingRoofs: carryBuildingRoofs(
+        result.buildings?.length ? result.buildings : (editSeed?.buildings || []),
+        editSeed?.buildings,
+        editSeed?.buildingRoofs,
+      ),
       building: editSeed?.building || null,
       trees: result.trees?.length ? result.trees : (editSeed?.trees || []),
       paths: editSeed?.paths || [],
@@ -617,6 +645,14 @@ export default function Scan() {
         )}
 
         {phase === 'idle' && (
+          // Pollen drifting up over the neighbourhood.
+          <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+            {POLLEN.map(([left, top, t, d, dx], i) => (
+              <span key={i} className="pollen" style={{ left: `${left}%`, top: `${top}%`, '--t': `${t}s`, '--d': `${d}s`, '--dx': `${dx}px` }} />
+            ))}
+          </div>
+        )}
+        {phase === 'idle' && (
           <div className="pointer-events-auto mx-auto flex min-h-[calc(100svh-var(--header-h,4rem))] w-full max-w-3xl flex-col items-center justify-center px-5 pb-20 pt-10 text-center text-white duration-500 animate-in fade-in">
             <h1 className="font-display text-[3rem] leading-[0.95] tracking-[-0.045em] drop-shadow sm:text-[5.4rem]">
               Your lawn could be <em>doing more.</em>
@@ -685,14 +721,17 @@ export default function Scan() {
 
         {phase === 'scanning' && (
           <div className="flex min-h-[calc(100svh-var(--header-h,4rem))] flex-col items-center justify-center px-5 text-center text-white duration-700 animate-in fade-in zoom-in-95">
-            <div className="relative h-40 w-40" aria-hidden>
-              <span className="absolute inset-0 animate-ping rounded-full border-2 border-white/60" />
-              <span className="absolute inset-6 rounded-full border border-white/40" />
-              <span className="absolute inset-[4.5rem] rounded-full bg-primary shadow-[0_0_24px_hsl(var(--primary)/0.45)]" />
+            {/* A radar sweep over the property while the scan runs. */}
+            <div className="relative h-48 w-48" aria-hidden>
+              <span className="absolute inset-0 rounded-full border border-white/50" />
+              <span className="absolute inset-8 rounded-full border border-white/30" />
+              <span className="absolute inset-16 rounded-full border border-white/25" />
+              <span className="radar-sweep absolute inset-0 rounded-full" />
+              <span className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,0.9)]" />
             </div>
-            <p className="mt-6 font-display text-2xl tracking-tight drop-shadow">Scanning the property…</p>
-            <p className="mt-2 max-w-sm text-[13px] leading-relaxed text-white/85 drop-shadow">
-              Finding the lawn from the aerial survey and lidar, then building your property in 3D.
+            <p className="mt-7 font-display text-[2rem] tracking-tight drop-shadow">Scanning the property</p>
+            <p key={scanStage} className="mt-2 max-w-sm text-[13.5px] leading-relaxed text-white/90 drop-shadow duration-500 animate-in fade-in slide-in-from-bottom-1">
+              {SCAN_STAGES[scanStage]}
             </p>
           </div>
         )}

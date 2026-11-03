@@ -3,7 +3,7 @@ import { Check, Flag, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { base44 } from '@/api/base44Client';
 
-const PROBLEMS = ['Lawn outline', 'House shape', 'Roof', 'Driveway or paving', 'Trees', 'Fences', 'Ground or slope', 'Floating or misplaced', 'Real 3D view', 'Something else'];
+const PROBLEMS = ['Lawn outline', 'House shape', 'Roof', 'Driveway or paving', 'Trees', 'Ground or slope', 'Floating or misplaced', 'Real 3D view', 'Something else'];
 
 // "This scan looks wrong": what's off, in which view, sent with the scan's own
 // details (address, outlines, roof, view) so the scanner can be improved.

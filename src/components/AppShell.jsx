@@ -119,7 +119,11 @@ export default function AppShell() {
           }
         >
           <ErrorBoundary resetKey={pathname}>
-            <Outlet />
+            {/* Each page fades and rises in. A project's steps share one key, so
+                its 3D view stays put and only their panels change. */}
+            <div key={pathname.startsWith('/project/') ? pathname.split('/').slice(0, 3).join('/') : pathname} className="page-enter">
+              <Outlet />
+            </div>
           </ErrorBoundary>
         </Suspense>
       </main>

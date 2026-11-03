@@ -45,7 +45,7 @@ export default function Beta() {
       </h1>
       <p className="mt-4 text-[15px] leading-relaxed text-muted-foreground">
         EcoEstate is still being built. With this link you get every feature free: scan your lawn, see a native garden
-        designed for it in 3D (with Real 3D of your street), and the water and money it would save. In return, tell us
+        designed for it in 3D (with Real 3D of your house), and the water and money it would save. In return, tell us
         what works and what doesn’t with the Feedback button at the bottom of every page.
       </p>
 

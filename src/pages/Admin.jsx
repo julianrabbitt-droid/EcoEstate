@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { base44 } from '@/api/base44Client';
 import { ExternalLink, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
@@ -78,6 +79,69 @@ function Cell({ href, children }) {
       {children}
       <ExternalLink className="h-3 w-3 text-muted-foreground" aria-hidden />
     </a>
+  );
+}
+
+// Feedback and scan reports from the site (the Feedback button and "Report
+// this scan"), newest first. A scan report carries what was on screen; Copy
+// gives its full details to paste into a scanner fix.
+function FeedbackInbox() {
+  const [items, setItems] = useState(null);
+  const [kind, setKind] = useState('all');
+  const [copied, setCopied] = useState('');
+  useEffect(() => {
+    base44.entities.Feedback.filter({}, { sort: '-created_date', limit: 100 }).then(setItems).catch(() => setItems([]));
+  }, []);
+  const shown = (items || []).filter((f) => kind === 'all' || (f.kind || 'general') === kind);
+  const copy = async (f) => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify({ message: f.message, page: f.page, kind: f.kind, context: f.context, at: f.created_date }, null, 2));
+      setCopied(f.id);
+      setTimeout(() => setCopied(''), 2000);
+    } catch {
+      setCopied('');
+    }
+  };
+  return (
+    <section className="mt-12">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="label-xs">Inbox</p>
+          <h2 className="mt-1 font-display text-2xl tracking-tight">Feedback and scan reports</h2>
+        </div>
+        <div role="group" aria-label="Show" className="flex rounded-full border border-border p-0.5 text-[12px]">
+          {[['all', 'All'], ['scan', 'Scan reports'], ['general', 'Feedback']].map(([k, l]) => (
+            <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)} className={`rounded-full px-3 py-1 ${kind === k ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>{l}</button>
+          ))}
+        </div>
+      </div>
+      {items === null ? (
+        <Loader2 className="mt-6 h-5 w-5 animate-spin text-muted-foreground" />
+      ) : shown.length ? (
+        <ul className="mt-4 space-y-3">
+          {shown.map((f) => {
+            const c = f.context || {};
+            return (
+              <li key={f.id} className="surface p-4 text-[13px]">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] ${f.kind === 'scan' ? 'bg-accent/15 text-accent' : 'bg-secondary text-muted-foreground'}`}>{f.kind === 'scan' ? 'Scan report' : 'Feedback'}{f.beta ? ' · tester' : ''}</span>
+                  <span className="text-[11.5px] text-muted-foreground">{new Date(f.created_date).toLocaleString()}</span>
+                </div>
+                <p className="mt-2 whitespace-pre-line">{f.message}</p>
+                <p className="mt-1.5 text-[11.5px] text-muted-foreground">
+                  {[c.address, c.view && `view: ${c.view}`, c.screen && `on: ${c.screen}`, f.page, f.email].filter(Boolean).join(' · ')}
+                </p>
+                <button type="button" onClick={() => copy(f)} className="mt-2 text-[12px] text-muted-foreground underline underline-offset-4 hover:text-foreground">
+                  {copied === f.id ? 'Copied' : 'Copy the details'}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="mt-4 text-[13px] text-muted-foreground">Nothing here yet.</p>
+      )}
+    </section>
   );
 }
 
@@ -322,6 +386,7 @@ export default function Admin() {
           </section>
         </>
       )}
+      {user?.role === 'admin' && <FeedbackInbox />}
     </div>
   );
 }

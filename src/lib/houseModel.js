@@ -1,12 +1,15 @@
 import * as THREE from 'three';
 import { photo } from '@/lib/photoTextures';
 
-// Conventional low-poly buildings from scanned footprints. Scanned outlines are
-// noisy (jagged edges, slivers, odd angles), so each one is squared up to its
-// main direction and rebuilt from rectangles that follow its wings and bays, each with walls,
-// a hip, gable or flat roof with eaves, windows on every floor and, on the main
-// block, a front door facing the street. Plan coordinates are feet with x east
-// and y north; the returned group uses the 3D view's frame (z = -north).
+// Plain buildings from scanned footprints: walls and a roof, nothing else.
+// The outline (noisy: jagged edges, slivers, odd angles) is squared up to its
+// main direction and rebuilt from rectangles that follow its wings and bays,
+// each with walls and a simple hip, gable or flat roof. Where lidar surveyed
+// the roof (roof.grid), each wing takes its measured wall height, pitch and
+// ridge direction from it; a large building of unusual shape (a stadium, an
+// arched hangar, a sawtooth factory) follows its footprint exactly under the
+// measured roof itself. Plan coordinates are feet with x east and y north; the
+// returned group uses the 3D view's frame (z = -north).
 
 const MAX_BLOCKS = 10;
 const BLOCK_MIN_SQFT = 30; // smaller leftovers (scan slivers) are dropped…
@@ -306,64 +309,15 @@ function roofFaces(type, w, d, eave, rise) {
   };
 }
 
-const WINDOW_GEO = new THREE.PlaneGeometry(3, 4);
-const DOOR_GEO = new THREE.PlaneGeometry(3.4, 7);
-// Windows and doors stand slightly proud of the wall and are drawn with a depth
-// bias, so they never fight the wall for the same pixels (shimmer) as the camera moves.
-const proud = (units) => ({ polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: units });
-const GLASS = new THREE.MeshStandardMaterial({ color: 0x2f3b45, roughness: 0.25, metalness: 0.3, ...proud(-4) });
-const FRAME = new THREE.MeshStandardMaterial({ color: 0xf4f1ea, roughness: 0.8, ...proud(-2) });
-const DOOR = new THREE.MeshStandardMaterial({ color: 0x5a3f2c, roughness: 0.7, ...proud(-2) });
-const FRAME_GEO = new THREE.PlaneGeometry(3.6, 4.6);
-const MULLION_V = new THREE.PlaneGeometry(0.16, 4);
-const MULLION_H = new THREE.PlaneGeometry(3, 0.16);
-const BOX = new THREE.BoxGeometry(1, 1, 1);
-const TRIM = new THREE.MeshStandardMaterial({ color: 0xf3f0e8, roughness: 0.75 });
-const GARAGE = new THREE.MeshStandardMaterial({ color: 0xe9e6de, roughness: 0.8, ...proud(-2) });
-const GARAGE_SEAM = new THREE.MeshStandardMaterial({ color: 0xc9c4b8, roughness: 0.8, ...proud(-3) });
-const GARAGE_H = 7.5;
-const FOUNDATION = new THREE.MeshStandardMaterial({ color: 0x8f8b84, roughness: 1 });
-const MULLION = new THREE.MeshStandardMaterial({ color: 0xf4f1ea, roughness: 0.8, ...proud(-6) });
-// Modern houses (flat roofs): wide ribbon windows in thin dark frames, no
-// divided lights or sills.
-const MODERN_FRAME = new THREE.MeshStandardMaterial({ color: 0x2b2d2a, roughness: 0.6, metalness: 0.3, ...proud(-2) });
-const MODERN_WIDTH = 2.2; // times a standard window
-const CHIMNEY = new THREE.MeshStandardMaterial({ color: 0x8a4e3c, roughness: 0.95 });
-const CHIMNEY_CAP = new THREE.MeshStandardMaterial({ color: 0x5f5a54, roughness: 0.8 });
-/** Shared geometries and materials, so the 3D view's disposal can skip them. */
-export const HOUSE_SHARED = [WINDOW_GEO, DOOR_GEO, GLASS, FRAME, DOOR, FRAME_GEO, MULLION_V, MULLION_H, BOX, TRIM, FOUNDATION, MULLION];
+const SURVEYED_MIN_SQFT = 8000; // larger buildings with a surveyed roof are drawn as surveyed
+const MAX_PITCH = 14 / 12;
 
-/**
- * A conventional building for a footprint.
- * @param {number[][]} points plan feet, x east / y north
- * @param {number|null} heightFt measured overall height, or null to estimate
- * @param {object} opts { wallColor, roofType, front: [x, y] plan point the front door should face }
- */
-// groundAt(x, y): ground height (ft) at plan (x, y). With it, each block of
-// the house stands on the lowest ground under its own corners, so on a hillside
-// the house steps down the slope (like a split-level) instead of one floor
-// level burying the uphill side; the group's y is then 0. The measured height
-// is the roof above the ground beside it, so the roof sits that high over the
-// block's average ground: the downhill walls run down past it (the extra
-// storey of a walkout), and windows and doors start from the ground where
-// they are, never underground.
-// roof: { color: '#rrggbb', shape: 'flat' | 'pitched' } measured by the scan.
-// garageAt: [x, y] plan point where the driveway meets the house: a garage
-// door goes on the nearest wall.
-// roof also carries what the scan knows beyond the photo: use ('garage': a
-// detached garage, all door and no windows), mappedShape (OpenStreetMap's
-// roof:shape), material (roof:material), facadeMaterial and facadeColor
-// (building:material and colour), and chimneys [{ x, y, topFt }] found in lidar
-// (plan feet; their tops in feet above the ground under the house).
-export function buildHouse(points, heightFt, { wallColor, roofType, front, groundAt = null, roof = null, garageAt = null } = {}) {
-  const group = new THREE.Group();
-  const total = area(points);
-  const blocks = blocksFor(points);
-  const big = total > 8000; // shops, schools, apartment blocks: flat roofs read as conventional
-  const isGarage = roof?.use === 'garage';
-  // A shape someone mapped beats one read from the canopy model.
-  const mapped = { gabled: 'gable', hipped: 'hip', pyramidal: 'hip', half_hipped: 'hip', gambrel: 'gable', mansard: 'hip', flat: 'flat', skillion: 'flat', saltbox: 'gable' }[String(roof?.mappedShape || '').toLowerCase()];
-  const type = big ? 'flat' : mapped || (roofType === 'flat' || roof?.shape === 'flat' ? 'flat' : roofType === 'gable' ? 'gable' : 'hip');
+// Wall and roof materials: the wall colour (or the mapped facade colour) with
+// a photographed relief (CC0, Poly Haven) for its look, plaster for stucco,
+// painted boards for siding, real brick for brick; the roof in its colour from
+// the aerial photo, clay tile on stucco houses as on most California
+// Mediterranean homes, or where mappers recorded tile.
+function houseMaterials(type, wallColor, roof) {
   const facade = (() => {
     try {
       return roof?.facadeColor ? new THREE.Color(roof.facadeColor).getHex() : null;
@@ -384,9 +338,6 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
   const roofMat = new THREE.MeshStandardMaterial({ map: roofTex, roughness: 0.95, side: THREE.DoubleSide });
   const wallTile = wallTex.userData.sizeFt;
   const roofTile = roofTex.userData.sizeFt;
-  // Photographed surface relief (CC0, Poly Haven) over the wall colour: plaster
-  // for stucco, painted boards for siding, real brick for brick; clay tile roofs
-  // on stucco houses, as on most California Mediterranean homes.
   const material = String(roof?.facadeMaterial || '').toLowerCase();
   const look = material === 'brick' || wallColor === 'brick' || wallColor === 'red'
     ? 'brick'
@@ -401,36 +352,266 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
     roofMat.map = photo('clay_roof_tiles_02', 'diffuse', roofTile);
     roofMat.normalMap = photo('clay_roof_tiles_02', 'nor_gl', roofTile);
   }
+  return { wallMat, roofMat, wallTile, roofTile };
+}
 
-  // One eave height for the whole building so the blocks join cleanly.
+// The part of a polygon inside an axis-aligned rectangle (Sutherland–Hodgman:
+// the rectangle is convex, so clipping by its four sides in turn is exact).
+function clipToRect(pts, x0, x1, y0, y1) {
+  let out = pts;
+  const edges = [
+    [(p) => p[0] >= x0, (a, b) => (x0 - a[0]) / (b[0] - a[0])],
+    [(p) => p[0] <= x1, (a, b) => (x1 - a[0]) / (b[0] - a[0])],
+    [(p) => p[1] >= y0, (a, b) => (y0 - a[1]) / (b[1] - a[1])],
+    [(p) => p[1] <= y1, (a, b) => (y1 - a[1]) / (b[1] - a[1])],
+  ];
+  for (const [inside, cut] of edges) {
+    const src = out;
+    out = [];
+    for (let i = 0; i < src.length; i++) {
+      const a = src[i];
+      const b = src[(i + 1) % src.length];
+      const ia = inside(a);
+      const ib = inside(b);
+      if (ia) out.push(a);
+      if (ia !== ib) {
+        const t = cut(a, b);
+        out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+      }
+    }
+    if (out.length < 3) return [];
+  }
+  return out;
+}
+
+// A surface from triangles of [x, height, north] points, textured from above
+// (feet / tile size) so the roof's pattern runs on unbroken across its facets.
+function topSurface(tris, material, tileFt) {
+  const pos = [];
+  const uv = [];
+  for (const t of tris) {
+    for (const [x, y, n] of t) {
+      pos.push(x, y, -n);
+      uv.push(x / tileFt, n / tileFt);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, material);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  return m;
+}
+
+// Height (ft, above the average ground under the building) at a plan point,
+// bilinear between the survey's cell centres.
+function gridSampler({ x0, y0, dx, dy, cols, rows, h }) {
+  const cell = (i, j) => h[Math.max(0, Math.min(rows - 1, j)) * cols + Math.max(0, Math.min(cols - 1, i))];
+  return (x, y) => {
+    const u = Math.max(0, Math.min(cols - 1, (x - x0) / dx - 0.5));
+    const v = Math.max(0, Math.min(rows - 1, (y - y0) / dy - 0.5));
+    const i = Math.min(cols - 2, Math.floor(u));
+    const j = Math.min(rows - 2, Math.floor(v));
+    const fu = u - i;
+    const fv = v - j;
+    return cell(i, j) * (1 - fu) * (1 - fv) + cell(i + 1, j) * fu * (1 - fv) + cell(i, j + 1) * (1 - fu) * fv + cell(i + 1, j + 1) * fu * fv;
+  };
+}
+
+const pct = (arr, p) => {
+  const s = [...arr].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.max(0, Math.floor(p * (s.length - 1))))];
+};
+
+// What the survey says about one block: its walls' height and its roof's rise
+// above them (ft, above the average ground under the building), and whether
+// the roof is flat, a gable (ridge high to both ends) or a hip (ridge stopping
+// short). swap: the ridge runs across the block, not along it. Null where the
+// survey saw nothing roof-high there.
+function surveyBlock(b, heightAt) {
+  const c = Math.cos(b.angle);
+  const sn = Math.sin(b.angle);
+  const at = (u, v) => heightAt(b.cx + u * c - v * sn, b.cy + u * sn + v * c);
+  const step = Math.max(1, Math.min(b.w, b.d) / 10);
+  const all = [];
+  const edge = [];
+  for (let u = -b.w / 2 + step / 2; u < b.w / 2; u += step) {
+    for (let v = -b.d / 2 + step / 2; v < b.d / 2; v += step) {
+      const h = at(u, v);
+      all.push(h);
+      if (Math.abs(u) > b.w / 2 - 2.5 || Math.abs(v) > b.d / 2 - 2.5) edge.push(h);
+    }
+  }
+  if (all.length < 6) return null;
+  const top = pct(all, 0.95);
+  const eave = pct(edge.length ? edge : all, 0.2);
+  if (top < 6) return null;
+  if (top - eave < 2) return { type: 'flat', eave: pct(all, 0.6), rise: 0 };
+  // The ridge line's height along the block, and across it.
+  const line = (f, len) => {
+    const vals = [];
+    for (let t = -len / 2 + 1; t <= len / 2 - 1; t += step) vals.push(f(t));
+    return vals.length ? vals.reduce((a, x) => a + x, 0) / vals.length : 0;
+  };
+  const along = line((t) => at(t, 0), b.w);
+  const across = line((t) => at(0, t), b.d);
+  const swap = across > along + 1;
+  const len = swap ? b.d : b.w;
+  const ends = swap ? (at(0, len / 2 - 1.5) + at(0, -len / 2 + 1.5)) / 2 : (at(len / 2 - 1.5, 0) + at(-len / 2 + 1.5, 0)) / 2;
+  return { type: ends - eave > 0.6 * (top - eave) ? 'gable' : 'hip', eave, rise: top - eave, swap };
+}
+
+// Does the surveyed height map reach over the whole footprint? (An outline
+// the user redrew may not; the squared-up model stands in then.)
+function gridCovers(grid, points) {
+  if (!grid || !(grid.cols >= 2) || !(grid.rows >= 2) || !Array.isArray(grid.h) || grid.h.length !== grid.cols * grid.rows) return false;
+  const { x0, y0, dx, dy, cols, rows } = grid;
+  return points.every(([x, y]) => x >= x0 - dx && x <= x0 + (cols + 1) * dx && y >= y0 - dy && y <= y0 + (rows + 1) * dy);
+}
+
+/**
+ * The building as lidar surveyed it: walls straight up the footprint's own
+ * edges, under a roof that is the measured height map, cut to the footprint.
+ * grid: { x0, y0, dx, dy (plan feet), cols, rows, h (feet above the average
+ * ground under the building, row 0 south) }. Ground-level stretches inside
+ * the outline (a courtyard, a stadium's field) stay open; steep facets (the
+ * step between a garage and a two-storey wing) take the wall material.
+ */
+function surveyedHouse(points, grid, groundAt, wallColor, roof) {
+  const { x0, y0, dx, dy, cols, rows } = grid;
+  const heightAt = gridSampler(grid);
+  // The roof is measured above the average ground under the building, which
+  // is where the 3D view levels its pad.
+  const samples = [...points, [points.reduce((s, p) => s + p[0], 0) / points.length, points.reduce((s, p) => s + p[1], 0) / points.length]];
+  const base = groundAt ? samples.reduce((s, [x, y]) => s + groundAt(x, y), 0) / samples.length : 0;
+  const ground = (x, y) => (groundAt ? Math.min(groundAt(x, y), base) : base) - 0.3;
+  const roofY = (x, y) => base + Math.max(0, heightAt(x, y));
+  const OPEN_FT = 3; // lower than this inside the outline is ground, left open
+
+  const xs = points.map((p) => p[0]);
+  const ys = points.map((p) => p[1]);
+  const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const roofTris = [];
+  const stepTris = [];
+  let flat = 0;
+  let pitched = 0;
+  const v = new THREE.Vector3();
+  const w = new THREE.Vector3();
+  for (let j = Math.max(0, Math.floor((minY - y0) / dy)); j <= Math.min(rows - 1, Math.floor((maxY - y0) / dy)); j++) {
+    for (let i = Math.max(0, Math.floor((minX - x0) / dx)); i <= Math.min(cols - 1, Math.floor((maxX - x0) / dx)); i++) {
+      const X0 = x0 + i * dx;
+      const Y0 = y0 + j * dy;
+      const piece = clipToRect(points, X0, X0 + dx, Y0, Y0 + dy);
+      if (piece.length < 3 || area(piece) < 1e-4) continue;
+      const tris = THREE.ShapeUtils.triangulateShape(piece.map(([x, y]) => new THREE.Vector2(x, y)), []);
+      for (const t of tris) {
+        const tri = t.map((k) => [piece[k][0], roofY(piece[k][0], piece[k][1]), piece[k][1]]);
+        if (tri.every((p) => p[1] - base < OPEN_FT)) continue;
+        v.set(tri[1][0] - tri[0][0], tri[1][1] - tri[0][1], tri[0][2] - tri[1][2]);
+        w.set(tri[2][0] - tri[0][0], tri[2][1] - tri[0][1], tri[0][2] - tri[2][2]);
+        const nrm = v.cross(w).normalize();
+        const a = area([[tri[0][0], tri[0][2]], [tri[1][0], tri[1][2]], [tri[2][0], tri[2][2]]]);
+        if (Math.abs(nrm.y) < 0.45) stepTris.push(tri);
+        else {
+          roofTris.push(tri);
+          if (Math.abs(nrm.y) > 0.985) flat += a;
+          else pitched += a;
+        }
+      }
+    }
+  }
+  if (!roofTris.length) return null;
+  const { wallMat, roofMat, wallTile, roofTile } = houseMaterials(flat > pitched * 1.5 ? 'flat' : 'hip', wallColor, roof);
+
+  // Walls along each edge, split where the edge crosses the grid so their
+  // tops meet the roof's edge exactly.
+  const walls = [];
+  for (let k = 0; k < points.length; k++) {
+    const p = points[k];
+    const q = points[(k + 1) % points.length];
+    const ts = [0, 1];
+    for (const [a, b, o, d] of [[p[0], q[0], x0, dx], [p[1], q[1], y0, dy]]) {
+      if (Math.abs(b - a) < 1e-9) continue;
+      const lo = Math.ceil((Math.min(a, b) - o) / d);
+      const hi = Math.floor((Math.max(a, b) - o) / d);
+      for (let g = lo; g <= hi; g++) {
+        const t = (o + g * d - a) / (b - a);
+        if (t > 0 && t < 1) ts.push(t);
+      }
+    }
+    ts.sort((a, b) => a - b);
+    for (let m = 0; m + 1 < ts.length; m++) {
+      if (ts[m + 1] - ts[m] < 1e-6) continue;
+      const A = [p[0] + (q[0] - p[0]) * ts[m], p[1] + (q[1] - p[1]) * ts[m]];
+      const B = [p[0] + (q[0] - p[0]) * ts[m + 1], p[1] + (q[1] - p[1]) * ts[m + 1]];
+      const tA = roofY(...A);
+      const tB = roofY(...B);
+      if (tA - base < OPEN_FT && tB - base < OPEN_FT) continue;
+      walls.push([[A[0], ground(...A), A[1]], [B[0], ground(...B), B[1]], [B[0], tB, B[1]], [A[0], tA, A[1]]]);
+    }
+  }
+  const group = new THREE.Group();
+  group.add(topSurface(roofTris, roofMat, roofTile));
+  if (walls.length || stepTris.length) group.add(solid([...walls, ...stepTris], wallMat, wallTile));
+  group.userData.surveyed = true;
+  return group;
+}
+
+/**
+ * A plain building for a footprint: walls and a roof.
+ * @param {number[][]} points plan feet, x east / y north
+ * @param {number|null} heightFt measured overall height, or null to estimate
+ * @param {object} opts { wallColor, roofType, groundAt, roof }
+ */
+// groundAt(x, y): ground height (ft) at plan (x, y). With it, each block of
+// the house stands on the lowest ground under its own corners, so on a hillside
+// the house steps down the slope (like a split-level) instead of one floor
+// level burying the uphill side; the group's y is then 0. The measured height
+// is the roof above the ground beside it, so the roof sits that high over the
+// block's average ground: the downhill walls run down past it (the extra
+// storey of a walkout).
+// roof: { color: '#rrggbb', shape: 'flat' | 'pitched', grid } measured by the
+// scan, plus what mappers recorded: mappedShape (OpenStreetMap's roof:shape),
+// material (roof:material), facadeMaterial and facadeColor.
+export function buildHouse(points, heightFt, { wallColor, roofType, groundAt = null, roof = null } = {}) {
+  const total = area(points);
+  const heightAt = gridCovers(roof?.grid, points) ? gridSampler(roof.grid) : null;
+  if (heightAt && total > SURVEYED_MIN_SQFT) {
+    const surveyed = surveyedHouse(points, roof.grid, groundAt, wallColor, roof);
+    if (surveyed) return surveyed;
+  }
+  const group = new THREE.Group();
+  const big = total > 8000; // shops, schools, apartment blocks: flat roofs read as conventional
+  // Each block as the survey measured it, its ridge turned to run the way the survey found.
+  const blocks = blocksFor(points).map((b) => {
+    const s = heightAt && surveyBlock(b, heightAt);
+    if (!s) return { ...b, survey: null };
+    return s.swap ? { ...b, w: b.d, d: b.w, angle: b.angle + Math.PI / 2, survey: s } : { ...b, survey: s };
+  });
+  // A shape someone mapped beats one read from the canopy model.
+  const mapped = { gabled: 'gable', hipped: 'hip', pyramidal: 'hip', half_hipped: 'hip', gambrel: 'gable', mansard: 'hip', flat: 'flat', skillion: 'flat', saltbox: 'gable' }[String(roof?.mappedShape || '').toLowerCase()];
+  const guessed = big ? 'flat' : mapped || (roofType === 'flat' || roof?.shape === 'flat' ? 'flat' : roofType === 'gable' ? 'gable' : 'hip');
+  // The house's look follows its biggest block.
+  const type = blocks[0].survey?.type || guessed;
+  const { wallMat, roofMat, wallTile, roofTile } = houseMaterials(type, wallColor, roof);
+
+  // One eave height for the blocks the survey didn't measure, so they join cleanly.
   const main = blocks[0];
   const rise = type === 'flat' ? 0 : Math.min(9, (main.d / 2) * PITCH);
-  let eave;
-  if (heightFt > 0) eave = Math.max(MIN_EAVE_FT, heightFt - rise);
-  else eave = Math.max(1, Math.min(4, Math.round(total / 1600))) * STORY_FT - 1;
-  const floors = Math.max(1, Math.min(8, Math.round((eave + 1) / STORY_FT)));
+  let sharedEave;
+  if (heightFt > 0) sharedEave = Math.max(MIN_EAVE_FT, heightFt - rise);
+  else sharedEave = Math.max(1, Math.min(4, Math.round(total / 1600))) * STORY_FT - 1;
+  // Surveyed heights are above the average ground under the building, where
+  // the 3D view levels its pad.
+  const samples = [...points, [points.reduce((a, p) => a + p[0], 0) / points.length, points.reduce((a, p) => a + p[1], 0) / points.length]];
+  const base = groundAt ? samples.reduce((a, [x, y]) => a + groundAt(x, y), 0) / samples.length : 0;
 
-  // Which block side faces the street, for the door.
-  let doorDone = !front;
-  // The block nearest the driveway gets the garage door (within 25 ft of it).
-  let garageBlock = -1;
-  if (garageAt) {
-    let best = 25;
-    blocks.forEach((b, bi) => {
-      const c = Math.cos(-b.angle);
-      const sn = Math.sin(-b.angle);
-      const dx = garageAt[0] - b.cx;
-      const dy = garageAt[1] - b.cy;
-      const d = Math.hypot(Math.max(0, Math.abs(dx * c - dy * sn) - b.w / 2), Math.max(0, Math.abs(dx * sn + dy * c) - b.d / 2));
-      if (d < best) { best = d; garageBlock = bi; }
-    });
-  }
-
-  const sharedEave = eave;
-  // A detached garage: its door faces the driveway, or else the street.
-  if (isGarage && !garageAt && front) garageAt = front;
-  blocks.forEach((b, bi) => {
+  blocks.forEach((b) => {
     const block = new THREE.Group();
+    const s = b.survey;
+    const blockType = s ? s.type : type;
     let blockBase = 0;
     let eave = sharedEave;
     if (groundAt) {
@@ -442,6 +623,7 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
       const mean = grounds.reduce((a, g) => a + g, 0) / grounds.length;
       eave = sharedEave + Math.min(30, mean - blockBase); // the walkout storey, at most a few floors
     }
+    if (s) eave = Math.max(6, base + s.eave - blockBase);
     block.position.set(b.cx, blockBase, -b.cy);
     block.rotation.y = b.angle;
     const hw = b.w / 2;
@@ -452,33 +634,11 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
       [[hw, 0, hd], [-hw, 0, hd], [-hw, eave, hd], [hw, eave, hd]],
       [[-hw, 0, hd], [-hw, 0, -hd], [-hw, eave, -hd], [-hw, eave, hd]],
     ];
-    const blockRise = type === 'flat' ? 0 : Math.min(rise, (b.d / 2) * PITCH);
-    const { roof, gables } = roofFaces(type, b.w, b.d, eave, blockRise);
+    const blockRise = blockType === 'flat' ? 0 : s ? Math.min(s.rise, (b.d / 2) * MAX_PITCH) : Math.min(rise, (b.d / 2) * PITCH);
+    const { roof: faces, gables } = roofFaces(blockType, b.w, b.d, eave, blockRise);
     block.add(solid([...walls, ...gables], wallMat, wallTile));
-    block.add(solid(roof, roofMat, roofTile));
-    // Concrete foundation band, white corner boards and fascia along the eaves.
-    const base = new THREE.Mesh(BOX, FOUNDATION);
-    base.scale.set(b.w + 0.3, 1.2, b.d + 0.3);
-    base.position.y = 0.45;
-    block.add(base);
-    for (const [cxx, czz] of [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]]) {
-      const post = new THREE.Mesh(BOX, TRIM);
-      post.scale.set(0.45, eave, 0.45);
-      post.position.set(cxx, eave / 2, -czz);
-      block.add(post);
-    }
-    if (type !== 'flat') {
-      const W2 = hw + OVERHANG_FT;
-      const D2 = hd + OVERHANG_FT;
-      for (const [len, x, z, ry] of [[2 * W2, 0, D2, 0], [2 * W2, 0, -D2, 0], [2 * D2, W2, 0, Math.PI / 2], [2 * D2, -W2, 0, Math.PI / 2]]) {
-        const fascia = new THREE.Mesh(BOX, TRIM);
-        fascia.scale.set(len, 0.55, 0.15);
-        fascia.position.set(x, eave - 0.2, z);
-        fascia.rotation.y = ry;
-        block.add(fascia);
-      }
-    }
-    if (type === 'flat') {
+    block.add(solid(faces, roofMat, roofTile));
+    if (blockType === 'flat') {
       // A low parapet so flat roofs don't look unfinished.
       const p = 2;
       block.add(solid([
@@ -488,162 +648,8 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
         [[-hw, eave, hd], [-hw, eave, -hd], [-hw, eave + p, -hd], [-hw, eave + p, hd]],
       ], wallMat, wallTile));
     }
-
-    // Windows along each side, one row per floor, skipping spots covered by another block.
-    const local2plan = (lx, ln) => {
-      const c = Math.cos(b.angle);
-      const s = Math.sin(b.angle);
-      return [b.cx + lx * c - ln * s, b.cy + lx * s + ln * c];
-    };
-    const coveredByOther = (lx, ln) => {
-      const [px, py] = local2plan(lx, ln);
-      return blocks.some((o, oi) => {
-        if (oi === bi) return false;
-        const c = Math.cos(-o.angle);
-        const s = Math.sin(-o.angle);
-        const dx = px - o.cx;
-        const dy = py - o.cy;
-        const u = dx * c - dy * s;
-        const v = dx * s + dy * c;
-        return Math.abs(u) < o.w / 2 + 0.5 && Math.abs(v) < o.d / 2 + 0.5;
-      });
-    };
-    // Sides as (start, along, outward normal) in block-local plan coords (x along w, n across).
-    const sides = [
-      { o: [-hw, -hd], t: [1, 0], nrm: [0, -1], len: b.w },
-      { o: [hw, -hd], t: [0, 1], nrm: [1, 0], len: b.d },
-      { o: [hw, hd], t: [-1, 0], nrm: [0, 1], len: b.w },
-      { o: [-hw, hd], t: [0, -1], nrm: [-1, 0], len: b.d },
-    ];
-    // The wall nearest the driveway gets a garage door, centred where the
-    // driveway meets it; no windows or front door in that stretch.
-    let garage = null;
-    if (bi === garageBlock) {
-      sides.forEach((sd, si) => {
-        const p0 = local2plan(sd.o[0], sd.o[1]);
-        const p1 = local2plan(sd.o[0] + sd.t[0] * sd.len, sd.o[1] + sd.t[1] * sd.len);
-        const t = Math.max(0, Math.min(1, ((garageAt[0] - p0[0]) * (p1[0] - p0[0]) + (garageAt[1] - p0[1]) * (p1[1] - p0[1])) / (sd.len * sd.len)));
-        const d = Math.hypot(garageAt[0] - (p0[0] + (p1[0] - p0[0]) * t), garageAt[1] - (p0[1] + (p1[1] - p0[1]) * t));
-        if (sd.len >= 12 && (!garage || d < garage.d)) {
-          const width = Math.min(16, sd.len * 0.7);
-          garage = { si, d, width, along: Math.max(width / 2 + 0.5, Math.min(sd.len - width / 2 - 0.5, t * sd.len)) };
-        }
-      });
-      if (garage) {
-        const sd = sides[garage.si];
-        const yaw = Math.atan2(sd.nrm[0], sd.nrm[1]);
-        const lx = sd.o[0] + sd.t[0] * garage.along + sd.nrm[0] * 0.14;
-        const ln = sd.o[1] + sd.t[1] * garage.along + sd.nrm[1] * 0.14;
-        const gg = groundAt ? Math.max(0, groundAt(...local2plan(lx, ln)) - blockBase) : 0;
-        const door = new THREE.Mesh(BOX, GARAGE);
-        door.scale.set(garage.width, GARAGE_H, 0.2);
-        door.position.set(lx, gg + GARAGE_H / 2 + 0.2, -ln);
-        door.rotation.y = Math.PI - yaw;
-        block.add(door);
-        for (let k = 1; k <= 3; k++) {
-          const seam = new THREE.Mesh(BOX, GARAGE_SEAM);
-          seam.scale.set(garage.width - 0.4, 0.12, 0.24);
-          seam.position.set(lx, gg + 0.2 + (GARAGE_H * k) / 4, -ln);
-          seam.rotation.y = Math.PI - yaw;
-          block.add(seam);
-        }
-      }
-    }
-    const inGarage = (si, along) => garage && si === garage.si && Math.abs(along - garage.along) < garage.width / 2 + 1.5;
-
-    // The side whose outward normal points most toward the street gets the door.
-    let doorSide = -1;
-    if (isGarage) doorDone = true; // a garage's door is the garage door
-    if (!doorDone && bi === 0) {
-      const [fx, fy] = front;
-      let bestDot = -Infinity;
-      sides.forEach((sd, si) => {
-        const [mx, my] = local2plan(sd.o[0] + (sd.t[0] * sd.len) / 2, sd.o[1] + (sd.t[1] * sd.len) / 2);
-        const [nx, ny] = local2plan(sd.o[0] + (sd.t[0] * sd.len) / 2 + sd.nrm[0], sd.o[1] + (sd.t[1] * sd.len) / 2 + sd.nrm[1]);
-        const dot = (nx - mx) * (fx - mx) + (ny - my) * (fy - my);
-        if (dot > bestDot) { bestDot = dot; doorSide = si; }
-      });
-    }
-    // Ground under a spot on this block's walls, above the block's base.
-    const groundHere = (lx, ln) => {
-      if (!groundAt) return 0;
-      const [px, py] = local2plan(lx, ln);
-      return Math.max(0, groundAt(px, py) - blockBase);
-    };
-    const blockFloors = Math.max(1, Math.min(10, Math.round((eave + 1) / STORY_FT)));
-    const modern = type === 'flat' && !big;
-    sides.forEach((sd, si) => {
-      if (isGarage) return; // no windows on a garage
-      const count = Math.floor((sd.len - 4) / (modern ? 13 : 9));
-      if (count < 1) return;
-      const step = sd.len / (count + 1);
-      const yaw = Math.atan2(sd.nrm[0], sd.nrm[1]); // plane faces +z before rotation; local z is -n
-      for (let k = 1; k <= count; k++) {
-        const along = k * step;
-        const lx = sd.o[0] + sd.t[0] * along + sd.nrm[0] * 0.12;
-        const ln = sd.o[1] + sd.t[1] * along + sd.nrm[1] * 0.12;
-        if (coveredByOther(lx + sd.nrm[0], ln + sd.nrm[1])) continue;
-        const isDoor = si === doorSide && k === Math.ceil(count / 2) && !inGarage(si, along);
-        const g = groundHere(lx, ln);
-        for (let f = 0; f < blockFloors; f++) {
-          if (f === 0 && inGarage(si, along)) continue; // the garage door is here
-          if (isDoor && f === 0) {
-            const door = new THREE.Mesh(DOOR_GEO, DOOR);
-            door.position.set(lx, g + 3.5, -ln);
-            door.rotation.y = Math.PI - yaw;
-            block.add(door);
-            doorDone = true;
-            continue;
-          }
-          const y = g + f * STORY_FT + 4.6;
-          if (y + 2.5 > eave) break;
-          const frame = new THREE.Mesh(FRAME_GEO, modern ? MODERN_FRAME : FRAME);
-          frame.position.set(lx, y, -ln);
-          frame.rotation.y = Math.PI - yaw;
-          const glass = new THREE.Mesh(WINDOW_GEO, GLASS);
-          glass.position.set(lx + sd.nrm[0] * 0.08, y, -(ln + sd.nrm[1] * 0.08));
-          glass.rotation.y = Math.PI - yaw;
-          if (modern) {
-            frame.scale.x = MODERN_WIDTH;
-            glass.scale.x = MODERN_WIDTH;
-            block.add(frame, glass);
-            continue;
-          }
-          // Divided-light mullions and a sill, as on a typical double-hung window.
-          const mv = new THREE.Mesh(MULLION_V, MULLION);
-          const mh = new THREE.Mesh(MULLION_H, MULLION);
-          for (const m of [mv, mh]) {
-            m.position.set(lx + sd.nrm[0] * 0.14, y, -(ln + sd.nrm[1] * 0.14));
-            m.rotation.y = Math.PI - yaw;
-          }
-          const sill = new THREE.Mesh(BOX, TRIM);
-          sill.scale.set(Math.abs(sd.t[0]) * 3.9 + Math.abs(sd.t[1]) * 0.35, 0.18, Math.abs(sd.t[1]) * 3.9 + Math.abs(sd.t[0]) * 0.35);
-          sill.position.set(lx + sd.nrm[0] * 0.2, y - 2.35, -(ln + sd.nrm[1] * 0.2));
-          block.add(frame, glass, mv, mh, sill);
-        }
-      }
-    });
     group.add(block);
   });
 
-  // Chimneys found in lidar: brick, from below the eaves up to their measured
-  // top (above the ground under the house), with a cap.
-  for (const c of roof?.chimneys || []) {
-    if (!(c.topFt > 0)) continue;
-    const base = groundAt ? groundAt(c.x, c.y) : 0;
-    // Its measured top, but always clear of the model's roof (chimneys must
-    // stand above the roof around them; the model's ridge can sit higher).
-    const top = base + Math.max(c.topFt, sharedEave + rise + 0.8);
-    const bottom = base + Math.max(2, sharedEave - 2);
-    if (top - bottom < 1) continue;
-    const stack = new THREE.Mesh(BOX, CHIMNEY);
-    stack.scale.set(2.4, top - bottom, 2.4);
-    stack.position.set(c.x, (top + bottom) / 2, -c.y);
-    stack.castShadow = true;
-    const cap = new THREE.Mesh(BOX, CHIMNEY_CAP);
-    cap.scale.set(2.9, 0.35, 2.9);
-    cap.position.set(c.x, top + 0.17, -c.y);
-    group.add(stack, cap);
-  }
   return group;
 }

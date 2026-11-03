@@ -31,7 +31,7 @@ const FEATURES = [
   {
     group: 'Design it',
     rows: [
-      ['Real 3D: your street and neighbours from Google 3D around your model', PAID],
+      ['Real 3D: your real house from Google 3D, with your garden around it', PAID],
       ['Design from a sentence ("drought-tolerant pollinator hedge")', PAID],
       ['Saved properties', { student: 'Latest 10', pro: 'Unlimited', city: 'Unlimited' }],
       ['Export the plan: printable PDF and shopping list', RESIDENTS],

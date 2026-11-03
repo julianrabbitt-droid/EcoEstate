@@ -35,7 +35,8 @@ export function useStage(props, deps) {
 // each panel pointer-events-auto.
 export function StageOverlay({ children }) {
   const ctx = useContext(StageContext);
-  return ctx?.overlay ? createPortal(children, ctx.overlay) : null;
+  // A step's panels drift in as the camera glides to its view.
+  return ctx?.overlay ? createPortal(<div className="panels-enter pointer-events-none absolute inset-0">{children}</div>, ctx.overlay) : null;
 }
 
 // Whether the step's side panel and title card are open. Kept by the stage, so

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Download, FileText, Loader2, Lock, Share2, Table2 } from 'lucide-react';
-import { jsPDF } from 'jspdf';
 import { usePremiumAccess } from '@/hooks/usePremiumAccess';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -63,7 +62,9 @@ export default function ProjectExports({ projectId, project, design }) {
     URL.revokeObjectURL(url);
   };
 
-  const downloadPdf = () => {
+  // The PDF library is only downloaded when someone asks for a PDF.
+  const downloadPdf = async () => {
+    const { jsPDF } = await import('jspdf');
     const doc = new jsPDF({ unit: 'pt', format: 'letter' });
     const left = 56;
     let y = 72;

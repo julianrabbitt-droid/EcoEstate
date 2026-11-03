@@ -4,7 +4,7 @@ import EditableLawnMap from '@/components/scan/EditableLawnMap';
 import { Button } from '@/components/ui/button';
 import { mergeLawnOutlines } from '@/api/lawnApi';
 import { updateProject } from '@/lib/projectStore';
-import { carryBuildingHeights } from '@/lib/gardenLayout';
+import { carryBuildingHeights, carryBuildingRoofs } from '@/lib/gardenLayout';
 import { zoomForLotSize } from '@/lib/geo';
 import { num } from '@/lib/landscapeMath';
 
@@ -55,6 +55,7 @@ export default function EditScanPanel({ project, onApplied, defaultOpen = false 
       features: result.features || [],
       buildings: result.buildings || [],
       buildingHeightsFt: carryBuildingHeights(result.buildings, project.buildings, project.buildingHeightsFt),
+      buildingRoofs: carryBuildingRoofs(result.buildings, project.buildings, project.buildingRoofs),
       trees: result.trees || [],
       lotOutline: result.lotOutline || project.lotOutline || null,
       totalSqft: turf + beds + bare,

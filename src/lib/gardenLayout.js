@@ -66,14 +66,36 @@ export function prepareBuildings(project) {
       if (!Array.isArray(poly) || poly.length < 3 || !Array.isArray(poly[0]) || poly[0].length < 2) return null;
       const pts = poly.map((p) => [(p[1] - minLng) * 364000 * cosLat, (p[0] - minLat) * 364000]);
       pts.heightFt = Number(heights[i]) > 0 ? Number(heights[i]) : null;
-      const roof = project?.buildingRoofs?.[i] || null; // { color, shape, use, material, chimneys… } from the scan, when known
-      pts.roof = roof && {
-        ...roof,
-        chimneys: (roof.chimneys || []).map((c) => ({ x: (c.latLng[1] - minLng) * 364000 * cosLat, y: (c.latLng[0] - minLat) * 364000, topFt: c.topFt })),
-      };
+      // { color, shape, mapped shape and materials, grid } from the scan, when known.
+      const roof = project?.buildingRoofs?.[i] || null;
+      pts.roof = roof && { ...roof, grid: planGrid(roof.grid, origin) };
       return pts;
     })
     .filter(Boolean);
+}
+
+// A roof's lidar height map (lon/lat cells, decimetres; see the lawn API's
+// roofHeightMap) in plan feet: { x0, y0, dx, dy, cols, rows, h (feet) }.
+function planGrid(g, { minLat, minLng, cosLat }) {
+  if (!g || !(g.cols >= 2) || !(g.rows >= 2) || !Array.isArray(g.h) || g.h.length !== g.cols * g.rows) return null;
+  return {
+    x0: (g.lon0 - minLng) * 364000 * cosLat,
+    y0: (g.lat0 - minLat) * 364000,
+    dx: g.dLon * 364000 * cosLat,
+    dy: g.dLat * 364000,
+    cols: g.cols,
+    rows: g.rows,
+    h: g.h.map((v) => (Number(v) || 0) * 0.328084),
+  };
+}
+
+/**
+ * What the scan knew about each roof, for an edited list of outlines: an
+ * unchanged outline keeps its roof, anything new or reshaped gets null.
+ */
+export function carryBuildingRoofs(newBuildings, oldBuildings, oldRoofs) {
+  const byShape = new Map((oldBuildings || []).map((ring, i) => [JSON.stringify(ring), oldRoofs?.[i] ?? null]));
+  return (newBuildings || []).map((ring) => byShape.get(JSON.stringify(ring)) ?? null);
 }
 
 /**
@@ -93,29 +115,6 @@ export function prepareLot(project) {
   if (!origin || !Array.isArray(lot) || lot.length < 3 || !Array.isArray(lot[0]) || lot[0].length < 2) return null;
   const { minLat, minLng, cosLat } = origin;
   return lot.map((p) => [(p[1] - minLng) * 364000 * cosLat, (p[0] - minLat) * 364000]);
-}
-
-// Existing mature trees kept from the scan: canopy centers in the same local
-// coordinate space as preparePolys, each with a canopy radius in feet.
-// Fences on the lot lines (project.fences, [lat, lng] lines from the scan's
-// lidar) in the same local feet as preparePolys. [] when none were found.
-export function prepareFences(project) {
-  const origin = projectOrigin(project);
-  if (!origin || !Array.isArray(project?.fences)) return [];
-  const { minLat, minLng, cosLat } = origin;
-  return project.fences
-    .filter((line) => Array.isArray(line) && line.length >= 2)
-    .map((line) => line.map(([lat, lng]) => [(lng - minLng) * 364000 * cosLat, (lat - minLat) * 364000]));
-}
-
-// Swimming pools from the scan, as plan-feet outlines.
-export function preparePools(project) {
-  const origin = projectOrigin(project);
-  if (!origin || !Array.isArray(project?.pools)) return [];
-  const { minLat, minLng, cosLat } = origin;
-  return project.pools
-    .filter((ring) => Array.isArray(ring) && ring.length >= 3)
-    .map((ring) => ring.map(([lat, lng]) => [(lng - minLng) * 364000 * cosLat, (lat - minLat) * 364000]));
 }
 
 export function prepareTrees(project) {

@@ -23,13 +23,6 @@ import { buildingsOnParcel, describeBuildings, describeNearbyRoads, describePath
 const SQM_TO_SQFT = 10.7639;
 
 export const SETTINGS = {
-  // Fences (or walls and hedges) on the property line: lidar returns between
-  // understoryMinM and canopyMinM following a side or back lot line for at
-  // least fenceMinM (gaps up to fenceGapM bridged). Lot lines within
-  // fenceFrontM of a road are the street side and skipped.
-  fenceMinM: 4,
-  fenceGapM: 1.5,
-  fenceFrontM: 9,
   // Paving on the property (driveways, patios, walks): bare, flat ground that
   // isn't lawn, a roof, a tree or a pool, in patches at least this big.
   paveNdviMax: 0.2, // concrete reads a little green in some surveys; lawn and shrubs are excluded already
@@ -39,8 +32,6 @@ export const SETTINGS = {
   paveMinSqft: 80,
   houseMaxM2: 600, // ~6,500 sq ft: footprints up to this are houses…
   houseMaxHeightM: 15, // …and no house roof here stands over ~50 ft above its average ground
-  poolMinSqft: 150, // a small pool and up; smaller blue patches are spas, tarps, cars, toys
-  poolMaxSqft: 2500, // bigger blue water is a pond or a community pool, not a yard pool
   ndviMin: 0.2, // NDVI at or above this counts as green (healthy turf is usually 0.3+)
   // Aerial photos are flown mid-morning to early afternoon, never with the sun
   // straight overhead, so houses and trees cast shadows across lawns. Shaded
@@ -190,6 +181,140 @@ async function findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBui
   }
 }
 
+const ROOF_MAP_MAX_CELLS = 5000; // per building: a house gets 0.75 m cells, a stadium ~3 m
+const ROOF_MAP_SKIP = new Set([LIDAR_CLASS.lowVeg, LIDAR_CLASS.medVeg, LIDAR_CLASS.highVeg, LIDAR_CLASS.noise, LIDAR_CLASS.water, LIDAR_CLASS.highNoise]);
+
+const inRing = ([x, y], ring) => {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+};
+
+/**
+ * A building's roof as lidar measured it: a height map over its footprint, in
+ * metres above the average ground under it, so the 3D model can follow the
+ * real roof (hips and gables, but also arched, sawtooth and stepped roofs, a
+ * stadium's stands) instead of a guessed shape. Each cell holds a high
+ * percentile of the roof and ground returns in it, never vegetation; cells
+ * the survey missed, and edge cells that read ground (a mapped outline sits a
+ * little off the survey), are filled from their neighbours. A 3×3 median then
+ * a light blur where the roof is smooth take out the laser's noise without
+ * rounding steps. Returns { lon0, lat0, dLon, dLat, cols, rows, h } (h in
+ * decimetres, row 0 south, one cell of margin round the footprint), or null
+ * where lidar saw too little of the roof.
+ */
+function roofHeightMap(b, lidar, classed, baseZ, tallestM) {
+  const polys = b.geometry?.type === 'Polygon' ? [b.geometry.coordinates] : b.geometry?.type === 'MultiPolygon' ? b.geometry.coordinates : [];
+  if (!polys.length) return null;
+  let [w, s, e, n] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const rings of polys) {
+    for (const [x, y] of rings[0]) {
+      w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y);
+    }
+  }
+  const mx = 111320 * Math.cos((((s + n) / 2) * Math.PI) / 180);
+  const my = 110540;
+  const cell = Math.max(0.75, Math.sqrt(((e - w) * mx * (n - s) * my) / ROOF_MAP_MAX_CELLS));
+  const dLon = cell / mx;
+  const dLat = cell / my;
+  const lon0 = w - dLon;
+  const lat0 = s - dLat;
+  const cols = Math.ceil((e - w) / dLon) + 2;
+  const rows = Math.ceil((n - s) / dLat) + 2;
+  const N = cols * rows;
+  const inside = new Uint8Array(N);
+  let insideCount = 0;
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const pt = [lon0 + (i + 0.5) * dLon, lat0 + (j + 0.5) * dLat];
+      if (polys.some((rings) => inRing(pt, rings[0]) && !rings.slice(1).some((hole) => inRing(pt, hole)))) {
+        inside[j * cols + i] = 1;
+        insideCount++;
+      }
+    }
+  }
+  if (!insideCount) return null;
+  const lists = Array.from({ length: N }, () => []);
+  for (let k = 0; k < lidar.count; k++) {
+    const i = Math.floor((lidar.x[k] - lon0) / dLon);
+    const j = Math.floor((lidar.y[k] - lat0) / dLat);
+    if (i < 0 || j < 0 || i >= cols || j >= rows || ROOF_MAP_SKIP.has(lidar.cls[k])) continue;
+    if (inside[j * cols + i]) lists[j * cols + i].push(lidar.z[k] - baseZ);
+  }
+  const pct = classed ? 0.9 : 0.75; // unclassified surveys: lower, so a branch over the roof doesn't count
+  let hm = new Float32Array(N).fill(NaN);
+  let known = 0;
+  for (let c = 0; c < N; c++) {
+    const L = lists[c];
+    if (!inside[c] || !L.length) continue;
+    L.sort((a, b) => a - b);
+    const v = L[Math.floor(pct * (L.length - 1))];
+    if (v > tallestM) continue; // a tree over the roof
+    hm[c] = Math.max(0, v);
+    known++;
+  }
+  if (known < 0.4 * insideCount) return null;
+  const near = (c, f) => {
+    const i = c % cols;
+    const j = (c - i) / cols;
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        if (!di && !dj) continue;
+        const ii = i + di;
+        const jj = j + dj;
+        if (ii >= 0 && jj >= 0 && ii < cols && jj < rows) f(jj * cols + ii);
+      }
+    }
+  };
+  for (let c = 0; c < N; c++) {
+    if (!inside[c] || !(hm[c] < 1.5)) continue;
+    let edge = false;
+    near(c, (o) => { if (!inside[o]) edge = true; });
+    if (edge) hm[c] = NaN;
+  }
+  // Fill the gaps and the margin from their neighbours, a ring at a time.
+  for (let pass = 0; pass < 80; pass++) {
+    const next = hm.slice();
+    let changed = false;
+    for (let c = 0; c < N; c++) {
+      if (!Number.isNaN(hm[c])) continue;
+      let sum = 0;
+      let m = 0;
+      near(c, (o) => { if (!Number.isNaN(hm[o])) { sum += hm[o]; m++; } });
+      if (m) { next[c] = sum / m; changed = true; }
+    }
+    hm = next;
+    if (!changed) break;
+  }
+  for (let c = 0; c < N; c++) if (Number.isNaN(hm[c])) hm[c] = 0;
+  const box = (src, c) => {
+    const vals = [src[c]];
+    near(c, (o) => vals.push(src[o]));
+    return vals;
+  };
+  const med = hm.map((_, c) => {
+    const vals = box(hm, c).sort((a, b) => a - b);
+    return vals[Math.floor(vals.length / 2)];
+  });
+  const out = med.map((v, c) => {
+    const vals = box(med, c);
+    return Math.max(...vals) - Math.min(...vals) < 0.8 ? vals.reduce((a, x) => a + x, 0) / vals.length : v;
+  });
+  return {
+    lon0: Number(lon0.toFixed(8)),
+    lat0: Number(lat0.toFixed(8)),
+    dLon: Number(dLon.toPrecision(8)),
+    dLat: Number(dLat.toPrecision(8)),
+    cols,
+    rows,
+    h: Array.from(out, (v) => Math.round(v * 10)),
+  };
+}
+
 /**
  * What lidar says about each grid cell. Ground is the mean of ground-classed
  * returns (filled into gaps, such as under roofs, from the cells around).
@@ -336,62 +461,6 @@ function grassBrightness(measured, ndvi, open) {
  * Returns { lawn, totalSqft, surveyDate, buildings, trees }, plus the raster
  * layers in `debug` when options.debug is set.
  */
-// Fences along the side and back lot lines, from lidar (see SETTINGS.fence*).
-// Returns a FeatureCollection of LineStrings in lon/lat.
-function findFences(grid, parcelGeometry, measured, nearbyRoads) {
-  const { w, h, res } = grid;
-  const toPx = ([x, y]) => [(x - grid.x0) / res, (grid.y0 - y) / res];
-  const roadPts = (nearbyRoads?.features || []).flatMap((f) => polygonsOf(f.geometry).flat(2)).map((p) => grid.fromLonLat(p));
-  const nearRoad = ([x, y]) => roadPts.some(([rx, ry]) => Math.hypot(rx - x, ry - y) <= SETTINGS.fenceFrontM);
-  const hit = (x, y) => {
-    const [pi, pj] = toPx([x, y]);
-    for (let dj = -1; dj <= 1; dj++) {
-      for (let di = -1; di <= 1; di++) {
-        const i = Math.round(pi + di);
-        const j = Math.round(pj + dj);
-        if (i < 0 || j < 0 || i >= w || j >= h) continue;
-        const k = j * w + i;
-        if (measured.known[k] && measured.obstacle[k]) return true;
-      }
-    }
-    return false;
-  };
-  const features = [];
-  for (const polygon of polygonsOf(parcelGeometry)) {
-    const ring = polygon[0].map((p) => grid.fromLonLat(p));
-    for (let e = 0; e + 1 < ring.length; e++) {
-      const [a, b] = [ring[e], ring[e + 1]];
-      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      if (len < SETTINGS.fenceMinM) continue;
-      const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-      if (nearRoad(mid) || nearRoad(a) || nearRoad(b)) continue; // the street side
-      const step = 0.6;
-      let run = null;
-      let gap = 0;
-      const close = () => {
-        if (run && run.to - run.from >= SETTINGS.fenceMinM) {
-          const at = (t) => grid.toLonLat([a[0] + ((b[0] - a[0]) * t) / len, a[1] + ((b[1] - a[1]) * t) / len]);
-          features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: [at(run.from), at(run.to)] }, properties: { kind: 'fence', lengthM: Math.round((run.to - run.from) * 10) / 10 } });
-        }
-        run = null;
-      };
-      for (let t = 0; t <= len; t += step) {
-        const p = [a[0] + ((b[0] - a[0]) * t) / len, a[1] + ((b[1] - a[1]) * t) / len];
-        if (hit(p[0], p[1])) {
-          if (!run) run = { from: t, to: t };
-          run.to = t;
-          gap = 0;
-        } else if (run) {
-          gap += step;
-          if (gap > SETTINGS.fenceGapM) close();
-        }
-      }
-      close();
-    }
-  }
-  return { type: 'FeatureCollection', features };
-}
-
 export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   const box = lonLatBox(parcelGeometry);
   const items = await findNaip(box);
@@ -783,98 +852,11 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
       return heightM >= 2.5 && heightM <= tallest ? { heightM } : null;
     });
   }
-  // Chimneys: on a fine grid of the highest returns over each roof, small
-  // blocks (under ~4 m²) standing 0.9–4 m above the roof around them, away
-  // from the roof's edge (where branches hang over). At most two per house.
-  let chimneys = null;
-  if (lidar && measured) {
-    const cell = 0.5;
-    chimneys = ownBuildings.map((b, bi) => {
-      const xs = [];
-      const ys = [];
-      const zs = [];
-      for (let k = 0; k < lidar.count; k++) {
-        if (lidar.cls[k] !== (classed ? LIDAR_CLASS.building : 1)) continue;
-        const [X, Y] = grid.fromLonLat([lidar.x[k], lidar.y[k]]);
-        const i = Math.floor((X - grid.x0) / grid.res);
-        const j = Math.floor((grid.y0 - Y) / grid.res);
-        if (i < 0 || j < 0 || i >= w || j >= h || roofLabels[j * w + i] !== bi + 1) continue;
-        // Away from the roof's edge: every grid cell around this one is roof too.
-        let interior = true;
-        for (let dj = -1; dj <= 1 && interior; dj++) for (let di = -1; di <= 1; di++) {
-          const ii = i + di;
-          const jj = j + dj;
-          if (ii < 0 || jj < 0 || ii >= w || jj >= h || roofLabels[jj * w + ii] !== bi + 1) { interior = false; break; }
-        }
-        if (!interior) continue;
-        xs.push(X);
-        ys.push(Y);
-        zs.push(lidar.z[k]);
-      }
-      if (zs.length < 30 || !under[bi]?.m) return [];
-      const x0 = Math.min(...xs);
-      const y0 = Math.min(...ys);
-      const gw = Math.ceil((Math.max(...xs) - x0) / cell) + 1;
-      const gh = Math.ceil((Math.max(...ys) - y0) / cell) + 1;
-      if (gw * gh > 40000) return [];
-      const top = new Float32Array(gw * gh).fill(NaN);
-      for (let k = 0; k < zs.length; k++) {
-        const c = Math.floor((ys[k] - y0) / cell) * gw + Math.floor((xs[k] - x0) / cell);
-        if (!(top[c] >= zs[k])) top[c] = zs[k];
-      }
-      const found = [];
-      const used = new Uint8Array(gw * gh);
-      for (let c = 0; c < top.length; c++) {
-        if (Number.isNaN(top[c]) || used[c]) continue;
-        const ci = c % gw;
-        const cj = Math.floor(c / gw);
-        // The roof around: the median of the cells 1.5–3 m away.
-        const ring = [];
-        for (let dj = -6; dj <= 6; dj++) for (let di = -6; di <= 6; di++) {
-          const r = Math.max(Math.abs(di), Math.abs(dj));
-          if (r < 3) continue;
-          const ii = ci + di;
-          const jj = cj + dj;
-          if (ii < 0 || jj < 0 || ii >= gw || jj >= gh) continue;
-          const v = top[jj * gw + ii];
-          if (!Number.isNaN(v)) ring.push(v);
-        }
-        if (ring.length < 20) continue;
-        ring.sort((a, b) => a - b);
-        const roof = ring[Math.floor(ring.length / 2)];
-        const rise = top[c] - roof;
-        if (rise < 0.9 || rise > 4) continue;
-        // Its size: neighbouring cells that also stand well above the roof.
-        let size = 0;
-        let peak = top[c];
-        let px = 0;
-        let py = 0;
-        for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) {
-          const ii = ci + di;
-          const jj = cj + dj;
-          if (ii < 0 || jj < 0 || ii >= gw || jj >= gh) continue;
-          const v = top[jj * gw + ii];
-          if (Number.isNaN(v) || v - roof < 0.6) continue;
-          size++;
-          used[jj * gw + ii] = 1;
-          if (v >= peak) { peak = v; px = di; py = dj; }
-        }
-        if (size < 1 || size > 16) continue; // up to ~4 m²: bigger is a dormer, a second storey or a tree
-        const [lon, lat] = grid.toLonLat([x0 + (ci + px + 0.5) * cell, y0 + (cj + py + 0.5) * cell]);
-        found.push({ lat: Number(lat.toFixed(7)), lon: Number(lon.toFixed(7)), topFt: Math.round((peak - under[bi].s / under[bi].m) * 3.28084 * 10) / 10, rise });
-      }
-      // The strongest, and a second only when it's clearly its own chimney
-      // (well apart and standing as tall): a vent or the other end of the
-      // same stack otherwise.
-      found.sort((a, b) => b.rise - a.rise);
-      const keep = found.slice(0, 1);
-      const apartM = (a, b) => Math.hypot((a.lat - b.lat) * 111320, (a.lon - b.lon) * 111320 * Math.cos((a.lat * Math.PI) / 180));
-      const second = found.find((f) => f !== keep[0] && f.rise >= 1.2 && apartM(f, keep[0]) > 6);
-      if (second) keep.push(second);
-      return keep.map(({ lat, lon, topFt }) => ({ lat, lon, topFt }));
-    });
-  }
-  const buildingLayer = describeBuildings(ownBuildings, roofLabels, canopy, naip, lidarRoofs, chimneys);
+  // Each roof's shape as surveyed (see roofHeightMap), for the 3D model.
+  const roofMaps = lidar && measured
+    ? ownBuildings.map((b, i) => (under[i]?.m ? roofHeightMap(b, lidar, classed, under[i].s / under[i].m, b.areaM2 < SETTINGS.houseMaxM2 ? SETTINGS.houseMaxHeightM : 80) : null))
+    : null;
+  const buildingLayer = describeBuildings(ownBuildings, roofLabels, canopy, naip, lidarRoofs, roofMaps);
   // Which roofs and paths actually touch each lawn region and path, from the
   // rasters (pixels within 2 of each other count, to catch sub-pixel overlaps),
   // so only those are cut. Each path is walked over its own pixels, so crossing
@@ -950,41 +932,6 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
       .filter((f) => f.properties.areaSqft >= SETTINGS.paveMinSqft),
   };
 
-  // Swimming pools: clear blue water in the open (not under a roof or a tree),
-  // which reflects little near-infrared (NDVI below zero), in pool-sized
-  // patches. Drawn as water in the 3D model; never counted as lawn or paving.
-  const poolMask = new Uint8Array(n);
-  for (let k = 0; k < n; k++) {
-    if (!usable[k] || trees[k] || roofLabels[k]) continue;
-    const [r, g, b] = [naip.red[k], naip.green[k], naip.blue[k]];
-    if (b > r * 1.3 && g > r * 1.1 && b > 80 && ndvi[k] < 0) poolMask[k] = 1;
-  }
-  const poolPieces = labelRegions(dilate(erode(poolMask, w, h, 1), w, h, 1), w, h);
-  const poolKeep = Float64Array.from(poolPieces.labels, (l) => {
-    const sqft = l ? poolPieces.sizes[l] * pxSqft : 0;
-    return sqft >= SETTINGS.poolMinSqft && sqft <= SETTINGS.poolMaxSqft ? 1 : 0;
-  });
-  const [poolMulti] = contours().size([w, h]).thresholds([0.5])(poolKeep);
-  const pools = {
-    type: 'FeatureCollection',
-    features: poolMulti.coordinates
-      .map((rings) => ({ type: 'Polygon', coordinates: [rings[0].map(toLonLat)] }))
-      .map((geometry) => {
-        const simple = simplify({ type: 'Feature', properties: {}, geometry }, { tolerance: 0.000004, highQuality: true }).geometry;
-        return { type: 'Feature', geometry: simple, properties: { kind: 'pool', areaSqft: Math.round(turfArea(simple) * SQM_TO_SQFT) } };
-      })
-      // Pools are compact (a rectangle or a kidney fills most of its box); a
-      // long thin blue strip is a car or a tarp along a fence.
-      .filter((f) => {
-        if (f.properties.areaSqft < SETTINGS.poolMinSqft) return false;
-        const ring = f.geometry.coordinates[0];
-        const xs = ring.map((p) => p[0]);
-        const ys = ring.map((p) => p[1]);
-        const box = turfArea({ type: 'Polygon', coordinates: [[[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)], [Math.min(...xs), Math.max(...ys)], [Math.min(...xs), Math.min(...ys)]]] }) * SQM_TO_SQFT;
-        return f.properties.areaSqft / Math.max(1, box) >= 0.45;
-      }),
-  };
-
   // The aerial photo of the property, so the 3D model's ground looks like the
   // real yard: a small PNG of the grid (public-domain NAIP) and its corners.
   let groundImage = null;
@@ -1000,7 +947,10 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
 
   const onParcelNotRoof = Uint8Array.from(parcel, (v, k) => (v && !roofLabels[k] ? 1 : 0));
   const nearbyRoads = describeNearbyRoads(mappedPaths, parcelGeometry);
-  const fences = measured ? findFences(grid, parcelGeometry, measured, nearbyRoads) : { type: 'FeatureCollection', features: [] };
+  // Fences, pools, chimneys and solar panels aren't detected: they weren't
+  // reliable enough. Empty lists keep the response's shape.
+  const fences = { type: 'FeatureCollection', features: [] };
+  const pools = { type: 'FeatureCollection', features: [] };
   const streetTrees = grid.res <= SETTINGS.streetMaxResM ? await findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBuildings) : [];
   const result = {
     lawn,

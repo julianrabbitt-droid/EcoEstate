@@ -105,6 +105,9 @@ app.use('/api', (err, _req, res, next) => {
 // ---- Built frontend (production) ----
 const dist = path.join(ROOT, 'dist');
 if (IS_PROD && fs.existsSync(dist)) {
+  // Built files have content hashes in their names: cache them for a year.
+  // Everything else (images in public/, the page itself) for an hour.
+  app.use('/assets', express.static(path.join(dist, 'assets'), { index: false, maxAge: '1y', immutable: true }));
   app.use(express.static(dist, { index: false, maxAge: '1h' }));
   app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
 }
