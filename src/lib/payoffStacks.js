@@ -160,26 +160,26 @@ function pad(w, d, lowest, highest) {
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
 
 
-// What the money could buy, drawn at real size beside the cash: the priciest
-// of these the savings cover. Prices are rough, for scale, not quotes.
-// What the savings could buy: the dearest thing on a ladder from a birdhouse
-// to a private jet that they cover (as many as they pay for, up to `most`),
-// so a longer horizon or a bigger property reaches the next thing up.
+// What the savings could buy, drawn at real size beside the cash: the dearest
+// thing on the ladder they cover (as many as they pay for, up to `most`), so
+// a longer horizon or a bigger property reaches the next thing up. The low
+// rungs are what a year saves on a typical lawn (a few hundred to a couple of
+// thousand dollars): treats and gadgets everyone wants, then a trip, then
+// cars. Prices are rough, for scale, not quotes. stack: drawn as one pile.
 export const PURCHASES = [
   { min: 5000000, one: 'a private jet', many: 'private jets', price: 5000000, model: 'jet', most: 3 },
   { min: 2000000, one: 'a motor yacht', many: 'motor yachts', price: 2000000, model: 'yacht', most: 1 },
   { min: 350000, one: 'a small plane', many: 'small planes', price: 350000, model: 'plane', most: 3 },
   { min: 180000, one: 'a sailboat', many: 'sailboats', price: 180000, model: 'sailboat', most: 1 },
-  { min: 90000, one: 'a tiny house', many: 'tiny houses', price: 90000, model: 'tinyhouse', most: 1 },
+  { min: 90000, one: 'a luxury electric SUV', many: 'luxury electric SUVs', price: 90000, model: 'suv', most: 1 },
   { min: 45000, one: 'a new electric car', many: 'new electric cars', price: 45000, model: 'carNew', most: 1 },
   { min: 15000, one: 'a used electric car', many: 'used electric cars', price: 15000, model: 'car', most: 2 },
   { min: 7000, one: 'a hot tub', many: 'hot tubs', price: 7000, model: 'hottub', most: 1 },
-  { min: 3500, one: 'a backyard greenhouse', many: 'backyard greenhouses', price: 3500, model: 'greenhouse', most: 1 },
-  { min: 1500, one: 'an e-bike', many: 'e-bikes', price: 1500, model: 'ebike', most: 1 },
-  { min: 900, one: 'a kayak', many: 'kayaks', price: 900, model: 'kayak', most: 1 },
-  { min: 450, one: 'a new bike', many: 'new bikes', price: 500, model: 'bike', most: 1 },
-  { min: 200, one: 'a garden bench', many: 'garden benches', price: 300, model: 'bench', most: 1 },
-  { min: 0, one: 'a cedar birdhouse', many: 'cedar birdhouses', price: 60, model: 'birdhouse', most: 3 },
+  { min: 2500, one: 'a beach vacation for two', many: 'beach vacations for two', price: 2500, model: 'vacation', most: 2 },
+  { min: 1000, one: 'a new phone', many: 'new phones', price: 1000, model: 'phone', most: 2 },
+  { min: 600, one: 'a 65-inch TV', many: '65-inch TVs', price: 600, model: 'tv', most: 1 },
+  { min: 240, one: 'a dinner out for two', many: 'dinners out for two', price: 120, model: 'dinner', most: 4 },
+  { min: 0, one: 'a pizza night', many: 'pizza nights', price: 30, model: 'pizza', most: 8, stack: true },
 ];
 export const purchaseFor = (dollars) => {
   const tier = PURCHASES.find((p) => dollars >= p.min) || PURCHASES[PURCHASES.length - 1];
@@ -207,74 +207,105 @@ function wheel(r, width, x, y, z, rubber, hub) {
 }
 
 // Long side along local x, front along +z; standing on y = 0. Feet.
-function purchaseModel(kind) {
+function purchaseModel(kind, count = 1) {
   const g = new THREE.Group();
   const rubber = mat(0x1d1f1c, 0.9);
-  if (kind === 'bike' || kind === 'ebike') {
-    const frame = mat(kind === 'ebike' ? 0x2f6f8f : 0xb5532c, 0.35, 0.4);
-    const metal = mat(0x8c8f8a, 0.3, 0.8);
-    const r = 1.15;
-    const [rear, frontX] = [-1.75, 1.75];
-    g.add(wheel(r, kind === 'ebike' ? 0.22 : 0.12, rear, r, 0, rubber, null));
-    g.add(wheel(r, kind === 'ebike' ? 0.22 : 0.12, frontX, r, 0, rubber, null));
-    const bb = [-0.2, 1.0, 0]; // bottom bracket
-    const seat = [-0.75, 2.75, 0];
-    const head = [1.15, 2.7, 0];
-    for (const [a, b] of [[[rear, r, 0], bb], [[rear, r, 0], seat], [bb, seat], [bb, head], [seat, head], [head, [frontX, r, 0]]]) g.add(tube(a, b, 0.07, frame));
-    g.add(tube(seat, [-0.85, 3.15, 0], 0.05, metal));
-    const saddle = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.16, 0.32), rubber);
-    saddle.position.set(-0.85, 3.25, 0);
-    g.add(saddle);
-    g.add(tube(head, [1.05, 3.35, 0], 0.05, metal));
-    g.add(tube([1.05, 3.35, -0.75], [1.05, 3.35, 0.75], 0.05, metal));
-    if (kind === 'ebike') {
-      const battery = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.38, 0.32), mat(0x2b2d2a, 0.5));
-      battery.position.set(0.5, 1.75, 0);
-      battery.rotation.z = Math.atan2(2.7 - 1.0, 1.15 + 0.2);
-      g.add(battery);
+  if (kind === 'pizza') {
+    // Takeaway boxes, one per pizza night, piled on the ground.
+    const box = mat(0xd9c3a0, 0.85);
+    const ink = mat(0xb0392e, 0.7);
+    for (let k = 0; k < count; k++) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.15, 1.35), box);
+      b.position.y = 0.075 + k * 0.16;
+      b.rotation.y = (k % 3 - 1) * 0.06;
+      const logo = new THREE.Mesh(new THREE.CircleGeometry(0.3, 20), ink);
+      logo.rotation.x = -Math.PI / 2;
+      logo.position.y = 0.076;
+      b.add(logo);
+      g.add(b);
     }
-  } else if (kind === 'kayak') {
-    // A sit-on-top kayak on its rack, paddle across it.
-    const hull = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12), mat(0xd9682b, 0.35, 0.1));
-    hull.scale.set(6, 0.55, 1.1);
-    hull.position.y = 1.6;
-    const seat = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.15, 0.9), mat(0x2b2d2a, 0.7));
-    seat.position.set(-0.4, 2.05, 0);
-    g.add(hull, seat);
-    const rack = mat(0x6d5a48, 0.9);
-    for (const x of [-3, 3]) {
-      g.add(tube([x, 0, -0.8], [x, 1.1, -0.8], 0.08, rack));
-      g.add(tube([x, 0, 0.8], [x, 1.1, 0.8], 0.08, rack));
-      g.add(tube([x, 1.1, -0.9], [x, 1.1, 0.9], 0.09, rack));
+  } else if (kind === 'dinner') {
+    // A bistro table set for two: cloth, plates, glasses, a candle, two chairs.
+    const cloth = mat(0xf4f1ea, 0.8);
+    const iron = mat(0x2b2d2a, 0.5, 0.6);
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 0.08, 32), cloth);
+    top.position.y = 2.45;
+    const drape = new THREE.Mesh(new THREE.CylinderGeometry(1.42, 1.5, 0.6, 32, 1, true), cloth);
+    drape.position.y = 2.15;
+    g.add(top, drape, tube([0, 0, 0], [0, 2.4, 0], 0.08, iron));
+    const plate = mat(0xffffff, 0.3);
+    const food = mat(0xb5652d, 0.7);
+    const wine = new THREE.MeshPhysicalMaterial({ color: 0x6d1a2a, roughness: 0.1, transparent: true, opacity: 0.85 });
+    for (const side of [-1, 1]) {
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.4, 0.04, 24), plate);
+      p.position.set(side * 0.75, 2.51, 0);
+      const dish = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 8), food);
+      dish.scale.y = 0.4;
+      dish.position.set(side * 0.75, 2.56, 0);
+      const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.07, 0.3, 12), wine);
+      glass.position.set(side * 0.7, 2.64, side * 0.55);
+      g.add(p, dish, glass);
+      // Chair, facing the table.
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.1, 1.4), iron);
+      seat.position.set(side * 2.2, 1.5, 0);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.5, 1.4), iron);
+      back.position.set(side * 2.85, 2.2, 0);
+      g.add(seat, back);
+      for (const [dx, dz] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) g.add(tube([side * 2.2 + dx, 0, dz], [side * 2.2 + dx, 1.5, dz], 0.04, iron));
     }
-    g.add(tube([-1.5, 2.25, -1.6], [1.5, 2.25, 1.6], 0.05, mat(0x2b2d2a, 0.4)));
-  } else if (kind === 'greenhouse') {
-    // Aluminium frame and glass, a gable roof, staging inside.
-    const metal = mat(0xd6d8d2, 0.35, 0.7);
-    const glass = new THREE.MeshPhysicalMaterial({ color: 0xdff0ea, roughness: 0.05, transmission: 0.6, transparent: true, opacity: 0.35, depthWrite: false });
-    const [w, d, h, ridge] = [10, 8, 6.2, 8.4];
-    const walls = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), glass);
-    walls.position.y = h / 2;
-    const roofShape = new THREE.Shape([new THREE.Vector2(-d / 2, 0), new THREE.Vector2(d / 2, 0), new THREE.Vector2(0, ridge - h)]);
-    const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(roofShape, { depth: w, bevelEnabled: false }), glass);
-    roof.rotation.y = Math.PI / 2;
-    roof.position.set(-w / 2, h, 0);
-    g.add(walls, roof);
-    for (const x of [-w / 2, -w / 6, w / 6, w / 2]) {
-      for (const z of [-d / 2, d / 2]) g.add(tube([x, 0, z], [x, h, z], 0.06, metal));
-      g.add(tube([x, h, -d / 2], [x, ridge, 0], 0.06, metal));
-      g.add(tube([x, h, d / 2], [x, ridge, 0], 0.06, metal));
+    const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.4, 10), mat(0xfff6df, 0.6));
+    candle.position.y = 2.69;
+    const flame = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), new THREE.MeshStandardMaterial({ color: 0xffc35a, emissive: 0xffa22e, emissiveIntensity: 1.5 }));
+    flame.position.y = 2.93;
+    g.add(candle, flame);
+  } else if (kind === 'tv') {
+    // A 65-inch screen (4.7 by 2.7 ft) on a low media console.
+    const cabinet = new THREE.Mesh(new THREE.BoxGeometry(5.4, 1.7, 1.5), mat(0x8a6446, 0.7));
+    cabinet.position.y = 0.85;
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(4.75, 2.75, 0.12), mat(0x1d1f1c, 0.3, 0.4));
+    frame.position.set(0, 3.25, 0);
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 2.6), new THREE.MeshStandardMaterial({ map: screenTexture(), emissive: 0xffffff, emissiveMap: screenTexture(), emissiveIntensity: 0.55, roughness: 0.2 }));
+    screen.position.set(0, 3.25, 0.065);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.2, 0.7), mat(0x1d1f1c, 0.3, 0.4));
+    foot.position.y = 1.8;
+    g.add(cabinet, frame, screen, foot, tube([0, 1.8, 0], [0, 2.2, 0], 0.12, mat(0x1d1f1c, 0.3, 0.4)));
+  } else if (kind === 'phone') {
+    // A new phone at true size (6 by 3 in), on a showroom plinth to be seen.
+    const plinth = new THREE.Mesh(new THREE.BoxGeometry(1.6, 3.2, 1.6), mat(0xf2f0ea, 0.5));
+    plinth.position.y = 1.6;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.5, 0.03), mat(0x2b3440, 0.25, 0.6));
+    body.position.set(0, 3.55, 0);
+    body.rotation.x = -0.25;
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.23, 0.47), new THREE.MeshStandardMaterial({ map: screenTexture(), emissive: 0xffffff, emissiveMap: screenTexture(), emissiveIntensity: 0.6, roughness: 0.2 }));
+    screen.position.z = 0.016;
+    body.add(screen);
+    const stand = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.25), mat(0xc8ccd0, 0.3, 0.7));
+    stand.position.set(0, 3.23, 0.02);
+    g.add(plinth, body, stand);
+  } else if (kind === 'vacation') {
+    // Packed for the beach: two suitcases, an umbrella and a lounger.
+    const cases = [[0x2f5f9f, -1.6], [0xd9682b, -0.2]];
+    for (const [color, x] of cases) {
+      const c = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.2, 0.8), mat(color, 0.45, 0.1));
+      c.position.set(x, 1.25, 0);
+      const handle = tube([x - 0.3, 2.35, 0], [x + 0.3, 2.35, 0], 0.04, mat(0x2b2d2a, 0.5));
+      g.add(c, handle);
+      for (const dx of [-0.4, 0.4]) g.add(wheel(0.12, 0.08, x + dx, 0.12, 0.3, rubber, null));
     }
-    g.add(tube([-w / 2, ridge, 0], [w / 2, ridge, 0], 0.06, metal));
-    for (const z of [-d / 2, d / 2]) g.add(tube([-w / 2, h, z], [w / 2, h, z], 0.06, metal));
-    const bench = new THREE.Mesh(new THREE.BoxGeometry(w - 1.5, 0.2, 1.8), mat(0x9a6b45, 0.85));
-    bench.position.set(0, 2.6, -d / 2 + 1.3);
-    g.add(bench);
-    for (let k = 0; k < 6; k++) {
-      const pot = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6), mat(0x4c8a2b, 0.8));
-      pot.position.set(-3.5 + k * 1.4, 3.0, -d / 2 + 1.3);
-      g.add(pot);
-    }
+    g.add(tube([1.6, 0, 0], [1.6, 6.5, 0], 0.05, mat(0xd6d8d2, 0.4, 0.6)));
+    const canopy = new THREE.Mesh(new THREE.ConeGeometry(3.3, 1.2, 12, 1, true), new THREE.MeshStandardMaterial({ map: stripeTexture(), roughness: 0.8, side: THREE.DoubleSide }));
+    canopy.position.set(1.6, 6.2, 0);
+    g.add(canopy);
+    // The lounger beside them, its back raised.
+    const frameMat = mat(0xd6d8d2, 0.4, 0.6);
+    const cloth = mat(0x2f8fa6, 0.8);
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.1, 1.9), cloth);
+    seat.position.set(-0.4, 1.1, 1.9);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.1, 1.9), cloth);
+    back.position.set(1.85, 1.6, 1.9);
+    back.rotation.z = 0.6;
+    g.add(seat, back);
+    for (const x of [-1.9, 1.1]) for (const z of [1.05, 2.75]) g.add(tube([x, 0, z], [x, 1.05, z], 0.05, frameMat));
   } else if (kind === 'hottub') {
     const shell = new THREE.Mesh(new THREE.BoxGeometry(7.5, 3, 7.5), mat(0x6b5442, 0.8));
     shell.position.y = 1.5;
@@ -285,23 +316,6 @@ function purchaseModel(kind) {
     const steps = new THREE.Mesh(new THREE.BoxGeometry(3, 1, 1.4), mat(0x6b5442, 0.8));
     steps.position.set(0, 0.5, 4.4);
     g.add(shell, rim, water, steps);
-  } else if (kind === 'tinyhouse') {
-    // On its trailer: cedar siding, a metal gable roof, a window and a door.
-    const trailer = new THREE.Mesh(new THREE.BoxGeometry(24, 0.5, 8.4), mat(0x2b2d2a, 0.6, 0.5));
-    trailer.position.y = 2.2;
-    const body = new THREE.Mesh(new THREE.BoxGeometry(24, 8.5, 8.4), mat(0xb98a5e, 0.8));
-    body.position.y = 6.7;
-    const roofShape = new THREE.Shape([new THREE.Vector2(-4.7, 0), new THREE.Vector2(4.7, 0), new THREE.Vector2(0, 3.2)]);
-    const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(roofShape, { depth: 24.6, bevelEnabled: false }), mat(0x3d4a45, 0.45, 0.5));
-    roof.rotation.y = Math.PI / 2;
-    roof.position.set(-12.3, 10.95, 0);
-    const win = new THREE.Mesh(new THREE.BoxGeometry(5, 3, 0.2), mat(0x22302c, 0.1, 0.3));
-    win.position.set(-4, 7.5, 4.25);
-    const door = new THREE.Mesh(new THREE.BoxGeometry(2.6, 6.4, 0.2), mat(0x5a3f2c, 0.7));
-    door.position.set(6, 5.7, 4.25);
-    g.add(trailer, body, roof, win, door);
-    const hub = mat(0xa7aaa4, 0.35, 0.7);
-    for (const x of [-1.6, 1.6]) for (const z of [-4.3, 4.3]) g.add(wheel(1.2, 0.6, x, 1.2, z, rubber, hub));
   } else if (kind === 'sailboat') {
     // A 30 ft sloop on a cradle: white hull, mast, mainsail and jib.
     const hull = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 14, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), mat(0xf2f0ea, 0.3, 0.1));
@@ -400,59 +414,74 @@ function purchaseModel(kind) {
       g.add(tube([x, 0.9, z], [x, 4.5, z], 0.25, grey));
       g.add(wheel(0.9, 0.5, x, 0.9, z, rubber, null));
     }
-  } else if (kind === 'car' || kind === 'carNew') {
-    const paint = mat(kind === 'carNew' ? 0x8a2f2f : 0xe9e6dd, 0.3, 0.2);
+  } else if (kind === 'car' || kind === 'carNew' || kind === 'suv') {
+    // A hatchback, or (suv) a longer, taller one riding higher.
+    const suv = kind === 'suv';
+    const paint = mat({ car: 0xe9e6dd, carNew: 0x8a2f2f, suv: 0x2d3a44 }[kind], 0.3, 0.2);
     const glass = mat(0x22302c, 0.15, 0.3);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(14.2, 2.3, 6), paint);
-    body.position.y = 2.15;
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(7.6, 1.9, 5.4), glass);
-    cabin.position.set(-0.6, 4.2, 0);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.25, 5.2), paint);
-    roof.position.set(-0.7, 5.2, 0);
-    for (const m of [body, cabin, roof]) { m.castShadow = true; m.receiveShadow = true; g.add(m); }
+    const [len, wid, lift] = suv ? [16, 6.6, 0.5] : [14.2, 6, 0];
+    const body = new THREE.Mesh(new THREE.BoxGeometry(len, 2.3 + lift, wid), paint);
+    body.position.y = 2.15 + lift;
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(suv ? 10 : 7.6, 1.9 + lift, wid - 0.6), glass);
+    cabin.position.set(suv ? -1 : -0.6, 4.2 + lift * 1.5, 0);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(suv ? 9 : 6.4, 0.25, wid - 0.8), paint);
+    roof.position.set(suv ? -1.1 : -0.7, 5.2 + lift * 2, 0);
+    for (const m of [body, cabin, roof]) { m.receiveShadow = true; g.add(m); }
     const hub = mat(0xa7aaa4, 0.35, 0.7);
-    for (const x of [-4.6, 4.6]) for (const z of [-3.05, 3.05]) g.add(wheel(1.15, 0.7, x, 1.15, z, rubber, hub));
-  } else if (kind === 'birdhouse') {
-    const cedar = mat(0xa8774e, 0.8);
-    const roofMat = mat(0x5b4a3b, 0.7);
-    g.add(tube([0, 0, 0], [0, 5, 0], 0.12, mat(0x6d5a48, 0.9)));
-    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1.2, 1), cedar);
-    box.position.y = 5.6;
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.95, 0.7, 4), roofMat);
-    roof.position.y = 6.55;
-    roof.rotation.y = Math.PI / 4;
-    const hole = new THREE.Mesh(new THREE.CircleGeometry(0.16, 16), mat(0x1d1f1c, 1));
-    hole.position.set(0, 5.75, 0.51);
-    for (const m of [box, roof]) { m.castShadow = true; g.add(m); }
-    g.add(hole);
-  } else {
-    const wood = mat(0x9a6b45, 0.85);
-    const iron = mat(0x2b2d2a, 0.5, 0.6);
-    for (let k = 0; k < 4; k++) {
-      const slat = new THREE.Mesh(new THREE.BoxGeometry(5, 0.12, 0.32), wood);
-      slat.position.set(0, 1.5, -0.6 + k * 0.4);
-      g.add(slat);
-    }
-    for (let k = 0; k < 3; k++) {
-      const back = new THREE.Mesh(new THREE.BoxGeometry(5, 0.3, 0.1), wood);
-      back.position.set(0, 2.0 + k * 0.42, -0.85);
-      g.add(back);
-    }
-    for (const x of [-2.2, 2.2]) {
-      g.add(tube([x, 0, 0.6], [x, 1.5, 0.6], 0.07, iron));
-      g.add(tube([x, 0, -0.75], [x, 3.0, -0.9], 0.07, iron));
-    }
-    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    const r = suv ? 1.45 : 1.15;
+    for (const x of suv ? [-5.3, 5.3] : [-4.6, 4.6]) for (const z of [-(wid / 2 + 0.05), wid / 2 + 0.05]) g.add(wheel(r, 0.75, x, r, z, rubber, hub));
   }
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return g;
 }
 
+// A bright, out-of-focus picture for the screens (a sunset over hills).
+let screenTex = null;
+function screenTexture() {
+  if (screenTex) return screenTex;
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 72;
+  const ctx = c.getContext('2d');
+  const sky = ctx.createLinearGradient(0, 0, 0, 72);
+  sky.addColorStop(0, '#3f6fb6');
+  sky.addColorStop(0.55, '#f2a65a');
+  sky.addColorStop(1, '#f6d28b');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, 128, 72);
+  ctx.fillStyle = '#2f5d3a';
+  ctx.beginPath();
+  ctx.moveTo(0, 72);
+  ctx.bezierCurveTo(30, 40, 60, 62, 128, 44);
+  ctx.lineTo(128, 72);
+  ctx.fill();
+  screenTex = new THREE.CanvasTexture(c);
+  screenTex.colorSpace = THREE.SRGBColorSpace;
+  return screenTex;
+}
+// Beach-umbrella stripes, round the canopy.
+let stripeTex = null;
+function stripeTexture() {
+  if (stripeTex) return stripeTex;
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 8;
+  const ctx = c.getContext('2d');
+  for (let k = 0; k < 8; k++) {
+    ctx.fillStyle = k % 2 ? '#f4f1ea' : '#2f8fa6';
+    ctx.fillRect(k * 16, 0, 16, 8);
+  }
+  stripeTex = new THREE.CanvasTexture(c);
+  stripeTex.colorSpace = THREE.SRGBColorSpace;
+  return stripeTex;
+}
+
 const SIZE = { // footprint [long, deep]
-  birdhouse: [1.2, 1.2], bench: [5.2, 2.2], bike: [6, 1.6], ebike: [6, 1.6], kayak: [12, 2.2], greenhouse: [10, 8], hottub: [7.5, 8.8],
-  car: [14.6, 7.4], carNew: [14.6, 7.4], tinyhouse: [24, 9.4], sailboat: [30, 10], plane: [28, 36], yacht: [96, 20], jet: [60, 52],
+  pizza: [1.6, 1.6], dinner: [6, 3], tv: [5.4, 1.6], phone: [1.6, 1.6], vacation: [8, 6], hottub: [7.5, 8.8],
+  car: [14.6, 7.4], carNew: [14.6, 7.4], suv: [16.4, 8], sailboat: [30, 10], plane: [28, 36], yacht: [96, 20], jet: [60, 52],
 };
 // How tall each stands, for its label.
-const TALL = { birdhouse: 7, bench: 3.6, bike: 3.6, ebike: 3.6, kayak: 2.6, greenhouse: 8.6, hottub: 3.4, car: 5.4, carNew: 5.4, tinyhouse: 14.2, sailboat: 44, plane: 10, yacht: 30, jet: 22 };
+const TALL = { pizza: 1.4, dinner: 3.7, tv: 4.7, phone: 3.9, vacation: 6.9, hottub: 3.4, car: 5.4, carNew: 5.4, suv: 6.5, sailboat: 44, plane: 10, yacht: 30, jet: 22 };
 
 /**
  * dollars, gallons: saved over `years`. lotPts: the lot in scene feet [[x, z]];
@@ -551,16 +580,17 @@ export function createPayoffStacks({ dollars, gallons, years, lotPts, house, fro
     // savings pay for, parked in rows of up to three.
     const buy = purchaseFor(dollars);
     const [len, dep] = SIZE[buy.model];
-    const perRow = Math.min(buy.count, 3);
-    const rows = Math.ceil(buy.count / perRow);
+    const pieces = buy.stack ? 1 : buy.count; // a stack is one pile of them all
+    const perRow = Math.min(pieces, 3);
+    const rows = Math.ceil(pieces / perRow);
     const first = sideAt - w / 2 - 3 - len / 2;
     let top = 0;
     let labelAt = null;
-    for (let k = 0; k < buy.count; k++) {
+    for (let k = 0; k < pieces; k++) {
       const objSide = first - (k % perRow) * (len + 1.2);
       const [ox, oz] = place(objSide, frontLine + dep / 2 + 1 - Math.floor(k / perRow) * (dep + 1.5));
       const [olo, ohi] = lowHigh(ox, oz, len / 2, dep / 2);
-      const obj = purchaseModel(buy.model);
+      const obj = purchaseModel(buy.model, buy.stack ? buy.count : 1);
       obj.position.set(ox, ohi > olo + 1.5 ? olo : (olo + ohi) / 2, oz);
       obj.rotation.y = facing + 0.35; // side on to the street, turned a little
       obj.visible = false;

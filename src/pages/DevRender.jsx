@@ -9,7 +9,8 @@ import { designOrDefault } from '@/lib/landscapeMath';
 // locally) drawn in the 3D view exactly as the app would, for reviewing many
 // scans' renders side by side with the real property.
 //   /dev/render?src=http://127.0.0.1:8767/torrance&n=12&view=design
-//   (&real=1: in Real 3D, as the app shows it; &qa=1: Google's own 3D, uncut and without the model)
+//   (&real=1: in Real 3D, as the app shows it; &qa=1: Google's own 3D, uncut and without the model;
+//   &dollars=1200&gallons=30000&years=1: the Payoff step's stacks for those savings)
 export default function DevRender() {
   const [params] = useSearchParams();
   const src = params.get('src');
@@ -18,6 +19,10 @@ export default function DevRender() {
   // qa=1: Google's 3D world, uncut and without the model, from the same view (for comparing).
   const qa = params.get('qa') === '1';
   const real = qa || params.get('real') === '1';
+  const dollars = Number(params.get('dollars')) || 0;
+  const gallons = Number(params.get('gallons')) || 30000;
+  const years = Number(params.get('years')) || 1;
+  const payoff = useMemo(() => (dollars ? { dollars, gallons, years } : null), [dollars, gallons, years]);
   window.__ecoQaReal = qa;
   window.__ecoDevRender = true;
   const [scan, setScan] = useState(null);
@@ -41,7 +46,8 @@ export default function DevRender() {
         project={project}
         entries={entries}
         mode={view === 'check' ? 'check' : 'design'}
-        scene={view === 'check' ? 'scan' : 'design'}
+        scene={view === 'check' ? 'scan' : payoff ? 'payoff' : 'design'}
+        payoff={payoff}
         onReady={() => { window.__renderReady = true; }}
         initialReal={real}
       />
