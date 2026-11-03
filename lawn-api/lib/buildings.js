@@ -29,7 +29,8 @@ async function timedFetch(url, init = {}) {
     try {
       return await fetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
     } catch (err) {
-      if (attempt >= 2 || init.signal?.aborted || err.name === 'TimeoutError') throw err;
+      // A slow read is tried once more; a dropped connection twice.
+      if (attempt >= (err.name === 'TimeoutError' ? 1 : 2) || init.signal?.aborted) throw err;
       await new Promise((done) => setTimeout(done, 500 * (attempt + 1)));
     }
   }

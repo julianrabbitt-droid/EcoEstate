@@ -410,6 +410,7 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   const parcel = rasterize(grid, polygonsOf(parcelGeometry));
   const t0 = Date.now();
   let templates = [];
+  let buildingsFailed = false;
   let mappedPaths = [];
   let lidar = null;
   const lidarLoad = grid.res <= SETTINGS.lidarMaxResM
@@ -431,6 +432,7 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     readCanopy(grid).then((r) => ((r.ms = Date.now() - t0), r)),
     buildingsInBox(box).catch((err) => {
       console.warn(`building footprints unavailable: ${err.message}`);
+      buildingsFailed = true;
       return [];
     }),
     // A little wider than the property, to include the roads that border it.
@@ -774,8 +776,13 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
 
   // Paving: bare, flat, not green, not under a tree, not pool water.
   const paveMask = new Uint8Array(n);
-  for (let k = 0; k < n; k++) {
+  // Without building outlines a flat roof can't be told from a patio: no paving then.
+  for (let k = 0; k < n && !buildingsFailed; k++) {
     if (!usable[k] || green[k] || trees[k] || tall[k]) continue;
+    // Anything standing above head height is a roof or a canopy, never pavement
+    // (this also keeps roofs out when building outlines couldn't be loaded).
+    if (measured?.known[k] && measured.canopy[k]) continue;
+    if (canopy.known[k] && canopy.height[k] > 2.5) continue;
     const [r, g, b] = [naip.red[k], naip.green[k], naip.blue[k]];
     if (ndvi[k] >= SETTINGS.paveNdviMax || (r + g + b) / 3 < SETTINGS.paveMinBrightness) continue;
     if (b > r * 1.15 && b > g * 1.05) continue; // pool water
@@ -823,7 +830,8 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     // Mapped shapes weren't ready in time; callers shouldn't cache this result.
     templatesPending: templates === null,
     // Some canopy tiles couldn't be loaded, so trees there weren't removed; don't cache either.
-    canopyIncomplete: canopy.failedTiles > 0,
+    // Some canopy tiles or the building outlines couldn't be loaded: callers shouldn't cache this.
+    canopyIncomplete: canopy.failedTiles > 0 || buildingsFailed,
     buildings: buildingLayer,
     trees: [...detectTrees(grid, canopy, onParcelNotRoof), ...streetTrees],
     paths: layers.paths,
