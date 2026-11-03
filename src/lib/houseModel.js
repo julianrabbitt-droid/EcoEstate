@@ -311,6 +311,10 @@ function roofFaces(type, w, d, eave, rise) {
 
 const SURVEYED_MIN_SQFT = 8000; // larger buildings with a surveyed roof are drawn as surveyed
 const MAX_PITCH = 14 / 12;
+// A block whose quarter most level slopes less than this (rise per run) has a
+// flat roof: measured flat roofs read 0.07 at most with their lidar noise,
+// pitched ones 0.11 and up (2 in 12 is 0.17).
+const FLAT_GRADIENT = 0.09;
 
 // Wall and roof materials: the wall colour (or the mapped facade colour) with
 // a photographed relief (CC0, Poly Haven) for its look, plaster for stucco,
@@ -452,6 +456,17 @@ function surveyBlock(b, heightAt) {
   const eave = pct(edge.length ? edge : all, 0.2);
   if (top < 6) return null;
   if (top - eave < 2) return { type: 'flat', eave: pct(all, 0.6), rise: 0 };
+  // Flat roofs at more than one level (a city block's flats, with light wells,
+  // parapets and a lower back) vary as much in height as a pitched one, but
+  // are level between their steps: most of a pitched roof slopes, and only a
+  // flat one has a good share of level ground (gradient over 4 ft).
+  const grads = [];
+  for (let u = -b.w / 2 + 2.5; u < b.w / 2 - 2.5; u += step) {
+    for (let v = -b.d / 2 + 2.5; v < b.d / 2 - 2.5; v += step) {
+      if (at(u, v) >= 6) grads.push(Math.hypot(at(u + 2, v) - at(u - 2, v), at(u, v + 2) - at(u, v - 2)) / 4);
+    }
+  }
+  if (grads.length >= 8 && pct(grads, 0.25) < FLAT_GRADIENT) return { type: 'flat', eave: pct(all, 0.6), rise: 0 };
   // The ridge line's height along the block, and across it.
   const line = (f, len) => {
     const vals = [];
