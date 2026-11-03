@@ -28,6 +28,27 @@ function rectPoints(center, areaSqft) {
   ];
 }
 
+// Where a clicked point joins an outline: on the edge nearest to it (between
+// the two corners it falls between), so a corner added anywhere keeps the
+// shape from crossing itself. Returns the index to insert at and how far the
+// edge is (metres); outlines under three corners take it at the end.
+function nearestEdge(points, [lat, lng]) {
+  if (points.length < 3) return { index: points.length, distM: 0 };
+  const k = Math.cos((lat * Math.PI) / 180) * 111320;
+  const xy = ([a, b]) => [(b - lng) * k, (a - lat) * 110540];
+  let best = { index: points.length, distM: Infinity };
+  for (let i = 0; i < points.length; i++) {
+    const [ax, ay] = xy(points[i]);
+    const [bx, by] = xy(points[(i + 1) % points.length]);
+    const [ex, ey] = [bx - ax, by - ay];
+    const t = Math.max(0, Math.min(1, -(ax * ex + ay * ey) / (ex * ex + ey * ey || 1)));
+    const d = Math.hypot(ax + t * ex, ay + t * ey);
+    if (d < best.distM) best = { index: i + 1, distM: d };
+  }
+  return best;
+}
+const JOIN_NEAR_M = 4; // a click this close to an outline's edge adds a corner to it rather than starting a new one
+
 function vertexIcon(active) {
   return L.divIcon({
     className: '',
@@ -150,17 +171,29 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
     setPicking(false);
   };
 
+  // A click adds a corner to the outline being traced, on its nearest edge;
+  // with none selected, to the outline whose edge it's on, else it starts one.
   const trace = (latlng) => {
     if (layer !== 'lawn' && layer !== 'building') return;
-    setShapes((prev) => {
-      const current = prev.find((s) => s.id === active && s.type === layer);
-      if (!current) {
-        const id = newId();
-        setActive(id);
-        return [...prev, { id, type: layer, points: [latlng] }];
-      }
-      return prev.map((s) => (s.id === active ? { ...s, points: [...s.points, latlng] } : s));
-    });
+    let target = shapes.find((sh) => sh.id === active && sh.type === layer);
+    if (!target) {
+      const near = shapes
+        .filter((sh) => sh.type === layer && sh.points.length >= 3)
+        .map((sh) => ({ sh, ...nearestEdge(sh.points, latlng) }))
+        .sort((a, b) => a.distM - b.distM)[0];
+      if (near && near.distM <= JOIN_NEAR_M) target = near.sh;
+    }
+    if (!target) {
+      const id = newId();
+      setActive(id);
+      lastAdded.current = { kind: 'corner', id, index: 0 };
+      setShapes((prev) => [...prev, { id, type: layer, points: [latlng] }]);
+      return;
+    }
+    const { index } = nearestEdge(target.points, latlng);
+    setActive(target.id);
+    lastAdded.current = { kind: 'corner', id: target.id, index };
+    setShapes((prev) => prev.map((sh) => (sh.id === target.id ? { ...sh, points: [...sh.points.slice(0, index), latlng, ...sh.points.slice(index)] } : sh)));
   };
 
   const placeTree = (latlng) => {
@@ -180,9 +213,17 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
     setActiveTree(null);
   };
 
+  // The corner just added (wherever it went in the outline), else the last one.
+  const withoutCorner = (points, id) => {
+    const last = lastAdded.current;
+    const at = last?.kind === 'corner' && last.id === id && last.index < points.length ? last.index : points.length - 1;
+    if (last?.id === id) lastAdded.current = null;
+    return points.filter((_, j) => j !== at);
+  };
+
   const undo = () => {
     if (editingLot) {
-      setLot((prev) => (!prev || prev.length <= 1 ? null : prev.slice(0, -1)));
+      setLot((prev) => (!prev || prev.length <= 1 ? null : withoutCorner(prev, 'lot')));
       return;
     }
     // Nothing selected: undo the most recent change (the last tree placed, or
@@ -198,7 +239,7 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
     }
     const target = (activeShape?.type === layer ? activeShape : null) || [...shapes].reverse().find((sh) => sh.type === layer && sh.points.length);
     if (!target) return;
-    const np = target.points.slice(0, -1);
+    const np = withoutCorner(target.points, target.id);
     if (np.length === 0) {
       setShapes((prev) => prev.filter((s) => s.id !== target.id));
       setActive(null);
@@ -225,7 +266,12 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
     setShapes((prev) => prev.map((sh, i) => (i === si ? { ...sh, points: sh.points.map((p, j) => (j === vi ? latlng : p)) } : sh)));
   };
 
-  const traceLot = (latlng) => setLot((prev) => (prev ? [...prev, latlng] : [latlng]));
+  const traceLot = (latlng) => {
+    const pts = lot || [];
+    const { index } = nearestEdge(pts, latlng);
+    lastAdded.current = { kind: 'corner', id: 'lot', index };
+    setLot([...pts.slice(0, index), latlng, ...pts.slice(index)]);
+  };
   const setLotVertex = (vi, latlng) => setLot((prev) => (prev ? prev.map((p, j) => (j === vi ? latlng : p)) : prev));
   const pickLayer = (l) => {
     setLayer(l);
@@ -395,10 +441,10 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
           {picking
             ? 'Click your house on the map to center the outline there'
             : {
-                lawn: 'Click the map to trace a lawn’s corners · drag corners to adjust · New lawn starts another',
-                building: 'Click the map to trace a building’s corners · drag corners to adjust · New building starts another',
+                lawn: 'Click to add a lawn’s corners (each joins the nearest edge) · drag corners to adjust · New lawn starts another',
+                building: 'Click to add a building’s corners (each joins the nearest edge) · drag corners to adjust · New building starts another',
                 tree: 'Click the map to add a tree · drag to move · click one to resize or delete it',
-                lot: 'Click to add property-line corners · drag corners to adjust',
+                lot: 'Click to add property-line corners (each joins the nearest edge) · drag corners to adjust',
               }[layer]}
         </div>
       </div>
