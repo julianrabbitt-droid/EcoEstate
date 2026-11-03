@@ -23,11 +23,16 @@ const footers = new LRU(64); // url -> { file, metadata, starts }
 
 // fetch for hyparquet's range requests, with a timeout on each one. A dropped
 // connection (S3 closes some under load) is retried twice before giving up.
+// The body is read here, inside the retry: the timeout runs on while it
+// downloads, and a slow body read used to fail the scan's buildings outright.
 async function timedFetch(url, init = {}) {
   for (let attempt = 0; ; attempt++) {
     const timeout = AbortSignal.timeout(READ_TIMEOUT_MS);
     try {
-      return await fetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
+      const res = await fetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
+      if (init.method === 'HEAD' || !res.body) return res;
+      const body = await res.arrayBuffer();
+      return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
     } catch (err) {
       // A slow read is tried once more; a dropped connection twice.
       if (attempt >= (err.name === 'TimeoutError' ? 1 : 2) || init.signal?.aborted) throw err;
