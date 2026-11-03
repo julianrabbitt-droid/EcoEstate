@@ -103,13 +103,16 @@ const FIX_MAX_PRECISE_FT = 4; // Google's ground is moved at most this far onto 
 const FIX_MAX_FT = 40; // …or onto the coarser terrain fetched in the browser
 
 // Real 3D puts the model's property among Google's real surroundings: on the
-// lot everything is the model's, exactly as in the model view, and Google's
-// mesh is cut away there. Around it, Google's trees that reach over the lot
-// are cut whole (the model draws them), and between the lot and its street
-// only Google's ground stays (no parked cars or bins in front of the yard).
-// Done in the tiles' shaders with top-down masks; shared by every tile material.
+// lot the house, trees, beds and pools are the model's, standing on Google's
+// real ground (its photographed colours, laid onto the model's terrain);
+// everything else Google has there is cut away. Around it, Google's trees that
+// reach over the lot are cut whole (the model draws them), and between the lot
+// and its street only Google's ground stays (no parked cars or bins in front
+// of the yard). Done in the tiles' shaders with top-down masks; shared by
+// every tile material.
 const clipUniforms = {
-  // Red: the lot, cut away entirely.
+  // Red: the lot, where only Google's ground stays; green: the model's houses
+  // and a margin, cut away entirely.
   uEcoMask: { value: new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1) },
   uEcoBox: { value: new THREE.Vector4(1e7, 1e7, 1, 1) }, // nowhere until the lot is known
   // Around the lot. Green: a tree's crown plus a margin (red: the crown
@@ -134,6 +137,12 @@ const TREE_CUT_CORE_FT = 2.5;
 const TREE_CUT_ABOVE_FT = 4; // …and from this high in the margin around it
 const TREE_CUT_PAD_FT = 2; // the margin past its scanned crown
 const STRIP_CUT_FT = 1.2; // in front of the lot, anything standing higher than this goes
+// On the lot, Google's mesh up to this high over the model's ground is its
+// ground; above, what stands on it (house, trees, cars, furniture) is cut…
+const LOT_GROUND_FT = 2.5;
+const LOT_SINK_FT = 0.4; // …and the ground is laid this far under the model's, so beds, pools and paths on it show
+const LOT_FILL_FT = 1.2; // the model's own lot ground goes this far under Google's: it shows only where Google's was cut
+const HOUSE_CUT_PAD_FT = 4; // round the model's houses Google's mesh is cut whole, ground and all
 // Just past the property line too, so fences, hedges and parked cars on it
 // go whole rather than sliced at the line.
 const LOT_BAND_FT = 4;
@@ -170,7 +179,24 @@ function clipTileMaterial(m) {
   m.toneMapped = false; // Google's tiles are photos; keep their colours as captured
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, clipUniforms);
-    sh.vertexShader = 'varying vec3 vEcoWorld;\nuniform sampler2D uEcoFix;\nuniform vec4 uEcoFixBox;\n' + sh.vertexShader.replace(
+    sh.vertexShader = `varying vec3 vEcoWorld;
+uniform sampler2D uEcoFix;
+uniform vec4 uEcoFixBox;
+uniform sampler2D uEcoMask;
+uniform vec4 uEcoBox;
+uniform sampler2D uEcoGround;
+uniform vec4 uEcoNearBox;
+// The model's ground under a point, between the grid's cell centres.
+float ecoGroundAt(vec2 xz) {
+  vec2 size = vec2(textureSize(uEcoGround, 0));
+  vec2 f = clamp((xz - uEcoNearBox.xy) / uEcoNearBox.zw * size - 0.5, vec2(0.0), size - 1.0);
+  vec2 t = f - floor(f);
+  ivec2 a = ivec2(floor(f));
+  ivec2 b = min(a + 1, ivec2(size) - 1);
+  return mix(mix(texelFetch(uEcoGround, a, 0).r, texelFetch(uEcoGround, ivec2(b.x, a.y), 0).r, t.x),
+    mix(texelFetch(uEcoGround, ivec2(a.x, b.y), 0).r, texelFetch(uEcoGround, b, 0).r, t.x), t.y);
+}
+` + sh.vertexShader.replace(
       '#include <project_vertex>',
       `#include <project_vertex>
   vEcoWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
@@ -187,6 +213,13 @@ function clipTileMaterial(m) {
     float e01 = texelFetch(uEcoFix, ivec2(min(ecoI + vec2(0.0, 1.0), ecoMax)), 0).r;
     float e11 = texelFetch(uEcoFix, ivec2(min(ecoI + vec2(1.0, 1.0), ecoMax)), 0).r;
     vEcoWorld.y -= mix(mix(e00, e10, ecoT.x), mix(e01, e11, ecoT.x), ecoT.y);
+    // On the lot, Google's ground is laid on the model's (its own lumps and
+    // tilt never bury a bed); what stands higher is cut in the fragment shader.
+    vec2 ecoLot = (vEcoWorld.xz - uEcoBox.xy) / uEcoBox.zw;
+    if (ecoLot.x > 0.0 && ecoLot.x < 1.0 && ecoLot.y > 0.0 && ecoLot.y < 1.0 && textureLod(uEcoMask, ecoLot, 0.0).r > 0.5) {
+      float ecoG = ecoGroundAt(vEcoWorld.xz);
+      if (vEcoWorld.y < ecoG + ${LOT_GROUND_FT.toFixed(1)}) vEcoWorld.y = ecoG - ${LOT_SINK_FT.toFixed(1)};
+    }
     gl_Position = projectionMatrix * viewMatrix * vec4(vEcoWorld, 1.0);
   }`,
     );
@@ -198,12 +231,16 @@ function clipTileMaterial(m) {
       'uniform sampler2D uEcoGround;',
       'uniform vec4 uEcoNearBox;',
       sh.fragmentShader.replace('void main() {', `void main() {
-  vec2 ecoUv = (vEcoWorld.xz - uEcoBox.xy) / uEcoBox.zw;
-  if (ecoUv.x > 0.0 && ecoUv.x < 1.0 && ecoUv.y > 0.0 && ecoUv.y < 1.0 && texture2D(uEcoMask, ecoUv).r > 0.5) discard;
   vec2 ecoNear = (vEcoWorld.xz - uEcoNearBox.xy) / uEcoNearBox.zw;
-  if (ecoNear.x > 0.0 && ecoNear.x < 1.0 && ecoNear.y > 0.0 && ecoNear.y < 1.0) {
+  bool ecoNearIn = ecoNear.x > 0.0 && ecoNear.x < 1.0 && ecoNear.y > 0.0 && ecoNear.y < 1.0;
+  float ecoGround = ecoNearIn ? texture2D(uEcoGround, ecoNear).r : 0.0;
+  vec2 ecoUv = (vEcoWorld.xz - uEcoBox.xy) / uEcoBox.zw;
+  if (ecoUv.x > 0.0 && ecoUv.x < 1.0 && ecoUv.y > 0.0 && ecoUv.y < 1.0) {
+    vec4 ecoLot = texture2D(uEcoMask, ecoUv);
+    if (ecoLot.g > 0.5 || (ecoLot.r > 0.5 && (!ecoNearIn || vEcoWorld.y > ecoGround + ${LOT_GROUND_FT.toFixed(1)}))) discard;
+  }
+  if (ecoNearIn) {
     vec4 ecoCut = texture2D(uEcoNear, ecoNear);
-    float ecoGround = texture2D(uEcoGround, ecoNear).r;
     float ecoAbove = ecoCut.r > 0.5 ? ${TREE_CUT_CORE_FT.toFixed(1)} : ${TREE_CUT_ABOVE_FT.toFixed(1)};
     if (ecoCut.g > 0.5 && vEcoWorld.y > ecoGround + ecoAbove) discard;
     if (ecoCut.b > 0.5 && vEcoWorld.y > ecoGround + ${STRIP_CUT_FT.toFixed(1)}) discard;
@@ -677,8 +714,9 @@ function drapedGround(outline, holes, at, texture, circles = [], skirt = false, 
       const x = x0 + ((x1 - x0) * i) / (nx - 1);
       const z = z0 + ((z1 - z0) * j) / (nz - 1);
       const inside = insidePoly([x, z], outline);
-      // Inside the lot the fill sits well under Google's real yard (it only shows where the house was cut away).
-      let drop = inside ? (skirt ? 1 : 0) : Math.min(SKIRT_DROP_MAX_FT, SKIRT_DROP_FT + distToOutline([x, z], outline) * 0.3);
+      // Inside the lot the fill sits under the model's own ground (which in
+      // Real 3D lies under Google's real yard, showing where that was cut).
+      let drop = inside ? (skirt ? LOT_FILL_FT + 0.6 : 0) : Math.min(SKIRT_DROP_MAX_FT, SKIRT_DROP_FT + distToOutline([x, z], outline) * 0.3);
       // Away from every cut the skirt only has to cover gaps in Google's mesh,
       // so it sinks deep: a pool or sunken patio Google draws lower than the
       // terrain then shows as it is, never painted over.
@@ -1185,6 +1223,7 @@ function groundTexture() {
 // height; in a distinct deep green so they read as kept trees rather than
 // newly designed plants.
 const EXISTING_TREE = { id: '__existing_tree__', form: 'tree', color: '#38522e', accent: '#5a7344' };
+const EXISTING_BUSH = { id: '__existing_bush__', form: 'shrub', color: '#4c6a3a', accent: '#5f7a48' };
 function buildExistingTree(radiusFt, heightFt) {
   const r = Math.max(2, radiusFt);
   const plant = { ...EXISTING_TREE, w: r * 2, h: heightFt > 0 ? Math.max(heightFt, r) : r * 2.3 };
@@ -1443,6 +1482,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   const lot = useMemo(() => prepareLot(project), [project]);
   const buildings = useMemo(() => prepareBuildings(project), [project]);
   const trees = useMemo(() => prepareTrees(project), [project]);
+  const bushes = useMemo(() => prepareTrees(project, 'bushes'), [project]);
   const paths = useMemo(() => preparePaths(project), [project]);
   const pools = useMemo(() => preparePools(project), [project]);
   const layout = useMemo(() => arrangePlants(polys, entries, pattern), [polys, entries, pattern]);
@@ -1766,13 +1806,16 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
         tl.tiles.update();
       }
       if (dirty) {
-        // In Real 3D the lot is the model's, just as in the model view, and
-        // Google's real streets, neighbours and trees take over around it
-        // from the modelled ones (and the satellite ground).
+        // In Real 3D the lot is the model's, on Google's real ground (the
+        // model's own goes under it, showing only where Google's was cut),
+        // and Google's real streets, neighbours and trees take over around
+        // it from the modelled ones (and the satellite ground).
         for (const c of scene.children) {
           const u = c.userData;
           if (u && (u.satellite || u.offLot || u.surround)) c.visible = !t3;
           if (u && (u.realOnly || u.skirt)) c.visible = !!t3;
+          if (u?.lotGround) c.position.y = (u.restY ??= c.position.y) - (t3 ? LOT_FILL_FT : 0);
+          if (u?.lotPaving) c.visible = !t3;
           // Development review: only Google's world, nothing of the model's.
           if (import.meta.env.DEV && t3 && window.__ecoQaReal && u && (u.ground || u.bed || u.building || u.path || u.existingTree || u.outline || u.payoff)) c.visible = false;
         }
@@ -1947,24 +1990,38 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
       return undefined;
     }
     const W = 1024;
-    // The lot, over its own box (finest detail along the line).
-    const xs = lotPts.map((p) => p[0]);
-    const zs = lotPts.map((p) => p[1]);
-    const [minX, maxX, minZ, maxZ] = [Math.min(...xs) - 2, Math.max(...xs) + 2, Math.min(...zs) - 2, Math.max(...zs) + 2];
+    // The lot and the houses, over their own box (finest detail along the line).
+    const houses = buildings.map(scene2);
+    const xs = [...lotPts, ...houses.flat()].map((p) => p[0]);
+    const zs = [...lotPts, ...houses.flat()].map((p) => p[1]);
+    const edge = HOUSE_CUT_PAD_FT + 2;
+    const [minX, maxX, minZ, maxZ] = [Math.min(...xs) - edge, Math.max(...xs) + edge, Math.min(...zs) - edge, Math.max(...zs) + edge];
     const c = document.createElement('canvas');
     c.width = W;
     c.height = W;
     const ctx = c.getContext('2d');
+    const trace = (pts) => {
+      ctx.beginPath();
+      pts.forEach(([x, z], i) => {
+        const px = ((x - minX) / (maxX - minX)) * W;
+        const py = (1 - (z - minZ) / (maxZ - minZ)) * W; // canvas rows run top-down; the texture is flipped
+        if (i) ctx.lineTo(px, py);
+        else ctx.moveTo(px, py);
+      });
+      ctx.closePath();
+    };
     ctx.fillStyle = '#ff0000';
-    ctx.beginPath();
-    lotPts.forEach(([x, z], i) => {
-      const px = ((x - minX) / (maxX - minX)) * W;
-      const py = (1 - (z - minZ) / (maxZ - minZ)) * W; // canvas rows run top-down; the texture is flipped
-      if (i) ctx.lineTo(px, py);
-      else ctx.moveTo(px, py);
-    });
-    ctx.closePath();
+    trace(lotPts);
     ctx.fill();
+    // Green over it: each house and a margin, where nothing of Google's stays
+    // (its walls flare out a few feet, never quite on the model's footprints,
+    // and laid flat they'd smear across the yard).
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = ctx.strokeStyle = '#00ff00';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = (2 * HOUSE_CUT_PAD_FT * W) / (maxX - minX);
+    houses.forEach((h) => { trace(h); ctx.fill(); ctx.stroke(); });
+    ctx.globalCompositeOperation = 'source-over';
     const lotTex = new THREE.CanvasTexture(c);
     lotTex.magFilter = THREE.NearestFilter; // a crisp line, never a soft blend of cut and kept
     const previous = clipUniforms.uEcoMask.value;
@@ -2033,7 +2090,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     if (oldGround.image?.width > 1) oldGround.dispose();
     threeRef.current?.markDirty?.();
     return undefined;
-  }, [lot, trees, groundAt, reach, ownTree, cx, cy, payoffZones]);
+  }, [lot, buildings, trees, groundAt, reach, ownTree, cx, cy, payoffZones]);
 
   // Google Photorealistic 3D Tiles around the garden, while the toggle is on.
   // The tileset is placed so the scene origin is the property's centre, east
@@ -2106,8 +2163,11 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
         const median = heights[Math.floor(heights.length / 2)];
         // Coarse globe tiles load first and can be far off; wait for detailed ones that agree.
         const [lo, hi] = knownHeight ? [-400, 400] : [-1000, 15000];
-        if (import.meta.env.DEV) state.levelTrace = { n: heights.length, ground, median, lo, hi, heightM, knownHeight }; // for the Real 3D test
-        if (ground < lo || ground > hi || median - ground > 60) return false;
+        // Enough of the samples agree on that ground (a street under a full canopy
+        // can have most of its samples on the trees, the median far above).
+        const agree = heights.filter((h) => Math.abs(h - ground) < 4).length;
+        if (import.meta.env.DEV) state.levelTrace = { n: heights.length, ground, median, agree, lo, hi, heightM, knownHeight }; // for the Real 3D test
+        if (ground < lo || ground > hi || (median - ground > 60 && agree < Math.max(3, heights.length * 0.15))) return false;
         holder.position.y = -ground - PHOTO_SINK_FT;
         holder.updateMatrixWorld(true);
         markDirty();
@@ -2559,14 +2619,17 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     paths.forEach((poly) => {
       if (!poly || poly.length < 3) return;
       const road = ROAD_KINDS.has(poly.kind);
-      // The property stays simple: its driveway, patios and walks are left to
-      // the aerial photo on its ground; only the streets are modelled.
-      if (!road || (poly.kind === 'service' && onLot(poly.reduce((a, p) => a + p[0], 0) / poly.length, poly.reduce((a, p) => a + p[1], 0) / poly.length))) return;
-      // Driveways, patios and walks the scan found as bare paving: flat on the ground.
-      const paved = poly.kind === 'paved';
       const pmx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
       const pmy = poly.reduce((s, p) => s + p[1], 0) / poly.length;
       const offLot = !onLot(pmx, pmy);
+      // The property's own driveway, patios, walks and paths (the scan's paving
+      // and walks, and any mapped): flat on its ground. In Real 3D Google's
+      // real ground shows them instead. Off the lot only streets are modelled,
+      // and a driveway mapped as a service road is drawn from the scan's paving.
+      const lotPaving = !road && !offLot;
+      if (!road && !lotPaving) return;
+      if (poly.kind === 'service' && !offLot) return;
+      const paved = poly.kind === 'paved';
       // Off the lot only the street it faces and the walks between: other roads
       // and the neighbours' paths are left out of the model.
       if (offLot && outerPoly && outerPoly.length >= 3) {
@@ -2583,6 +2646,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
       const slab = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false }), road ? roadMat : paved ? concreteMat : paverMat);
       slab.userData.path = true;
       slab.userData.offLot = offLot;
+      slab.userData.lotPaving = lotPaving;
       slab.rotation.x = -Math.PI / 2;
       slab.position.y = road ? -CURB_FT : MULCH_Y; // walks sit on the mulch, so a path crossing a converted lawn stays visible
       slab.receiveShadow = true;
@@ -2595,6 +2659,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
       );
       edge.userData.path = true;
       edge.userData.offLot = offLot;
+      edge.userData.lotPaving = lotPaving;
       scene.add(edge);
 
       // One label per road piece long enough to read; skip repeats close by.
@@ -2714,6 +2779,18 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
       scene.add(mesh);
     });
 
+    // The lot's bushes and hedges from the scan, as shrubs their scanned size,
+    // on the lowest ground under them. Not where a bed now goes (the design
+    // replaces the lawn only, but a bed's edge may reach one).
+    bushes.filter((b) => onLot(b.x, b.y) && !polys.some((q) => q && q.length >= 3 && insidePoly([b.x, b.y], q))).forEach((b) => {
+      const mesh = buildPlant({ ...EXISTING_BUSH, w: b.radiusFt * 2, h: b.heightFt || b.radiusFt * 1.6 }, true); // drawn in Real 3D too: the shrub scans are sparse, a bush is dense
+      const [bx, bz] = [b.x - cx, -(b.y - cy)];
+      const base = Math.min(at(bx, bz), ...[0, 1, 2, 3].map((k) => at(bx + b.radiusFt * 0.6 * Math.cos((k * Math.PI) / 2), bz + b.radiusFt * 0.6 * Math.sin((k * Math.PI) / 2))));
+      mesh.position.set(bx, base + MULCH_Y, bz);
+      mesh.userData.existingTree = true;
+      scene.add(mesh);
+    });
+
     // A different lawn outline or arrangement pattern starts plants fresh.
     if (movedRef.current.polys !== polys || movedRef.current.pattern !== pattern) {
       movedRef.current = { polys, pattern, map: new Map() };
@@ -2794,7 +2871,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     // The plants were just rebuilt: their species discs follow them. (A call,
     // not a state change, so a rebuild never triggers another render.)
     speciesPlanBuildRef.current?.();
-  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, showLawn, front, ownTree, reach, lawnLabel, terrainDone, maxDim, project, entries, showReal, scansVersion, pools]);
+  }, [layout, polys, pattern, lot, buildings, trees, bushes, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, showLawn, front, ownTree, reach, lawnLabel, terrainDone, maxDim, project, entries, showReal, scansVersion, pools]);
 
   // The camera's view for each project step, flown to when the step changes:
   // the overview for the scan and design, a lower look from the street that

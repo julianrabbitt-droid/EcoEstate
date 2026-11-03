@@ -25,6 +25,8 @@ export function scannedStructures(d) {
     });
   }
   const trees = (d?.trees || []).map((t) => ({ latLng: [t.lat, t.lon], radiusFt: t.radiusFt, heightFt: t.heightFt }));
+  // Bushes and hedges on the lot (shrub-height growth), drawn as shrubs.
+  const bushes = (d?.bushes || []).map((b) => ({ latLng: [b.lat, b.lon], radiusFt: b.radiusFt, heightFt: b.heightFt }));
   const paths = [...(d?.paths?.features || []), ...(d?.nearbyRoads?.features || []), ...(d?.paved?.features || [])]
     .map((f) => ({ polygonLatLng: geoJsonOuterRings(f.geometry)[0], kind: f.properties?.kind, name: f.properties?.name || null }))
     .filter((p) => p.polygonLatLng);
@@ -34,7 +36,7 @@ export function scannedStructures(d) {
   const pools = (d?.pools?.features || []).map((f) => geoJsonOuterRings(f.geometry)[0]).filter((ring) => ring && ring.length >= 3);
   // The ground's heights around the property (USGS bare earth), for the model's slopes.
   const terrain = d?.terrain || null;
-  return { buildings, buildingHeightsFt, buildingRoofs, trees, paths, pools, groundImage, terrain };
+  return { buildings, buildingHeightsFt, buildingRoofs, trees, bushes, paths, pools, groundImage, terrain };
 }
 
 // A scan (the lawn API's answer) as the project the 3D view draws, before it

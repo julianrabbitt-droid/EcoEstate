@@ -309,7 +309,7 @@ function roofFaces(type, w, d, eave, rise) {
   };
 }
 
-const SURVEYED_MIN_SQFT = 8000; // larger buildings with a surveyed roof are drawn as surveyed
+const SURVEYED_MIN_SQFT = 20000; // larger buildings with a surveyed roof (arenas, hangars) are drawn as surveyed; a courtyard block of 8,000 sq ft read as spikes
 const MAX_PITCH = 14 / 12;
 // A block whose quarter most level slopes less than this (rise per run) has a
 // flat roof: measured flat roofs read 0.07 at most with their lidar noise,
@@ -334,7 +334,10 @@ function houseMaterials(type, scannedWall, roof) {
   const scanned = roof?.color ? new THREE.Color(roof.color) : null;
   if (scanned) scanned.multiplyScalar(1.15);
   const roofHex = scanned ? scanned.getHex() : ROOF_COLORS[type] ?? ROOF_COLORS.unknown;
-  const terracotta = scanned ? scanned.r > scanned.g * 1.12 && scanned.r > scanned.b * 1.2 : false;
+  // Clay's warmth, judged on the photo's own (sRGB) values: three's colours are
+  // linear, which stretches every ratio and made grey-brown shingles read as clay.
+  const srgb = scanned ? scanned.getRGB(new THREE.Color(), THREE.SRGBColorSpace) : null;
+  const terracotta = srgb ? srgb.r > srgb.g * 1.12 && srgb.r > srgb.b * 1.2 : false;
   // Walls not seen yet (Street View is checked at the design step): under a
   // clay tile roof, cream stucco, as such houses are nearly always built.
   const wallColor = scannedWall || (terracotta && !facade ? 'cream' : undefined);

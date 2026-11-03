@@ -134,9 +134,10 @@ export function preparePools(project) {
     .map((ring) => ring.map(([lat, lng]) => [(lng - minLng) * 364000 * cosLat, (lat - minLat) * 364000]));
 }
 
-export function prepareTrees(project) {
+// Scanned trees (or, key 'bushes', bushes) in plan feet with their sizes.
+export function prepareTrees(project, key = 'trees') {
   const origin = projectOrigin(project);
-  const trees = project?.trees;
+  const trees = project?.[key];
   if (!origin || !Array.isArray(trees) || !trees.length) return [];
   const { minLat, minLng, cosLat } = origin;
   return trees
@@ -146,7 +147,7 @@ export function prepareTrees(project) {
       return {
         x: (ll[1] - minLng) * 364000 * cosLat,
         y: (ll[0] - minLat) * 364000,
-        radiusFt: Math.max(2, Number(t?.radiusFt) || 4),
+        radiusFt: Math.max(key === 'bushes' ? 1 : 2, Number(t?.radiusFt) || 4),
         heightFt: Number(t?.heightFt) > 0 ? Number(t.heightFt) : null, // measured canopy height, when scanned
       };
     })
