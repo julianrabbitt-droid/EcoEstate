@@ -99,6 +99,8 @@ const GOOGLE_TILES_KEY = import.meta.env.VITE_GOOGLE_MAPS_BROWSER_KEY || '';
 const GIVE_UP_MS = 40000; // of the page actually on screen (a hidden tab stops loading tiles)
 const M_TO_FT = 3.28084;
 const PHOTO_SINK_FT = 0.2; // Google's ground just outside the lot sits this far below the model's
+const FIX_MAX_PRECISE_FT = 4; // Google's ground is moved at most this far onto the scan's bare-earth terrain…
+const FIX_MAX_FT = 40; // …or onto the coarser terrain fetched in the browser
 
 // Real 3D puts the model's property among Google's real surroundings: on the
 // lot everything is the model's, exactly as in the model view, and Google's
@@ -552,6 +554,7 @@ function scanTerrain(known, origin, cx, cy) {
 // instead of a flat slab. Public data, sampled once per project view.
 const USGS_SAMPLES = 'https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/getSamples';
 const USGS_WAIT_MS = 2500;
+const PRECISE_TERRAIN_WAIT_MS = 20000; // Real 3D waits this long for the lawn API's terrain (see preciseTerrainRef)
 async function loadTerrain(planBounds, origin, cx, cy) {
   const { minX, maxX, minY, maxY } = planBounds;
   const span = Math.max(maxX - minX, maxY - minY, 1);
@@ -636,6 +639,8 @@ const SKIRT_DROP_MAX_FT = 2.5; // …sinking to this much lower further out
 const SKIRT_DEEP_FT = 8; // away from the cuts: below any pool or sunken patio Google draws
 const SKIRT_ROAD_RGB = [0.36, 0.36, 0.37]; // under a street: asphalt
 const SKIRT_PAST_CUT_FT = 15; // and this far past every cut's edge
+const SKIRT_FLOOR_FT = 75; // the deep floor under everything this far past the lot (Real 3D's near cuts reach 75; the scan's terrain ~100)
+const SKIRT_RELIEF_FT = 12; // away from the cuts it sinks by the ground's fall over this distance, too
 const distToOutline = ([x, z], pts) => {
   let d = Infinity;
   for (let i = 0; i < pts.length; i++) {
@@ -655,7 +660,7 @@ function drapedGround(outline, holes, at, texture, circles = [], skirt = false, 
   const fillPts = fills.flatMap(([pts, padFt]) => pts.flatMap(([x, z]) => [[x - padFt - past, z - padFt - past], [x + padFt + past, z + padFt + past]]));
   const xs = [...outline.map((p) => p[0]), ...circles.flatMap(([x, , r]) => [x - r - past, x + r + past]), ...fillPts.map((p) => p[0])];
   const zs = [...outline.map((p) => p[1]), ...circles.flatMap(([, z, r]) => [z - r - past, z + r + past]), ...fillPts.map((p) => p[1])];
-  const pad = SKIRT_FT + 1;
+  const pad = skirt ? SKIRT_FLOOR_FT : SKIRT_FT + 1;
   const [x0, x1, z0, z1] = [Math.min(...xs) - pad, Math.max(...xs) + pad, Math.min(...zs) - pad, Math.max(...zs) + pad];
   const step = Math.max(1.5, Math.max(x1 - x0, z1 - z0) / 120);
   const nearCut = (x, z) =>
@@ -677,7 +682,13 @@ function drapedGround(outline, holes, at, texture, circles = [], skirt = false, 
       // Away from every cut the skirt only has to cover gaps in Google's mesh,
       // so it sinks deep: a pool or sunken patio Google draws lower than the
       // terrain then shows as it is, never painted over.
-      if (skirt && !nearCut(x, z)) drop = SKIRT_DEEP_FT;
+      if (skirt && !nearCut(x, z)) {
+        // Deeper where the ground falls away fast, so on a steep slope the
+        // floor stays under Google's ground between its grid points.
+        const h0 = at(x, z);
+        const relief = Math.max(...[[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => Math.abs(at(x + dx * SKIRT_RELIEF_FT, z + dz * SKIRT_RELIEF_FT) - h0)));
+        drop = SKIRT_DEEP_FT + 1.5 * relief;
+      }
       pos.set([x, at(x, z) - drop, z], k * 3);
       // The fill mostly shows under cut-away canopies: shaded, earthy green (the
       // lot slab itself stays plain); under a street it's asphalt.
@@ -714,9 +725,10 @@ function drapedGround(outline, holes, at, texture, circles = [], skirt = false, 
   ctx.strokeStyle = '#fff';
   ctx.lineJoin = 'round';
   if (skirt) {
-    // The lot plus a ring around it and the tree circles. Just under Google's
-    // ground where its mesh is cut (houses, beds, trees), deep below it
-    // everywhere else (see nearCut above).
+    // Everywhere around: just under Google's ground where its mesh is cut
+    // (houses, beds, trees, the street strip), deep below it elsewhere (see
+    // nearCut above), so a gap anywhere in view shows ground, never the sky.
+    ctx.fillRect(0, 0, W, W);
     ctx.lineWidth = (2 * SKIRT_FT * W) / Math.max(x1 - x0, z1 - z0);
     trace(outline);
     ctx.fill();
@@ -845,6 +857,7 @@ function convexHull(pts) {
 // road and the sidewalk and parkway beyond it). In Real 3D nothing of Google's
 // stands there, so the street view of the property is clear.
 const ACROSS_FT = 60;
+const PARKWAY_FT = 10; // past the road's far edge: the sidewalk and planting strip
 function frontReach(lotPts, roads) {
   if (!lotPts || lotPts.length < 3 || !roads.length) return null;
   const strip = frontStrip(lotPts, roads, true);
@@ -871,11 +884,20 @@ function frontStrip(lotPts, roads, across = false) {
   const min = Math.min(...hits.map((h) => h.hit.d));
   if (min > FRONT_MAX_FT) return null;
   const front = hits.filter((h) => h.hit.d <= Math.min(FRONT_MAX_FT, min + 25));
-  // Past the road's near edge too, straight on from the lot.
+  // Past the road too, straight on from the lot: to its far edge and the
+  // sidewalk and parkway beyond (never into the yards across the street).
   const far = (h) => {
     const [dx, dz] = [h.hit.q[0] - h.v[0], h.hit.q[1] - h.v[1]];
     const len = Math.hypot(dx, dz) || 1;
-    return [h.hit.q[0] + (dx / len) * ACROSS_FT, h.hit.q[1] + (dz / len) * ACROSS_FT];
+    const [ux, uz] = [dx / len, dz / len];
+    let edge = 0;
+    for (let t = 1; t <= ACROSS_FT; t += 1) {
+      const pt = [h.hit.q[0] + ux * t, h.hit.q[1] + uz * t];
+      if (roads.some((road) => insidePoly(pt, road))) edge = t;
+      else if (t - edge > 3) break; // past the road (a gap under 3 ft is a seam between its pieces)
+    }
+    const reachFt = Math.min(ACROSS_FT, edge + PARKWAY_FT);
+    return [h.hit.q[0] + ux * reachFt, h.hit.q[1] + uz * reachFt];
   };
   return front.length >= 2 ? convexHull(front.flatMap((h) => (across ? [h.v, h.hit.q, far(h)] : [h.v, h.hit.q]))) : null;
 }
@@ -892,6 +914,19 @@ const GROUND_NEAR_FT = 14; // neighbourhood radius
 const GROUND_WIDE_FT = 40; // the wider check against canopy and roofs
 const GROUND_TALL_FT = 4; // this far above the ground around it is canopy, a roof or a car
 const GROUND_SNAP_FT = 1.2; // a hit this close to the estimate is the ground itself
+// The first surface a ray meets on Google's mesh, skipping its coarse
+// world-scale tiles: one can stay in the scene over the property (for the far
+// horizon) hundreds of metres above the real ground, while the detailed tiles
+// are in under it.
+const COARSE_TILE_M = 2000; // a tile's geometry wider than this (in its own metres) isn't the ground's detail
+function tileHit(ray, group) {
+  return ray.intersectObject(group, true).find((h) => {
+    const g = h.object.geometry;
+    if (!g.boundingSphere) g.computeBoundingSphere();
+    return g.boundingSphere.radius < COARSE_TILE_M;
+  });
+}
+
 async function googleGround(group, rawAt, [x0, x1, z0, z1], alive) {
   const step = Math.max(4, Math.max(x1 - x0, z1 - z0) / 40);
   const nx = Math.ceil((x1 - x0) / step) + 1;
@@ -909,7 +944,7 @@ async function googleGround(group, rawAt, [x0, x1, z0, z1], alive) {
     const x = x0 + (k % nx) * step;
     const z = z0 + Math.floor(k / nx) * step;
     ray.set(from.set(x, 1e5, z), down);
-    const hit = ray.intersectObject(group, true)[0];
+    const hit = tileHit(ray, group);
     if (hit) raw[k] = hit.point.y - rawAt(x, z);
   }
   if ([...raw].filter(Number.isFinite).length < 12) return null;
@@ -1319,6 +1354,9 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   const terrainAtRef = useRef(() => 0);
   const terrainRef = useRef(null);
   const groundBoxRef = useRef([-60, 60, -60, 60]); // scene box [x0, x1, z0, z1] Google's ground is measured over
+  // Settles once the scan's (or the lawn API's) terrain is in, or can't be had:
+  // Real 3D lines Google's mesh up against the model's ground only then.
+  const preciseTerrainRef = useRef(Promise.resolve(false));
   const [realGround, setRealGround] = useState(null); // { terrain, fix(x, z) } measured on Google's mesh
   const [photoReal, setPhotoReal] = useState(initialReal);
   // Once Google 3D has loaded it stays loaded; the toggle only shows or hides
@@ -1350,7 +1388,14 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   }, [terrain]);
   // Google's ground lowered or raised onto the terrain, as a height texture.
   useEffect(() => {
-    const fix = realGround && realGround.terrain === terrain ? realGround.fix : null;
+    const measured = realGround && realGround.terrain === terrain ? realGround.fix : null;
+    // Against bare-earth lidar (the scan's terrain) Google's ground is only ever
+    // a few feet off; a bigger offset is a measurement taken on coarse distant
+    // tiles or on canopy without ground, and would lift a street into the cut.
+    const most = terrain?.source === 'scan' ? FIX_MAX_PRECISE_FT : FIX_MAX_FT;
+    // (The development review's uncut Google, qa=1, keeps Google's ground as it is.)
+    const qaWhole = import.meta.env.DEV && window.__ecoQaReal;
+    const fix = measured && !qaWhole && ((x, z) => Math.max(-most, Math.min(most, measured(x, z))));
     const [x0, x1, z0, z1] = groundBoxRef.current;
     if (import.meta.env.DEV) window.__ecoGround = { groundAt: groundAtRef, fix, terrainSource: terrain?.source, box: [x0, x1, z0, z1] }; // for the Real 3D test
     const G = 64;
@@ -1840,6 +1885,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
       terrainAtRef.current = known.at;
       setTerrain(known);
       setTerrainDone(true);
+      preciseTerrainRef.current = Promise.resolve(true);
       return undefined;
     }
     const xs = all.map((p) => p[0]);
@@ -1858,16 +1904,18 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     const llBox = lotLL
       ? [Math.min(...lotLL.map((p) => p[1])), Math.min(...lotLL.map((p) => p[0])), Math.max(...lotLL.map((p) => p[1])), Math.max(...lotLL.map((p) => p[0]))]
       : [toLon(Math.min(...xs)), toLat(Math.min(...ys)), toLon(Math.max(...xs)), toLat(Math.max(...ys))];
-    getTerrain(llBox)
+    const upgrade = getTerrain(llBox)
       .then((grid) => {
         const t = !stale && scanTerrain(grid, origin, cx, cy);
-        if (!t) return;
+        if (!t) return false;
         precise = true;
         terrainAtRef.current = t.at;
         setTerrain(t);
         setTerrainDone(true);
+        return true;
       })
-      .catch(() => {}); // the quicker terrain stands
+      .catch(() => false); // the quicker terrain stands
+    preciseTerrainRef.current = Promise.race([upgrade, new Promise((done) => setTimeout(() => done(false), PRECISE_TERRAIN_WAIT_MS))]);
     loadTerrain({ minX: Math.min(...xs) - m, maxX: Math.max(...xs) + m, minY: Math.min(...ys) - m, maxY: Math.max(...ys) + m }, origin, cx, cy)
       .then((t) => {
         if (stale || precise) return;
@@ -2040,7 +2088,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
           const out = [];
           for (const [x, z] of pts) {
             ray.set(new THREE.Vector3(x, top, z), down);
-            const hit = ray.intersectObject(tiles.group, true)[0];
+            const hit = tileHit(ray, tiles.group);
             if (hit) out.push(hit.point.y - holder.position.y - terrainAtRef.current(x, z));
           }
           return out.sort((a, b) => a - b);
@@ -2054,6 +2102,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
         const median = heights[Math.floor(heights.length / 2)];
         // Coarse globe tiles load first and can be far off; wait for detailed ones that agree.
         const [lo, hi] = knownHeight ? [-400, 400] : [-1000, 15000];
+        if (import.meta.env.DEV) state.levelTrace = { n: heights.length, ground, median, lo, hi, heightM, knownHeight }; // for the Real 3D test
         if (ground < lo || ground > hi || median - ground > 60) return false;
         holder.position.y = -ground - PHOTO_SINK_FT;
         holder.updateMatrixWorld(true);
@@ -2187,7 +2236,10 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
       terrainElevations([[lon0, lat0]]).then(([elev]) => usable(elev)),
     ])
       .catch(() => [0, false]);
-    Promise.all([height, libs])
+    // Lined up against a coarse terrain on a hillside, Google's ground would
+    // be cut where it stands above the model's and crack where the shift
+    // between them changes fast: wait for the precise one (it's usually in).
+    Promise.all([height, libs, preciseTerrainRef.current])
       .then(([[heightM, known], lib]) => {
         if (!stopped) start(heightM, known, lib);
       })
