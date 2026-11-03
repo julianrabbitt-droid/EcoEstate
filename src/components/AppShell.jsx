@@ -22,20 +22,33 @@ const NAV = [
 
 export default function AppShell() {
   // On the Scan page the header floats over the full-screen aerial view
-  // (clear, white text) until the page is scrolled past it.
+  // (clear, white text) until the page scrolls at all: then it's frosted, so
+  // the panels sliding under it never show through its white text.
   const { pathname } = useLocation();
   const [scrolled, setScrolled] = useState(false);
+  const [atTop, setAtTop] = useState(true);
   useEffect(() => {
-    const on = () => setScrolled(window.scrollY > window.innerHeight * 0.6);
+    const on = () => {
+      setScrolled(window.scrollY > window.innerHeight * 0.6);
+      setAtTop(window.scrollY < 8);
+    };
     on();
     window.addEventListener('scroll', on, { passive: true });
     return () => window.removeEventListener('scroll', on);
   }, []);
   // The project steps keep it over their full-screen 3D view, frosted.
   const stage = /^\/project\/[^/]+(\/(design|impact|plan))?\/?$/.test(pathname);
-  const overlay = pathname === '/' && !scrolled;
+  const overlay = pathname === '/' && atTop;
   // Its height, for pages that run full screen under it (ProjectStage).
   const headerRef = useRef(null);
+  // The current page's link scrolled into view in the phone menu row.
+  const navRef = useRef(null);
+  useEffect(() => {
+    const nav = navRef.current;
+    const link = nav?.querySelector('[aria-current="page"]');
+    if (!nav || !link || nav.scrollWidth <= nav.clientWidth) return;
+    nav.scrollTo({ left: Math.max(0, link.offsetLeft - nav.clientWidth / 2 + link.offsetWidth / 2), behavior: 'smooth' });
+  }, [pathname]);
   useEffect(() => {
     const el = headerRef.current;
     if (!el) return undefined;
@@ -85,7 +98,9 @@ export default function AppShell() {
             </span>
             <span className={cn('font-display text-[19px] tracking-tight', overlay && 'text-white drop-shadow')}>EcoEstate</span>
           </Link>
-          <nav className="order-3 -mx-2 flex w-[calc(100%+1rem)] items-center gap-1 overflow-x-auto px-1 pb-1 text-sm md:order-2 md:mx-0 md:w-auto md:overflow-visible md:p-0" style={{ scrollbarWidth: 'none' }}>
+          {/* On phones the row scrolls sideways; its right edge fades so the
+              links past it read as more to scroll to. */}
+          <nav ref={navRef} className="order-3 -mx-2 flex w-[calc(100%+1rem)] items-center gap-1 overflow-x-auto px-1 pb-1 pr-10 text-sm [mask-image:linear-gradient(to_right,#000_80%,transparent)] md:order-2 md:mx-0 md:w-auto md:overflow-visible md:p-0 md:[mask-image:none]" style={{ scrollbarWidth: 'none' }}>
             {NAV.map(({ to, label, end: exact }) => (
               <NavLink
                 key={to}

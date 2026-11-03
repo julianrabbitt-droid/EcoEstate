@@ -14,10 +14,12 @@ import TrackingUpsell from '@/components/tracking/TrackingUpsell';
 import { convertedSqft, sortEntries } from '@/lib/trackingMath';
 import { useConfirm } from '@/components/ConfirmProvider';
 import { cleanAddress } from '@/lib/geo';
+import { usePageMeta } from '@/hooks/usePageMeta';
 
 // One tracked project: connected property, progress form, impact dashboard,
 // settings and the update timeline.
 export default function TrackedProject() {
+  usePageMeta({ title: 'Project tracking' });
   const confirm = useConfirm();
   const { id } = useParams();
   const { user } = useAuth();

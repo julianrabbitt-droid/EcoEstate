@@ -73,7 +73,7 @@ export default function FullAutoScanUpsell() {
           Your verified school email unlocks the community and project tracking at no cost. Pro adds project
           exports.
         </p>
-        <Button onClick={handlePurchase} disabled={purchasing} variant="outline" className="mt-4 rounded-full px-6">
+        <Button onClick={handlePurchase} disabled={purchasing} variant="outline" className="mt-4 h-auto min-h-10 whitespace-normal rounded-full px-6 py-2 text-center">
           {purchasing ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Redirecting to checkout…

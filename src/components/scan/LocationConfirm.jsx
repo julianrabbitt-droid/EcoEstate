@@ -31,7 +31,7 @@ function Recenter({ point }) {
  * Step between typing an address and scanning: the satellite view of where
  * the address landed, so the person can say it's their property, or move
  * the pin onto it first (address lookups sometimes land on the street or the
- * neighbour). onConfirm([lat, lng]) starts the scan there.
+ * neighbor). onConfirm([lat, lng]) starts the scan there.
  */
 export default function LocationConfirm({ label, point, estimated = false, onConfirm, onCancel }) {
   const [pin, setPin] = useState(point);
@@ -47,7 +47,7 @@ export default function LocationConfirm({ label, point, estimated = false, onCon
           {fixing
             ? 'Tap your house on the map, or drag the pin onto it.'
             : estimated
-              ? 'This pin is an estimate along the street, so it may be on a neighbour. Check it sits on your house before we scan.'
+              ? 'This pin is an estimate along the street, so it may be on a neighbor. Check it sits on your house before we scan.'
               : 'Check the pin sits on your house before we scan the lawn around it.'}
         </p>
       </div>

@@ -191,9 +191,12 @@
 /* Motion: pages fade and rise in; a step's panels drift in; the scan's radar
    sweeps; pollen drifts over the hero. All of it stills for people who ask
    their system for less motion. */
+/* Pages fade in without moving: a transform on the page would become the
+   containing block of its fixed backgrounds (the scan's map), sizing them to
+   the whole page instead of the window. */
 @keyframes page-enter {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 @keyframes panels-enter {
   from { opacity: 0; transform: translateY(14px) scale(0.985); }
@@ -212,7 +215,7 @@
   animation: page-enter 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .panels-enter {
-  animation: panels-enter 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: panels-enter 0.7s cubic-bezier(0.22, 1, 0.36, 1) backwards; /* no transform left behind */
 }
 .radar-sweep {
   background: conic-gradient(from 0deg, rgba(255, 255, 255, 0) 0deg, rgba(255, 255, 255, 0) 280deg, rgba(255, 255, 255, 0.55) 360deg);

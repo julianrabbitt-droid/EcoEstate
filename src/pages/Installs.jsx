@@ -47,7 +47,7 @@ export function InstallCard({ install }) {
 // Community installs: planting days hosts post for their lawn conversions,
 // open to anyone who wants to help, and each helper's volunteer hours.
 export default function Installs() {
-  usePageMeta({ title: 'Community installs', description: 'Help a neighbour turn a lawn into a native garden: join a planting day near you and earn volunteer hours.' });
+  usePageMeta({ title: 'Community installs', description: 'Help a neighbor turn a lawn into a native garden: join a planting day near you and earn volunteer hours.' });
   const { user, isAuthenticated, navigateToLogin } = useAuth();
   const [installs, setInstalls] = useState(null);
   const [error, setError] = useState('');
@@ -77,7 +77,7 @@ export default function Installs() {
       <div className="print:hidden">
         <p className="label-xs flex items-center gap-1.5"><HandHeart className="h-3.5 w-3.5 text-primary" aria-hidden />Community installs</p>
         <h1 className="mt-2 max-w-2xl font-display text-[2.4rem] leading-[1.08] tracking-tight sm:text-[3rem]">
-          Help a neighbour plant a <em className="italic text-primary">native garden</em>
+          Help a neighbor plant a <em className="italic text-primary">native garden</em>
         </h1>
         <p className="mt-3 max-w-xl text-[14px] leading-relaxed text-muted-foreground">
           Homeowners post planting days for their lawn conversions. Join one to learn hands-on, earn volunteer hours the host confirms, and leave a yard full of habitat behind.

@@ -5,8 +5,10 @@ import { base44 } from '@/api/base44Client';
 import PostComposer from '@/components/community/PostComposer';
 import PostCard from '@/components/community/PostCard';
 import TrackedPropertiesMap from '@/components/community/TrackedPropertiesMap';
+import { usePageMeta } from '@/hooks/usePageMeta';
 
 export default function Community() {
+  usePageMeta({ title: 'Community' });
   // A project summary handed over by the Payoff step's "Share in the community".
   const share = useLocation().state?.shareProject || null;
   const [me, setMe] = useState(null);

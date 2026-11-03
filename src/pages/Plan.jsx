@@ -327,7 +327,7 @@ export default function Plan() {
             { icon: Hammer, title: 'Do it yourself', body: 'You have the quantities, spacing and sequence: a weekend for most of this yard.' },
             { icon: ShoppingBasket, title: 'Buy the materials', body: 'Take the bill of materials to a native nursery; most deliver by the pallet.' },
             { icon: Users, title: 'Hire a crew', body: 'Send the brief to an ecological landscape contractor for a fixed quote.' },
-            { icon: ClipboardCheck, title: 'Community install', body: 'Host a planting day: neighbours and students sign up to help and earn volunteer hours.', highlight: true, onClick: toInstall },
+            { icon: ClipboardCheck, title: 'Community install', body: 'Host a planting day: neighbors and students sign up to help and earn volunteer hours.', highlight: true, onClick: toInstall },
           ].map((option) => (
             <div
               key={option.title}
@@ -353,7 +353,7 @@ export default function Plan() {
             <p className="label-xs flex items-center gap-1.5"><HandHeart className="h-3.5 w-3.5 text-primary" aria-hidden />Community install</p>
             <h2 className="mt-1.5 font-display text-2xl tracking-tight">Plant it together</h2>
             <p className="mt-1 text-[13px] text-muted-foreground">
-              Post a planting day. Neighbours, students and volunteer groups sign up to help, learn how it’s done and earn volunteer hours you confirm afterwards. They can message you with questions; your address stays private until you send it.
+              Post a planting day. Neighbors, students and volunteer groups sign up to help, learn how it’s done and earn volunteer hours you confirm afterwards. They can message you with questions; your address stays private until you send it.
             </p>
           </div>
           {install && install.status !== 'cancelled' && !hostForm && (

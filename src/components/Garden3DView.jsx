@@ -85,11 +85,12 @@ function badgeSprite(n, color) {
 }
 const EYE_HEIGHT = 5.5; // walkthrough camera height (ft) above the ground
 
-// Google Photorealistic 3D Tiles: the real house, trees and street around the
-// planned garden. The browser key only works from ecoestate.org and localhost.
-// Each time it's turned on is one paid session, so it's opt-in and remembered.
+// Google Photorealistic 3D Tiles: the real house among the planned garden.
+// The browser key only works from ecoestate.org and localhost. Each time it's
+// turned on is one paid session, so it's opt-in on every visit (never
+// switched on by itself from an earlier choice).
 const GOOGLE_TILES_KEY = import.meta.env.VITE_GOOGLE_MAPS_BROWSER_KEY || '';
-const PHOTO_PREF = 'ecoestate.photoReal';
+const GIVE_UP_MS = 40000; // of the page actually on screen (a hidden tab stops loading tiles)
 const M_TO_FT = 3.28084;
 const PHOTO_SINK_FT = 0.2; // Google's ground just outside the lot sits this far below the model's
 const HOUSE_CUT_MARGIN_FT = 4; // Google's house is cut this far past the footprint (eaves, scan offsets)
@@ -183,13 +184,6 @@ function clipTileMaterial(m) {
   m.customProgramCacheKey = () => 'eco-clip';
   m.needsUpdate = true;
 }
-const readPhotoPref = () => {
-  try {
-    return localStorage.getItem(PHOTO_PREF) === '1';
-  } catch {
-    return false;
-  }
-};
 
 function canvasTexture(size, paint) {
   const c = document.createElement('canvas');
@@ -1243,7 +1237,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   const terrainRef = useRef(null);
   const groundBoxRef = useRef([-60, 60, -60, 60]); // scene box [x0, x1, z0, z1] Google's ground is measured over
   const [realGround, setRealGround] = useState(null); // { terrain, fix(x, z) } measured on Google's mesh
-  const [photoReal, setPhotoReal] = useState(() => !checking && Boolean(GOOGLE_TILES_KEY) && readPhotoPref());
+  const [photoReal, setPhotoReal] = useState(false);
   // Once Google 3D has loaded it stays loaded; the toggle only shows or hides
   // it (no reload, no new paid session). It loads hidden, behind the model, and
   // only shows once its tiles are in and the model stands on its ground.
@@ -1895,7 +1889,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
       const reveal = () => {
         if (!state.loading || state.disposed) return;
         state.loading = false;
-        clearTimeout(state.giveUp);
+        clearInterval(state.giveUp);
         setPhotoStatus('ready');
       };
       const measureGround = () => {
@@ -1942,9 +1936,14 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
         credit();
         markDirty();
       };
-      // Never leave Real 3D spinning: after a while, show what has loaded if it
-      // lined up with the model, otherwise say it isn't available.
-      state.giveUp = setTimeout(() => {
+      // Never leave Real 3D spinning: after a while on screen, show what has
+      // loaded if it lined up with the model, otherwise say it isn't available.
+      // Time in a hidden tab doesn't count: the browser pauses the loading there.
+      let shownMs = 0;
+      state.giveUp = setInterval(() => {
+        if (document.visibilityState !== 'hidden') shownMs += 1000;
+        if (shownMs < GIVE_UP_MS) return;
+        clearInterval(state.giveUp);
         if (!state.loading || state.disposed) return;
         if (state.leveledAt !== null) {
           reveal();
@@ -1955,7 +1954,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
         if (tilesRef.current === state) tilesRef.current = null;
         state.dispose();
         markDirty();
-      }, 40000);
+      }, 1000);
       const onRoot = () => {
         // One root tileset request is one billed session; count it on the owner dashboard.
         base44.functions.invoke('tilesSession', {}).catch(() => {});
@@ -1981,7 +1980,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
       state.dispose = () => {
         if (state.disposed) return; // the scene teardown may already have done it
         state.disposed = true;
-        clearTimeout(state.giveUp);
+        clearInterval(state.giveUp);
         clearTimeout(measureTimer);
         scene.remove(holder);
         tiles.dispose();
@@ -2032,14 +2031,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
       navigateTo('/plans');
       return;
     }
-    setPhotoReal((on) => {
-      try {
-        localStorage.setItem(PHOTO_PREF, on ? '0' : '1');
-      } catch {
-        /* private browsing: the choice just isn't remembered */
-      }
-      return !on;
-    });
+    setPhotoReal((on) => !on);
   };
 
   // Build mulch beds (one per lawn outline), edging and plants.
@@ -3135,7 +3127,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
         )}
         {showReal && !fill && (
           <p className="pointer-events-none absolute left-3 top-3 z-10 max-w-[80%] rounded-lg bg-background/75 px-3 py-1.5 text-[11px] text-muted-foreground shadow backdrop-blur">
-            Surroundings from Google 3D. Your property is our model of it, so the plan is never hidden.
+            Your house from Google 3D, smoothed. The ground and the garden are our model.
           </p>
         )}
         {photoReal && photoStatus === 'loading' && !fill && (

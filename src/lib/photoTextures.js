@@ -27,7 +27,7 @@ export function onPhotoLoaded(fn) {
 }
 const loaded = (kind = 'texture') => listeners.forEach((fn) => fn(kind));
 
-const loader = new THREE.TextureLoader();
+const loader = new THREE.ImageLoader();
 const cache = new Map();
 let markShared = (x) => x;
 export function setPhotoSharedMarker(fn) {
@@ -41,7 +41,20 @@ export function setPhotoSharedMarker(fn) {
 export function photo(name, kind, uvFt = 1) {
   const key = `${name}:${kind}:${uvFt}`;
   if (cache.has(key)) return cache.get(key);
-  const t = loader.load(`${BASE}/${name}_${kind}_1k.jpg`, () => loaded('texture'));
+  // Until the photo arrives, a one-pixel stand-in (white under the material's
+  // colour, or a flat normal), never the black of an empty texture.
+  const stand = document.createElement('canvas');
+  stand.width = stand.height = 1;
+  const ctx = stand.getContext('2d');
+  ctx.fillStyle = kind === 'nor_gl' ? 'rgb(128, 128, 255)' : '#ffffff';
+  ctx.fillRect(0, 0, 1, 1);
+  const t = new THREE.Texture(stand);
+  t.needsUpdate = true;
+  loader.load(`${BASE}/${name}_${kind}_1k.jpg`, (img) => {
+    t.source = new THREE.Source(img); // a new source, so the GPU copy is sized for the photo
+    t.needsUpdate = true;
+    loaded('texture');
+  });
   t.wrapS = THREE.RepeatWrapping;
   t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;

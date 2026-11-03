@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom';
+import { usePageMeta } from '@/hooks/usePageMeta';
 
 // create-checkout sends buyers to this page after they pay.
 export default function ThankYou() {
+  usePageMeta({ title: 'Thank you' });
   return (
     <main className="min-h-screen flex items-center justify-center px-6">
       <div className="max-w-md text-center space-y-4">

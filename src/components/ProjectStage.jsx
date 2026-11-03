@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { Outlet } from 'react-router-dom';
 import { ChevronDown, Loader2, Minus, PanelRightOpen } from 'lucide-react';
 import Garden3DView from '@/components/Garden3DView';
+import { usePageMeta } from '@/hooks/usePageMeta';
+import { cleanAddress } from '@/lib/geo';
 
 // The project's four steps share one full-screen 3D view of the property, so
 // moving from Scan to Design to Payoff to Build never reloads it: the camera
@@ -134,6 +136,10 @@ export default function ProjectStage() {
   if (next && key !== model.current.key) model.current = { key, project: next };
   const project = model.current.project;
   const ctx = useMemo(() => ({ setProps, overlay, panels }), [overlay, panels]);
+  // The tab says which step of which property this is.
+  const stepName = { scan: 'Scan', design: 'Design', payoff: 'Payoff', build: 'Build' }[props?.scene] || null;
+  const place = project?.address ? cleanAddress(project.address).split(',')[0] : '';
+  usePageMeta({ title: [stepName, place].filter(Boolean).join(' · ') || undefined });
 
   return (
     <StageContext.Provider value={ctx}>

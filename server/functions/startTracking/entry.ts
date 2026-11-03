@@ -30,7 +30,7 @@ export default async function (req) {
     const parts = String(data.address || '').split(',').map((p) => p.trim()).filter(Boolean);
     const numbered = /^\d+[a-z]?$/i.test(parts[0] || '') && parts[1];
     const name = (numbered ? `${parts[0]} ${parts[1]}` : parts[0]) || 'My property';
-    // What other members see: the city or neighbourhood after the street, never the street itself.
+    // What other members see: the city or neighborhood after the street, never the street itself.
     const place = parts.slice(numbered ? 2 : 1).find((p) => !/county$/i.test(p) && !/^\d/.test(p));
     const mapLabel = place || 'Member project';
     const tracked = await base44.asServiceRole.entities.TrackedProject.create({
@@ -40,7 +40,7 @@ export default async function (req) {
       address: data.address || '',
       center,
       mapPoint: center ? center.map((v) => Math.round(v * 100) / 100) : null, // ~1 km, for the community map
-      ownerName: String(user.full_name || '').split(' ')[0] || 'A neighbour',
+      ownerName: String(user.full_name || '').split(' ')[0] || 'A neighbor',
       lawnSqft: Number(data.breakdown?.turf || data.totalSqft || 0),
       startDate: new Date().toISOString().slice(0, 10),
       waterPricePer1000Gal: Number(data.lawnImpact?.assumptions?.waterPricePer1000Gal || 0),

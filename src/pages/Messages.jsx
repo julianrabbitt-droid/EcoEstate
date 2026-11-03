@@ -4,6 +4,7 @@ import { Loader2, Send } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { usePageMeta } from '@/hooks/usePageMeta';
 
 function threadId(a, b) {
   return [a, b].sort().join('|');
@@ -17,6 +18,7 @@ function timeOf(d) {
 }
 
 export default function Messages() {
+  usePageMeta({ title: 'Messages' });
   const [params] = useSearchParams();
   const [me, setMe] = useState(null);
   const [messages, setMessages] = useState([]);

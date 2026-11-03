@@ -19,7 +19,7 @@ import { APP_URL } from '../../config.js';
 const MAX = { title: 120, text: 2000, short: 300, name: 80, tasks: 12 };
 const clip = (v, n) => String(v ?? '').trim().slice(0, n);
 const today = () => new Date(Date.now() - 12 * 3600e3).toISOString().slice(0, 10); // a little slack for US time zones
-const firstName = (user) => String(user?.full_name || '').trim().split(/\s+/)[0] || 'A neighbour';
+const firstName = (user) => String(user?.full_name || '').trim().split(/\s+/)[0] || 'A neighbor';
 const link = (id) => `${APP_URL}/installs/${id}`;
 const when = (i) => `${new Date(`${i.date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' })}${i.startTime ? ` at ${i.startTime}` : ''}`;
 
@@ -38,7 +38,7 @@ function allowSend(userId) {
 const fail = (status, error) => Response.json({ error }, { status });
 const mail = (args) => sendEmail(args).catch((err) => console.warn('[installs] email not sent:', err.message));
 
-// The city or neighbourhood after the street ("920, Moreno Avenue, Palo Alto, ..." -> "Palo Alto").
+// The city or neighborhood after the street ("920, Moreno Avenue, Palo Alto, ..." -> "Palo Alto").
 function placeOf(address) {
   const parts = String(address || '').split(',').map((p) => p.trim()).filter(Boolean);
   const numbered = /^\d+[a-z]?$/i.test(parts[0] || '') && parts[1];

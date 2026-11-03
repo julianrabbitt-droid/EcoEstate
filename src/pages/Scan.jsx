@@ -737,8 +737,9 @@ export default function Scan() {
         )}
 
         {phase === 'lawn' && previewProject && (
-          // Over the 3D model: the question and the numbers, at the side (below on phones).
-          <div className="flex min-h-[calc(100svh-var(--header-h,4rem))] items-end justify-end p-3 duration-700 animate-in fade-in slide-in-from-right-8 sm:p-6 lg:items-center">
+          // Over the 3D model: the question and the numbers, at the side (below
+          // on phones, clear of the imagery credit along the bottom edge).
+          <div className="flex min-h-[calc(100svh-var(--header-h,4rem))] items-end justify-end p-3 pb-7 duration-700 animate-in fade-in slide-in-from-right-8 sm:p-6 lg:items-center">
             {!checkOpen && (
               <button type="button" onClick={() => setCheckOpen(true)} aria-expanded={false} className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/92 px-4 py-2.5 text-[13px] shadow-lg backdrop-blur-md">
                 <Maximize2 className="h-4 w-4" aria-hidden />Is this scan right?

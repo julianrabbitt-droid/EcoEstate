@@ -284,7 +284,7 @@ export default function Install() {
                     ))}
                   </ul>
                 ) : (
-                  <p className="mt-2 text-[12.5px] text-muted-foreground">Nobody yet. Share this page’s link with neighbours, a school club or a native plant society.</p>
+                  <p className="mt-2 text-[12.5px] text-muted-foreground">Nobody yet. Share this page’s link with neighbors, a school club or a native plant society.</p>
                 )}
                 {past && active.length > 0 && install.status !== 'cancelled' && (
                   <div className="mt-3">
