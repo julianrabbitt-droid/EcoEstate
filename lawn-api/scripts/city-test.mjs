@@ -15,6 +15,7 @@ import path from 'node:path';
 import { addressesInBox } from '../lib/buildings.js';
 import { findCountyParcel } from '../lib/parcels.js';
 import { detectLawn } from '../lib/lawn.js';
+import { diagnose, reasonImage } from './scan-diagnose.mjs';
 
 const [slug, bboxArg, countArg, outDir] = process.argv.slice(2);
 const [west, south, east, north] = bboxArg.split(',').map(Number);
@@ -52,7 +53,7 @@ while (done < count && tries < count * 8) {
   try {
     const parcel = await findCountyParcel(pick.lat, pick.lon);
     if (!parcel || parcel.areaSqft > MAX_LOT_SQFT) continue;
-    const r = await detectLawn(parcel.geometry);
+    const r = await detectLawn(parcel.geometry, { debug: true });
     const ownBuildings = r.buildings?.features?.length || 0;
     if (ownBuildings < 1 || ownBuildings > 3) continue;
     Object.assign(row, {
@@ -67,12 +68,23 @@ while (done < count && tries < count * 8) {
       pools: r.pools?.features?.length || 0,
       fences: r.fences?.features?.length || 0,
       roads: r.nearbyRoads?.features?.length || 0,
-      trees: r.trees.length,
+      trees: r.trees.filter((t) => !t.street).length,
+      streetTrees: r.trees.filter((t) => t.street).length,
+      lawnShare: parcel.areaSqft ? Math.round((r.totalSqft / parcel.areaSqft) * 100) / 100 : null,
+      poolSqft: (r.pools?.features || []).reduce((a, f) => a + f.properties.areaSqft, 0),
+      lidar: r.lidar ? r.lidar.source : null,
+      diag: diagnose(r),
       survey: r.surveyDate,
       seconds: Math.round((Date.now() - t) / 100) / 10,
     });
     done++;
-    fs.writeFileSync(path.join(outDir, slug, `${done}.json`), JSON.stringify({ address, location: { lat: pick.lat, lon: pick.lon }, parcel, lawnSqft: r.totalSqft, lawn: r.lawn, paved: r.paved, buildings: r.buildings, trees: r.trees, nearbyRoads: r.nearbyRoads }));
+    // The scan in the API's own shape (as the app receives it), for the review page and 3D renders.
+    const { debug: _debug, ...api } = r;
+    // What decided each pixel, for the side-by-side review (scripts/scan-diagnose.mjs).
+    const why = reasonImage(r);
+    fs.writeFileSync(path.join(outDir, slug, `${done}.why.png`), why.png);
+    fs.writeFileSync(path.join(outDir, slug, `${done}.json`), JSON.stringify({ ...api, whyImage: { west: why.west, south: why.south, east: why.east, north: why.north }, address, location: { lat: pick.lat, lon: pick.lon }, parcel: { ...parcel, geometry: parcel.geometry }, lawnSqft: r.totalSqft, groundImage: r.groundImage ? { west: r.groundImage.west, south: r.groundImage.south, east: r.groundImage.east, north: r.groundImage.north } : null }));
+    if (r.groundImage?.png) fs.writeFileSync(path.join(outDir, slug, `${done}.png`), Buffer.from(r.groundImage.png, 'base64'));
   } catch (err) {
     Object.assign(row, { ok: false, error: err.message, seconds: Math.round((Date.now() - t) / 100) / 10 });
     done++;

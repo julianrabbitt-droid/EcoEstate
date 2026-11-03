@@ -50,9 +50,11 @@ function percentile(values, p) {
 
 function buildingHeight(b, roof, lidarRoof) {
   // Measured by lidar over this footprint (see lawn.js): the most direct.
-  if (lidarRoof?.heightM) return { heightM: lidarRoof.heightM, source: 'lidar' };
+  if (lidarRoof?.heightM && !lidarRoof.source) return { heightM: lidarRoof.heightM, source: 'lidar' };
   if (Number(b.height) > 1) return { heightM: Number(b.height), source: 'overture_height' };
   if (Number(b.floors) >= 1) return { heightM: Number(b.floors) * FLOOR_M + ROOF_M, source: 'overture_floors' };
+  // Built since the survey: like-sized houses around it, as lidar measured them.
+  if (lidarRoof?.heightM) return { heightM: lidarRoof.heightM, source: lidarRoof.source };
   // Canopy height model over the roof: only trusted when it reads most of the
   // footprint as raised (trees overhanging a roof cover only part of it).
   if (roof && roof.pixels >= 4 && roof.heights.length / roof.pixels >= 0.6) {

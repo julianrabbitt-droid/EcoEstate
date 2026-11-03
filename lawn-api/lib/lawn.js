@@ -30,8 +30,16 @@ export const SETTINGS = {
   pavePatchBrightness: 92, // a patch this dark on average is shaded ground or planting, not pavement
   paveOpenM: 0.6, // specks and seams narrower than about twice this (1.2 m) are dropped; side walks are wider
   paveMinSqft: 80,
+  paveMinCompactness: 0.15, // raggeder shapes are dirt, dry ground or beds, not paving
   houseMaxM2: 600, // ~6,500 sq ft: footprints up to this are houses…
   houseMaxHeightM: 15, // …and no house roof here stands over ~50 ft above its average ground
+  neighbourHeightMin: 2, // a house the survey predates takes the median height of at least this many neighbouring houses
+  predatesMinM2: 60, // a footprint this big (~650 sq ft) and up…
+  predatesGroundShare: 0.8, // …with this share of its returns on the ground was built after the survey
+  poolMinSqft: 90, // a small plunge pool and up; smaller blue patches are spas, tarps, cars, toys
+  poolMaxSqft: 2500, // bigger blue water is a pond or a community pool, not a yard pool
+  poolMinCompactness: 0.3, // a 1:8 lap pool is ~0.31; a shaded alley or a strip along a fence far less
+  poolMinGreenRed: 1.45, // pool water's green over red, its median (turquoise, not the blue-grey of shade)
   ndviMin: 0.2, // NDVI at or above this counts as green (healthy turf is usually 0.3+)
   // Aerial photos are flown mid-morning to early afternoon, never with the sun
   // straight overhead, so houses and trees cast shadows across lawns. Shaded
@@ -59,10 +67,16 @@ export const SETTINGS = {
   // lawns that were watered less show only faintly green. A spot that was green,
   // smooth lawn in the survey before, and is still faintly green, flat and no
   // brighter than dry grass now, is a dormant lawn, not bare ground.
-  dormantNdviMin: 0.1, // still at least this green in the newest survey…
-  dormantPrevNdviMin: 0.22, // …and at least this green in the one before
+  dormantNdviMin: 0.06, // still at least this green in the newest survey (2022 browned many lawns to the edge of this)…
+  dormantPrevNdviMin: 0.26, // …and clearly green in the one before
   dormantMaxBrightness: 165, // brighter than this (mean of red, green, blue) is paving or bare soil
   dormantMaxYears: 4, // the previous survey must be this recent
+  // Browned all the way: no green left, but straw or soil coloured (red well
+  // over blue; gravel, concrete and plastic turf are grey) and flat, open
+  // ground to the laser. 2022's drought rules left many California lawns so.
+  strawNdviMin: 0,
+  strawMinBrightness: 80, // darker is mulch or shade
+  strawWarmth: 1.15,
   // Lawn brown in both surveys (a dry year after a dry year): the laser still
   // tells grass from bare soil by how brightly the ground reflects it. Open,
   // flat ground as bright as the calibrated grass, faintly green and no
@@ -75,7 +89,7 @@ export const SETTINGS = {
   staleTurfNdviMin: 0.25,
   staleTurfMaxTexturePct: 3,
   canopyGrowM: 0.6, // extend the canopy mask ~1 pixel: the map sits slightly off NAIP in places
-  minLawnSqft: 50, // drop fragments smaller than this…
+  minLawnSqft: 75, // drop fragments smaller than this (slivers along edges and fences)…
   minLawnPx: 12, // …or than this many pixels, whichever is larger (matters on coarse grids)
   minHoleSqft: 25, // fill gaps smaller than this inside a lawn
   textureRadiusPx: 3, // window for the tree texture check (7x7 px, ~4 m at 0.6 m)
@@ -87,6 +101,8 @@ export const SETTINGS = {
   maxTexturePct: 5,
   textureMinCover: 0.6, // share of the window that must be vegetation
   roughPatchShare: 0.6, // share of nearby pixels that must be rough
+  laserTurfNdviMin: 0.25, // green this clearly, on ground the laser sees as open and flat, is turf however rough it looks…
+  laserTurfMaxSlope: 0.2, // …on ground no steeper than this (rise over run, ~11°)
   maxPixels: 4_000_000, // grid size limit; larger properties are measured at a coarser resolution
   maxResM: 2.4, // coarsest resolution allowed (~23 km² at maxPixels); beyond this the property is refused
   minBoxFill: 0.02, // a property needing a coarser grid must cover at least this share of its bounding box (no far-apart slivers)
@@ -145,6 +161,72 @@ function majority(mask, w, h) {
 }
 
 const ringAreaSqft = (ring) => turfArea({ type: 'Polygon', coordinates: [ring] }) * SQM_TO_SQFT;
+// Mapped footprints often miss what was added to a house: a rear addition, an
+// attached garage, a covered patio. Where the survey classes buildings, the
+// building returns just beside a footprint (on the parcel, not on another
+// building, at least FOOTPRINT_ADD_MIN_M2) are added to it, so the model has
+// the house's whole shape. Changes `buildings` in place (geometry, areaM2).
+const FOOTPRINT_ADD_MIN_M2 = 11; // ~120 sq ft
+function completeFootprints(grid, buildings, nearby, parcel, pts) {
+  if (!buildings.length || !pts.cls.some((c) => c === LIDAR_CLASS.building)) return;
+  const { w, h, res } = grid;
+  const n = w * h;
+  const seen = new Uint8Array(n);
+  for (let k = 0; k < pts.count; k++) {
+    if (pts.cls[k] !== LIDAR_CLASS.building) continue;
+    const [X, Y] = grid.fromLonLat([pts.x[k], pts.y[k]]);
+    const i = Math.floor((X - grid.x0) / res);
+    const j = Math.floor((grid.y0 - Y) / res);
+    if (i >= 0 && j >= 0 && i < w && j < h) seen[j * w + i] = 1;
+  }
+  const built = erode(dilate(seen, w, h, 1), w, h, 1); // close the gaps between returns
+  const ownIds = new Set(buildings.map((b) => b.id));
+  const labels = rasterizeLabels(grid, [...buildings, ...nearby.filter((b) => !ownIds.has(b.id))].map((b) => b.geometry));
+  // Building returns outside every footprint, on this parcel, in connected pieces.
+  const extra = Uint8Array.from(built, (v, k) => (v && !labels[k] && parcel[k] ? 1 : 0));
+  const pieces = labelRegions(extra, w, h);
+  const toLonLat = ([x, y]) => grid.toLonLat([grid.x0 + x * res, grid.y0 - y * res]);
+  buildings.forEach((b, bi) => {
+    const own = bi + 1;
+    // Pieces touching this footprint.
+    const touching = new Set();
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) {
+        if (labels[j * w + i] !== own) continue;
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const x = i + di;
+          const y = j + dj;
+          if (x >= 0 && y >= 0 && x < w && y < h && pieces.labels[y * w + x]) touching.add(pieces.labels[y * w + x]);
+        }
+      }
+    }
+    const add = [...touching].filter((l) => pieces.sizes[l] * res * res >= FOOTPRINT_ADD_MIN_M2);
+    if (!add.length) return;
+    const keep = new Set(add);
+    const mask = Float64Array.from(labels, (v, k) => (v === own || keep.has(pieces.labels[k]) ? 1 : 0));
+    const [multi] = contours().size([w, h]).thresholds([0.5])(mask);
+    const rings = multi.coordinates.map((poly) => poly[0]).sort((a, z) => z.length - a.length);
+    if (!rings.length) return;
+    const geometry = simplify({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [rings[0].map(toLonLat)] } }, { tolerance: 0.000005, highQuality: true }).geometry;
+    const areaM2 = turfArea(geometry);
+    if (areaM2 > b.areaM2 * 2.5) return; // too much at once: a neighbour's house or a misclassed tree line, not an addition
+    b.geometry = geometry;
+    b.areaM2 = areaM2;
+    b.completed = true;
+  });
+}
+
+// How round a shape is: its area over that of a circle with its perimeter
+// (1 a circle, about 0.4 a 1:6 rectangle, under 0.15 a ragged blob).
+function compactness(geometry) {
+  const ring = polygonsOf(geometry)[0]?.[0] || [];
+  let per = 0;
+  for (let i = 1; i < ring.length; i++) {
+    per += Math.hypot((ring[i][0] - ring[i - 1][0]) * 111320 * Math.cos((ring[i][1] * Math.PI) / 180), (ring[i][1] - ring[i - 1][1]) * 110540);
+  }
+  const areaM2 = turfArea(geometry);
+  return per > 0 ? (4 * Math.PI * areaM2) / (per * per) : 0;
+}
 
 /**
  * Trees just outside the property, from the canopy map on a grid widened past
@@ -191,6 +273,7 @@ async function findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBui
 }
 
 const ROOF_MAP_MAX_CELLS = 5000; // per building: a house gets 0.75 m cells, a stadium ~3 m
+const ROOF_MAP_SPIKE_M = 1.2; // further than this from the cells around it is a spike, not roof
 const ROOF_MAP_SKIP = new Set([LIDAR_CLASS.lowVeg, LIDAR_CLASS.medVeg, LIDAR_CLASS.highVeg, LIDAR_CLASS.noise, LIDAR_CLASS.water, LIDAR_CLASS.highNoise]);
 
 const inRing = ([x, y], ring) => {
@@ -305,9 +388,13 @@ function roofHeightMap(b, lidar, classed, baseZ, tallestM) {
     near(c, (o) => vals.push(src[o]));
     return vals;
   };
-  const med = hm.map((_, c) => {
+  // Spikes out (a branch, an antenna, a skylight's hole): a cell far from
+  // its neighbours' median takes it. Not a plain median filter, which shaves
+  // a hip roof's one-cell-wide ridge down toward its eaves.
+  const med = hm.map((v, c) => {
     const vals = box(hm, c).sort((a, b) => a - b);
-    return vals[Math.floor(vals.length / 2)];
+    const m = vals[Math.floor(vals.length / 2)];
+    return Math.abs(v - m) > ROOF_MAP_SPIKE_M ? m : v;
   });
   const out = med.map((v, c) => {
     const vals = box(med, c);
@@ -442,6 +529,41 @@ export function lidarHeights(grid, pts) {
   return { known, obstacle, canopy, flat, groundInt, ground };
 }
 
+// Whether the survey predates a building: nearly all its returns over the
+// footprint are ground (a house there would return off its roof).
+function surveyPredates(b, pts) {
+  const polys = polygonsOf(b.geometry);
+  const ring = polys[0]?.[0];
+  if (!ring || (b.areaM2 ?? turfArea(b.geometry)) < SETTINGS.predatesMinM2) return false;
+  let [w, s, e, n] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const [x, y] of ring) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
+  let ground = 0;
+  let total = 0;
+  for (let k = 0; k < pts.count; k++) {
+    const x = pts.x[k];
+    const y = pts.y[k];
+    if (x < w || x > e || y < s || y > n || pts.cls[k] === LIDAR_CLASS.noise || pts.cls[k] === LIDAR_CLASS.highNoise) continue;
+    if (!polys.some((rings) => inRing([x, y], rings[0]))) continue;
+    total++;
+    if (pts.cls[k] === LIDAR_CLASS.ground) ground++;
+  }
+  return total >= 20 && ground >= SETTINGS.predatesGroundShare * total;
+}
+
+// The ground's slope at a cell (rise over run), across 2 cells either way.
+function groundSlope(ground, k, w, h, res) {
+  const i = k % w;
+  const j = (k - i) / w;
+  const x0 = Math.max(0, i - 2);
+  const x1 = Math.min(w - 1, i + 2);
+  const y0 = Math.max(0, j - 2);
+  const y1 = Math.min(h - 1, j + 2);
+  const gx = x1 > x0 ? (ground[j * w + x1] - ground[j * w + x0]) / ((x1 - x0) * res) : 0;
+  const gy = y1 > y0 ? (ground[y1 * w + i] - ground[y0 * w + i]) / ((y1 - y0) * res) : 0;
+  const s = Math.hypot(gx, gy);
+  return Number.isNaN(s) ? Infinity : s;
+}
+
 // Grass under a canopy: ground returns at least about as bright as the
 // open lawn in view, calibrated per scan against lawn the photo can see (and
 // against bare ground, when there is some). null when there's too little open
@@ -537,14 +659,21 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   });
   lidar = await lidarLoad;
   const prevNaip = await prevLoad;
-  // A survey much older than the aerial photo describes a different yard.
+  // A survey much older than the aerial photo describes a different yard, but
+  // the same houses: older lidar still measures the buildings (heights, roofs).
   const naipYear = Number(String(naip.dates.at(-1) || '').slice(0, 4)) || 0;
+  const buildingLidar = lidar;
   if (lidar && naipYear && lidar.year && lidar.year < naipYear - SETTINGS.lidarMaxAgeYears) lidar = null;
-  const measured = lidar ? lidarHeights(grid, lidar) : null;
-  const measuredHasBuildings = lidar ? lidar.cls.some((c) => c === LIDAR_CLASS.building) : false;
   // Buildings on the parcel first (their labels are used for roof heights),
   // then neighbours whose roofs overhang it.
   const ownBuildings = buildingsOnParcel(nearbyBuildings, parcelGeometry);
+  if (buildingLidar) completeFootprints(grid, ownBuildings, nearbyBuildings, parcel, buildingLidar);
+  // A survey from before the house was built saw bare, graded ground where it
+  // stands, and a yard that's gone too: the photo decides the yard then.
+  if (lidar && ownBuildings.length && surveyPredates(ownBuildings[0], lidar)) lidar = null;
+  const measured = lidar ? lidarHeights(grid, lidar) : null;
+  const buildingMeasured = measured || (buildingLidar ? lidarHeights(grid, buildingLidar) : null);
+  const measuredHasBuildings = lidar ? lidar.cls.some((c) => c === LIDAR_CLASS.building) : false;
   const ownIds = new Set(ownBuildings.map((b) => b.id));
   const roofLabels = rasterizeLabels(grid, [...ownBuildings, ...nearbyBuildings.filter((b) => !ownIds.has(b.id))].map((b) => b.geometry));
   // Mapped roads and paths on the property: never lawn, and lawn is never linked across them.
@@ -622,10 +751,19 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   }
   const roughShare = localStats(roughPx, vegetation, w, h, 2).mean;
   const rough = new Uint8Array(n);
+  const laserTurfMask = debug ? new Uint8Array(n) : null;
   let green = new Uint8Array(n);
   for (let k = 0; k < n; k++) {
+    // Rough texture rules out tree crowns the canopy map missed. Where the laser
+    // sees the spot plainly (no canopy, nothing between ~8 in and 6 ft up), the
+    // roughness is autumn leaves, shade or patchy turf instead, not a crown.
+    // Not on a steep slope: hillside scrub and groundcover can read as flat
+    // to a sparse survey, and lawns there are rare.
+    const laserTurf = measured && !newerTurf?.[k] && measured.known[k] && measured.flat[k] && !measured.obstacle[k] && !measured.canopy[k] &&
+      ndvi[k] >= SETTINGS.laserTurfNdviMin && groundSlope(measured.ground, k, w, h, grid.res) <= SETTINGS.laserTurfMaxSlope;
     // Under a canopy the photo's texture is the crown's, not the ground's.
-    rough[k] = vegetation[k] && !underCanopy[k] && roughShare[k] >= SETTINGS.roughPatchShare ? 1 : 0;
+    rough[k] = vegetation[k] && !underCanopy[k] && !laserTurf && roughShare[k] >= SETTINGS.roughPatchShare ? 1 : 0;
+    if (laserTurfMask && laserTurf && vegetation[k] && roughShare[k] >= SETTINGS.roughPatchShare) laserTurfMask[k] = 1;
     green[k] = vegetation[k] && !trees[k] && !rough[k] ? 1 : 0;
   }
   green = majority(green, w, h);
@@ -664,10 +802,28 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     const prevSmooth = Uint8Array.from(prevGreen, (v, k) =>
       v && !(prevTexture.count[k] >= SETTINGS.textureMinCover * windowPx && (100 * prevTexture.std[k]) / prevTexture.mean[k] > SETTINGS.maxTexturePct) ? 1 : 0);
     const wasLawn = erode(prevSmooth, w, h, 1);
+    // Straw: a lawn that browned all the way (no green left at all) but is
+    // straw- or soil-coloured, not the grey of gravel, concrete or plastic turf,
+    // on ground the laser sees as open and flat. Kept in patches, not specks.
+    // The colour and the laser guard its edges, so the previous survey's green
+    // is taken as it is (patchy lawns don't survive being pulled in a pixel).
+    const straw = new Uint8Array(n);
     for (let k = 0; k < n; k++) {
-      if (green[k] || !wasLawn[k] || !usable[k] || trees[k] || rough[k] || underCanopy[k]) continue;
+      if (green[k] || !prevGreen[k] || !usable[k] || trees[k] || rough[k] || underCanopy[k]) continue;
       const bright = (naip.red[k] + naip.green[k] + naip.blue[k]) / 3;
-      if (ndvi[k] >= SETTINGS.dormantNdviMin && bright <= SETTINGS.dormantMaxBrightness) {
+      if (wasLawn[k] && ndvi[k] >= SETTINGS.dormantNdviMin && bright <= SETTINGS.dormantMaxBrightness) {
+        green[k] = 1;
+        dormantPx++;
+      } else if (
+        measured?.known[k] && measured.flat[k] && !measured.obstacle[k] && !measured.canopy[k] &&
+        ndvi[k] >= SETTINGS.strawNdviMin && bright >= SETTINGS.strawMinBrightness && bright <= SETTINGS.dormantMaxBrightness &&
+        naip.red[k] >= SETTINGS.strawWarmth * naip.blue[k]
+      ) straw[k] = 1;
+    }
+    const strawPieces = labelRegions(Uint8Array.from(dilate(erode(straw, w, h, 1), w, h, 1), (v, k) => v & straw[k]), w, h);
+    const strawMinPx = SETTINGS.lidarDormantMinM2 / (grid.res * grid.res);
+    for (let k = 0; k < n; k++) {
+      if (strawPieces.labels[k] && strawPieces.sizes[strawPieces.labels[k]] >= strawMinPx) {
         green[k] = 1;
         dormantPx++;
       }
@@ -830,40 +986,58 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   // those count too, at a lower percentile so a tree over the roof doesn't.
   let lidarRoofs = null;
   let under = []; // per own building: the ground under it (sum, count)
-  const classed = lidar ? lidar.cls.some((c) => c === LIDAR_CLASS.building) : false;
-  if (lidar && measured) {
-    const tops = ownBuildings.map(() => []);
-    for (let k = 0; k < lidar.count; k++) {
-      if (lidar.cls[k] !== (classed ? LIDAR_CLASS.building : 1)) continue;
-      const [X, Y] = grid.fromLonLat([lidar.x[k], lidar.y[k]]);
+  const classed = buildingLidar ? buildingLidar.cls.some((c) => c === LIDAR_CLASS.building) : false;
+  if (buildingLidar && buildingMeasured) {
+    // Every building in view, the neighbours' too (after the property's own):
+    // a house built since the survey is measured by the houses around it.
+    const inView = [...ownBuildings, ...nearbyBuildings.filter((b) => !ownIds.has(b.id))];
+    const tops = inView.map(() => []);
+    for (let k = 0; k < buildingLidar.count; k++) {
+      if (buildingLidar.cls[k] !== (classed ? LIDAR_CLASS.building : 1)) continue;
+      const [X, Y] = grid.fromLonLat([buildingLidar.x[k], buildingLidar.y[k]]);
       const i = Math.floor((X - grid.x0) / grid.res);
       const j = Math.floor((grid.y0 - Y) / grid.res);
       if (i < 0 || j < 0 || i >= w || j >= h) continue;
       const l = roofLabels[j * w + i];
-      if (l >= 1 && l <= ownBuildings.length) tops[l - 1].push(lidar.z[k]);
+      if (l >= 1) tops[l - 1].push(buildingLidar.z[k]);
     }
-    under = ownBuildings.map(() => ({ s: 0, m: 0 }));
+    const ground = inView.map(() => ({ s: 0, m: 0 }));
     for (let c = 0; c < n; c++) {
       const l = roofLabels[c];
-      if (l >= 1 && l <= ownBuildings.length && Number.isFinite(measured.ground[c])) {
-        under[l - 1].s += measured.ground[c];
-        under[l - 1].m++;
+      if (l >= 1 && Number.isFinite(buildingMeasured.ground[c])) {
+        ground[l - 1].s += buildingMeasured.ground[c];
+        ground[l - 1].m++;
       }
     }
-    lidarRoofs = ownBuildings.map((b, i) => {
-      if (tops[i].length < 8 || !under[i].m) return null;
+    under = ground.slice(0, ownBuildings.length);
+    const measuredM = inView.map((b, i) => {
+      if (tops[i].length < 8 || !ground[i].m) return null;
       const sorted = Float64Array.from(tops[i]).sort();
       // High on the roof but below its very top, where branches over it are.
-      const heightM = sorted[Math.min(sorted.length - 1, Math.floor((classed ? 0.9 : 0.75) * sorted.length))] - under[i].s / under[i].m;
+      const heightM = sorted[Math.min(sorted.length - 1, Math.floor((classed ? 0.95 : 0.8) * sorted.length))] - ground[i].s / ground[i].m;
       // A house-sized footprint taller than this is a tree over the roof, not
       // the roof: the other measures decide then.
-      const tallest = b.areaM2 < SETTINGS.houseMaxM2 ? SETTINGS.houseMaxHeightM : 80;
-      return heightM >= 2.5 && heightM <= tallest ? { heightM } : null;
+      const area = b.areaM2 ?? turfArea(b.geometry);
+      const tallest = area < SETTINGS.houseMaxM2 ? SETTINGS.houseMaxHeightM : 80;
+      return heightM >= 2.5 && heightM <= tallest ? heightM : null;
+    });
+    lidarRoofs = ownBuildings.map((b, i) => {
+      if (measuredM[i]) return { heightM: measuredM[i] };
+      // No building in the survey here: built since. The houses around it
+      // stand in (on 230 surveyed homes, a footprint's size said little about
+      // its height; the street's houses, built together, say more).
+      if (tops[i].length >= 8) return null;
+      const like = inView
+        .map((o, j) => (j >= ownBuildings.length && measuredM[j] && (o.areaM2 ?? turfArea(o.geometry)) < SETTINGS.houseMaxM2 ? measuredM[j] : null))
+        .filter((m) => m)
+        .sort((x, y) => x - y);
+      return like.length >= SETTINGS.neighbourHeightMin ? { heightM: like[like.length >> 1], source: 'lidar_neighbours' } : null;
     });
   }
-  // Each roof's shape as surveyed (see roofHeightMap), for the 3D model.
-  const roofMaps = lidar && measured
-    ? ownBuildings.map((b, i) => (under[i]?.m ? roofHeightMap(b, lidar, classed, under[i].s / under[i].m, b.areaM2 < SETTINGS.houseMaxM2 ? SETTINGS.houseMaxHeightM : 80) : null))
+  // Each roof's shape as surveyed (see roofHeightMap), for the 3D model: only
+  // where the survey measured the building itself.
+  const roofMaps = buildingLidar && buildingMeasured
+    ? ownBuildings.map((b, i) => (under[i]?.m && lidarRoofs[i]?.heightM && !lidarRoofs[i].source ? roofHeightMap(b, buildingLidar, classed, under[i].s / under[i].m, b.areaM2 < SETTINGS.houseMaxM2 ? SETTINGS.houseMaxHeightM : 80) : null))
     : null;
   const buildingLayer = describeBuildings(ownBuildings, roofLabels, canopy, naip, lidarRoofs, roofMaps);
   // Which roofs and paths actually touch each lawn region and path, from the
@@ -938,7 +1112,9 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
         const simple = simplify({ type: 'Feature', properties: {}, geometry }, { tolerance: 0.000004, highQuality: true }).geometry;
         return { type: 'Feature', geometry: simple, properties: { kind: 'paved', areaSqft: Math.round(turfArea(simple) * SQM_TO_SQFT) } };
       })
-      .filter((f) => f.properties.areaSqft >= SETTINGS.paveMinSqft),
+      // Driveways, walks and patios are built shapes; a ragged blob (dirt,
+      // dry ground or a planted bed between shrubs) isn't paving.
+      .filter((f) => f.properties.areaSqft >= SETTINGS.paveMinSqft && compactness(f.geometry) >= SETTINGS.paveMinCompactness),
   };
 
   // The aerial photo of the property, so the 3D model's ground looks like the
@@ -956,10 +1132,61 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
 
   const onParcelNotRoof = Uint8Array.from(parcel, (v, k) => (v && !roofLabels[k] ? 1 : 0));
   const nearbyRoads = describeNearbyRoads(mappedPaths, parcelGeometry);
-  // Fences, pools, chimneys and solar panels aren't detected: they weren't
-  // reliable enough. Empty lists keep the response's shape.
+  // Fences, chimneys and solar panels aren't detected: they weren't reliable
+  // enough. An empty list keeps the response's shape.
   const fences = { type: 'FeatureCollection', features: [] };
-  const pools = { type: 'FeatureCollection', features: [] };
+  // Swimming pools: clear turquoise water in the open (not under a roof),
+  // which reflects little near-infrared (NDVI about zero or below), in
+  // pool-sized patches. Drawn as water in the 3D model; never counted as lawn or paving.
+  const poolCore = new Uint8Array(n);
+  const bluish = new Uint8Array(n);
+  for (let k = 0; k < n; k++) {
+    // Not under the tree mask: it's grown past each crown and would eat a
+    // pool's edges beside a palm; water this blue can't be foliage anyway.
+    if (!usable[k] || roofLabels[k]) continue;
+    const [r, g, b] = [naip.red[k], naip.green[k], naip.blue[k]];
+    // Clear pool water: turquoise, well above its red, little near-infrared.
+    if (b > r * 1.18 && b > 70 && ndvi[k] < 0.05) {
+      bluish[k] = 1;
+      if (g > r * 1.25) poolCore[k] = 1;
+    }
+  }
+  // Closed (not opened) so a small pool's edge pixels aren't eaten away.
+  const poolPieces = labelRegions(erode(dilate(poolCore, w, h, 1), w, h, 1), w, h);
+  const poolKeep = Float64Array.from(poolPieces.labels, (l) => {
+    const sqft = l ? poolPieces.sizes[l] * pxSqft : 0;
+    return sqft >= SETTINGS.poolMinSqft && sqft <= SETTINGS.poolMaxSqft ? 1 : 0;
+  });
+  const outline = (mask) => contours().size([w, h]).thresholds([0.5])(mask)[0].coordinates
+    .map((rings) => ({ type: 'Polygon', coordinates: [rings[0].map(toLonLat)] }))
+    .map((geometry) => simplify({ type: 'Feature', properties: {}, geometry }, { tolerance: 0.000004, highQuality: true }).geometry);
+  // Pools are compact (a rectangle or a kidney fills most of its box); a long
+  // thin blue strip is a car or a tarp along a fence, or a shaded alley. And
+  // their water is turquoise: on 20 checked scans pools were 1.5-2.3 times as
+  // green as red, while shade (blue-grey, lit by the sky) was 1.2-1.4 times.
+  const water = outline(poolKeep).filter((geometry) => {
+    const ring = geometry.coordinates[0];
+    const xs = ring.map((p) => p[0]);
+    const ys = ring.map((p) => p[1]);
+    const box = turfArea({ type: 'Polygon', coordinates: [[[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)], [Math.min(...xs), Math.max(...ys)], [Math.min(...xs), Math.min(...ys)]]] }) * SQM_TO_SQFT;
+    if (turfArea(geometry) * SQM_TO_SQFT / Math.max(1, box) < 0.45 || compactness(geometry) < SETTINGS.poolMinCompactness) return false;
+    const inside = rasterize(grid, polygonsOf(geometry));
+    const ratios = [];
+    for (let k = 0; k < n; k++) if (inside[k] && poolCore[k]) ratios.push(naip.green[k] / Math.max(1, naip.red[k]));
+    ratios.sort((x, y) => x - y);
+    return ratios.length > 0 && ratios[ratios.length >> 1] >= SETTINGS.poolMinGreenRed;
+  });
+  // Each pool's edge pixels, mixed with its coping, are bluer than turquoise:
+  // taken back a pixel out from the water kept, never further (shade is bluish too).
+  const kept = rasterize(grid, water.map((g) => g.coordinates));
+  const grownPools = Float64Array.from(dilate(kept, w, h, 1), (v, k) => (kept[k] || (v && bluish[k]) ? 1 : 0));
+  const pools = {
+    type: 'FeatureCollection',
+    features: outline(grownPools)
+      .map((geometry) => ({ type: 'Feature', geometry, properties: { kind: 'pool', areaSqft: Math.round(turfArea(geometry) * SQM_TO_SQFT) } }))
+      .filter((f) => f.properties.areaSqft >= SETTINGS.poolMinSqft),
+  };
+
   const streetTrees = grid.res <= SETTINGS.streetMaxResM ? await findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBuildings) : [];
   const result = {
     lawn,
@@ -985,6 +1212,6 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     groundImage,
     nearbyRoads,
   };
-  if (debug) result.debug = { grid, naip, canopy, ndvi, parcel, green, trees, rough, roofs: roofLabels, measured, newerTurf, underCanopy, tall, grassInt, prevNaip, usable };
+  if (debug) result.debug = { grid, naip, canopy, ndvi, parcel, green, trees, rough, laserTurf: laserTurfMask, texture, roofs: roofLabels, measured, newerTurf, underCanopy, tall, grassInt, prevNaip, usable, lidar: buildingLidar, measuredB: buildingMeasured, under, ownCount: ownBuildings.length };
   return result;
 }
