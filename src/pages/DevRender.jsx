@@ -8,15 +8,18 @@ import { designOrDefault } from '@/lib/landscapeMath';
 // Development only: a saved scan (scripts/city-test.mjs output, served
 // locally) drawn in the 3D view exactly as the app would, for reviewing many
 // scans' renders side by side with the real property.
-//   /dev/render?src=http://127.0.0.1:8767/torrance&n=12&view=design (&real=1: Google's own 3D instead)
+//   /dev/render?src=http://127.0.0.1:8767/torrance&n=12&view=design
+//   (&real=1: in Real 3D, as the app shows it; &qa=1: Google's own 3D, uncut and without the model)
 export default function DevRender() {
   const [params] = useSearchParams();
   const src = params.get('src');
   const n = params.get('n');
   const view = params.get('view') || 'design';
-  // real=1: Google's 3D world, uncut and without the model, from the same view (for comparing).
-  const real = params.get('real') === '1';
-  window.__ecoQaReal = real;
+  // qa=1: Google's 3D world, uncut and without the model, from the same view (for comparing).
+  const qa = params.get('qa') === '1';
+  const real = qa || params.get('real') === '1';
+  window.__ecoQaReal = qa;
+  window.__ecoDevRender = true;
   const [scan, setScan] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => {

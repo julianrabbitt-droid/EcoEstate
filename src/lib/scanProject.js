@@ -32,7 +32,9 @@ export function scannedStructures(d) {
   const groundImage = d?.groundImage ? { url: d.groundImage.url || `data:image/png;base64,${d.groundImage.png}`, west: d.groundImage.west, south: d.groundImage.south, east: d.groundImage.east, north: d.groundImage.north } : null;
   // Swimming pools, as [lat, lng] outlines (never lawn; water in the 3D model).
   const pools = (d?.pools?.features || []).map((f) => geoJsonOuterRings(f.geometry)[0]).filter((ring) => ring && ring.length >= 3);
-  return { buildings, buildingHeightsFt, buildingRoofs, trees, paths, pools, groundImage };
+  // The ground's heights around the property (USGS bare earth), for the model's slopes.
+  const terrain = d?.terrain || null;
+  return { buildings, buildingHeightsFt, buildingRoofs, trees, paths, pools, groundImage, terrain };
 }
 
 // A scan (the lawn API's answer) as the project the 3D view draws, before it

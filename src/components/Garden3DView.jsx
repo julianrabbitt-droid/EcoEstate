@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { plantById } from '@/data/nativePlants';
 import { plantsForProject, regionForProject } from '@/data/regions';
 import { base44 } from '@/api/base44Client';
+import { getTerrain } from '@/api/lawnApi';
 import { arrangementsFor } from '@/data/arrangements';
 import { buildHouse } from '@/lib/houseModel';
 import { usePremiumAccess } from '@/hooks/usePremiumAccess';
@@ -522,6 +523,30 @@ function removeFloaters(model, toScene) {
   });
 }
 
+// Ground heights from the scan (the lawn API fetches USGS 3DEP bare earth over
+// the lot and its surroundings alongside it: lib/terrain.js), at scene (x, z)
+// in feet relative to the scene centre's ground. null when the scan has none.
+function scanTerrain(known, origin, cx, cy) {
+  const { west, south, east, north, cols, rows, base, h } = known || {};
+  if (!origin || !(cols >= 2) || !(rows >= 2) || !Array.isArray(h) || h.length !== cols * rows || !(east > west) || !(north > south)) return null;
+  const v = (i, j) => (base + h[j * cols + i] / 10) * 3.28084;
+  const atPlan = (x, y) => {
+    const lon = (x + cx) / (364000 * origin.cosLat) + origin.minLng;
+    const lat = (y + cy) / 364000 + origin.minLat;
+    const fx = Math.min(cols - 1, Math.max(0, ((lon - west) / (east - west)) * cols - 0.5));
+    const fy = Math.min(rows - 1, Math.max(0, ((north - lat) / (north - south)) * rows - 0.5));
+    const i0 = Math.min(cols - 2, Math.floor(fx));
+    const j0 = Math.min(rows - 2, Math.floor(fy));
+    const tx = fx - i0;
+    const ty = fy - j0;
+    return (v(i0, j0) * (1 - tx) + v(i0 + 1, j0) * tx) * (1 - ty) + (v(i0, j0 + 1) * (1 - tx) + v(i0 + 1, j0 + 1) * tx) * ty;
+  };
+  const ref = atPlan(0, 0);
+  let min = Infinity;
+  for (let k = 0; k < h.length; k++) min = Math.min(min, (base + h[k] / 10) * 3.28084 - ref);
+  return { at: (x, z) => atPlan(x, -z) - ref, min, source: 'scan' };
+}
+
 // Ground heights across the property from the USGS 3D Elevation Program (bare
 // earth, 1 m lidar where available), so the model sits on the real slope
 // instead of a flat slab. Public data, sampled once per project view.
@@ -564,7 +589,8 @@ async function loadTerrain(planBounds, origin, cx, cy) {
   } catch {
     // USGS didn't answer in time; the coarser AWS terrain tiles stand in.
   }
-  if (metres.filter(Number.isFinite).length < pts.length * 0.6) {
+  const fromUsgs = metres.filter(Number.isFinite).length >= pts.length * 0.6;
+  if (!fromUsgs) {
     const fallback = await aws;
     fallback.forEach((v, k) => { if (Number.isFinite(v) && v > -500) metres[k] = v; });
   }
@@ -589,7 +615,7 @@ async function loadTerrain(planBounds, origin, cx, cy) {
   const at = (x, z) => atPlan(x, -z) - base;
   let min = Infinity;
   for (const v of h) min = Math.min(min, v - base);
-  return { at, min };
+  return { at, min, source: fromUsgs ? 'usgs' : 'aws' };
 }
 
 // A ground surface over the lot that follows the terrain: a grid draped on the
@@ -608,6 +634,8 @@ const PAD_BLEND_MAX_FT = 45; // …and at most this, longer where the footprint 
 const SKIRT_DROP_FT = 0.6; // just past the lot line…
 const SKIRT_DROP_MAX_FT = 2.5; // …sinking to this much lower further out
 const SKIRT_DEEP_FT = 8; // away from the cuts: below any pool or sunken patio Google draws
+const SKIRT_ROAD_RGB = [0.36, 0.36, 0.37]; // under a street: asphalt
+const SKIRT_PAST_CUT_FT = 15; // and this far past every cut's edge
 const distToOutline = ([x, z], pts) => {
   let d = Infinity;
   for (let i = 0; i < pts.length; i++) {
@@ -623,8 +651,10 @@ const distToOutline = ([x, z], pts) => {
 // band > 0: only the part within band ft of the excluded shapes' edges (a
 // sidewalk along the street), still inside the outline.
 function drapedGround(outline, holes, at, texture, circles = [], skirt = false, exclude = [], fills = [], band = 0) {
-  const xs = [...outline.map((p) => p[0]), ...circles.flatMap(([x, , r]) => [x - r, x + r])];
-  const zs = [...outline.map((p) => p[1]), ...circles.flatMap(([, z, r]) => [z - r, z + r])];
+  const past = skirt ? SKIRT_PAST_CUT_FT : 0;
+  const fillPts = fills.flatMap(([pts, padFt]) => pts.flatMap(([x, z]) => [[x - padFt - past, z - padFt - past], [x + padFt + past, z + padFt + past]]));
+  const xs = [...outline.map((p) => p[0]), ...circles.flatMap(([x, , r]) => [x - r - past, x + r + past]), ...fillPts.map((p) => p[0])];
+  const zs = [...outline.map((p) => p[1]), ...circles.flatMap(([, z, r]) => [z - r - past, z + r + past]), ...fillPts.map((p) => p[1])];
   const pad = SKIRT_FT + 1;
   const [x0, x1, z0, z1] = [Math.min(...xs) - pad, Math.max(...xs) + pad, Math.min(...zs) - pad, Math.max(...zs) + pad];
   const step = Math.max(1.5, Math.max(x1 - x0, z1 - z0) / 120);
@@ -649,9 +679,10 @@ function drapedGround(outline, holes, at, texture, circles = [], skirt = false, 
       // terrain then shows as it is, never painted over.
       if (skirt && !nearCut(x, z)) drop = SKIRT_DEEP_FT;
       pos.set([x, at(x, z) - drop, z], k * 3);
-      // Off the lot the skirt mostly shows under canopies: shaded, earthy green.
-      // The fill mostly shows under cut-away canopies: shaded, earthy green (the lot slab itself stays plain).
-      col.set(inside && !skirt ? [1, 1, 1] : [0.5, 0.58, 0.42], k * 3);
+      // The fill mostly shows under cut-away canopies: shaded, earthy green (the
+      // lot slab itself stays plain); under a street it's asphalt.
+      const road = skirt && exclude.some((q) => insidePoly([x, z], q));
+      col.set(inside && !skirt ? [1, 1, 1] : road ? SKIRT_ROAD_RGB : [0.5, 0.58, 0.42], k * 3);
       uv.set([i / (nx - 1), j / (nz - 1)], k * 2); // v runs with z, matching the mask canvas rows (flipY off)
     }
   }
@@ -690,11 +721,20 @@ function drapedGround(outline, holes, at, texture, circles = [], skirt = false, 
     trace(outline);
     ctx.fill();
     ctx.stroke();
+    // Past each cut's edge too: looking in at a slant through a cut, the eye
+    // passes under the canopy beyond it, where Google has no ground either.
     circles.forEach(([x, z, r]) => {
       const [px, pz] = toPx([x, z]);
       ctx.beginPath();
-      ctx.ellipse(px, pz, (r / (x1 - x0)) * W, (r / (z1 - z0)) * W, 0, 0, Math.PI * 2);
+      ctx.ellipse(px, pz, ((r + SKIRT_PAST_CUT_FT) / (x1 - x0)) * W, ((r + SKIRT_PAST_CUT_FT) / (z1 - z0)) * W, 0, 0, Math.PI * 2);
       ctx.fill();
+    });
+    // And everything else cut (the strip across the street).
+    fills.forEach(([pts, padFt]) => {
+      trace(pts);
+      ctx.fill();
+      ctx.lineWidth = (2 * (padFt + SKIRT_PAST_CUT_FT) * W) / Math.max(x1 - x0, z1 - z0);
+      ctx.stroke();
     });
   } else if (band > 0) {
     ctx.save();
@@ -711,9 +751,10 @@ function drapedGround(outline, holes, at, texture, circles = [], skirt = false, 
     ctx.fillStyle = '#000';
     holes.forEach((h) => { trace(h); ctx.fill(); });
   }
-  // Public streets and sidewalks stay Google's (or the satellite's), never ours.
+  // Public streets and sidewalks stay Google's (or the satellite's), never
+  // ours; only the skirt runs under them, so a cut there is never a hole.
   ctx.fillStyle = '#000';
-  exclude.forEach((h) => { trace(h); ctx.fill(); });
+  if (!skirt) exclude.forEach((h) => { trace(h); ctx.fill(); });
   const alpha = new THREE.CanvasTexture(c);
   alpha.flipY = false;
   texture.repeat.set((x1 - x0) / 6, (z1 - z0) / 6);
@@ -1311,6 +1352,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   useEffect(() => {
     const fix = realGround && realGround.terrain === terrain ? realGround.fix : null;
     const [x0, x1, z0, z1] = groundBoxRef.current;
+    if (import.meta.env.DEV) window.__ecoGround = { groundAt: groundAtRef, fix, terrainSource: terrain?.source, box: [x0, x1, z0, z1] }; // for the Real 3D test
     const G = 64;
     const data = new Float32Array(G * G);
     if (fix) {
@@ -1334,7 +1376,8 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   // unlock, city partners); free accounts see them locked with a link to Plans.
   const { member, loading: accessLoading } = usePremiumAccess();
   const navigateTo = useNavigate();
-  const locked = !accessLoading && !member;
+  // The development review page (DevRender) tests Real 3D without an account.
+  const locked = !accessLoading && !member && !(import.meta.env.DEV && window.__ecoDevRender);
   const [designError, setDesignError] = useState('');
 
   const regionPlants = useMemo(() => plantsForProject(project), [project]);
@@ -1581,7 +1624,10 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
 
     threeRef.current = { scene, camera, renderer, controls, plantGroup, ring, raycaster, pointer, groundPlane, cx, cy, maxDim, overview, camFor, markDirty };
     // Inspect the scene from the console while developing, or on the live site with ?debug3d.
-    if (import.meta.env.DEV || /[?&]debug3d\b/.test(window.location.search)) window.__ecoThree = threeRef;
+    if (import.meta.env.DEV || /[?&]debug3d\b/.test(window.location.search)) {
+      window.__ecoThree = threeRef;
+      window.__ecoClip = clipUniforms; // the Real 3D cut masks, for the hole test
+    }
 
     let frame;
     const ease = (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
@@ -1759,8 +1805,10 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   useEffect(() => {
     const pts = [...polys.flat(), ...(lot || [])].map(([x, y]) => [x - cx, -(y - cy)]);
     groundSamplesRef.current = pts.length > 40 ? pts.filter((_, i) => i % Math.ceil(pts.length / 40) === 0) : pts;
-    // Google's ground is measured over the property and as far as the skirt reaches past it.
-    const box = [...pts, ...buildings.flat().map(([x, y]) => [x - cx, -(y - cy)])];
+    // Google's ground is measured over the property and as far as the skirt
+    // reaches past it, and across the street (what's cut there is cut
+    // relative to that ground, so it must line up with ours).
+    const box = [...pts, ...buildings.flat().map(([x, y]) => [x - cx, -(y - cy)]), ...(reach || [])];
     if (box.length) {
       const m = SKIRT_FT + 8;
       groundBoxRef.current = [Math.min(...box.map((p) => p[0])) - m, Math.max(...box.map((p) => p[0])) + m, Math.min(...box.map((p) => p[1])) - m, Math.max(...box.map((p) => p[1])) + m];
@@ -1774,7 +1822,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
       road.push([mx - cx, -(my - cy)], ...q.map(([x, y]) => [x - cx, -(y - cy)]));
     }
     roadSamplesRef.current = road.length > 60 ? road.filter((_, i) => i % Math.ceil(road.length / 60) === 0) : road;
-  }, [polys, lot, paths, buildings, cx, cy]);
+  }, [polys, lot, paths, buildings, cx, cy, reach]);
 
   // Real ground heights for the property and a margin around it (USGS 3DEP).
   useEffect(() => {
@@ -1786,22 +1834,52 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
       setTerrainDone(true);
       return undefined;
     }
+    // Measured with the scan: no waiting on USGS, which is often too slow to answer here.
+    const known = scanTerrain(project?.terrain, origin, cx, cy);
+    if (known) {
+      terrainAtRef.current = known.at;
+      setTerrain(known);
+      setTerrainDone(true);
+      return undefined;
+    }
     const xs = all.map((p) => p[0]);
     const ys = all.map((p) => p[1]);
     const m = 75; // reaches street trees, which can stand ~20 m from the lot line
     let stale = false;
+    // Saved before scans carried their terrain: the lawn API fetches the same
+    // bare earth (slowly, the first time), and it replaces the quicker, coarser
+    // terrain below when it comes.
+    let precise = false;
+    // The lot's own box when saved (the same box the scan asked for, so a
+    // request it left running answers this one), else the scene's.
+    const toLon = (x) => x / (364000 * origin.cosLat) + origin.minLng;
+    const toLat = (y) => y / 364000 + origin.minLat;
+    const lotLL = Array.isArray(project?.lotOutline) && project.lotOutline.length >= 3 ? project.lotOutline : null;
+    const llBox = lotLL
+      ? [Math.min(...lotLL.map((p) => p[1])), Math.min(...lotLL.map((p) => p[0])), Math.max(...lotLL.map((p) => p[1])), Math.max(...lotLL.map((p) => p[0]))]
+      : [toLon(Math.min(...xs)), toLat(Math.min(...ys)), toLon(Math.max(...xs)), toLat(Math.max(...ys))];
+    getTerrain(llBox)
+      .then((grid) => {
+        const t = !stale && scanTerrain(grid, origin, cx, cy);
+        if (!t) return;
+        precise = true;
+        terrainAtRef.current = t.at;
+        setTerrain(t);
+        setTerrainDone(true);
+      })
+      .catch(() => {}); // the quicker terrain stands
     loadTerrain({ minX: Math.min(...xs) - m, maxX: Math.max(...xs) + m, minY: Math.min(...ys) - m, maxY: Math.max(...ys) + m }, origin, cx, cy)
       .then((t) => {
-        if (stale) return;
+        if (stale || precise) return;
         if (t) {
           terrainAtRef.current = t.at;
           setTerrain(t);
         }
         setTerrainDone(true);
       })
-      .catch(() => { if (!stale) setTerrainDone(true); }); // stays flat
+      .catch(() => { if (!stale && !precise) setTerrainDone(true); }); // stays flat
     return () => { stale = true; };
-  }, [origin, lot, polys, buildings, cx, cy]);
+  }, [origin, lot, polys, buildings, cx, cy, project?.terrain]);
 
   // What Real 3D cuts out of Google's mesh (see clipUniforms): the lot, the
   // trees the model draws, and what stands from the lot across its street.
@@ -2205,7 +2283,10 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
         const circles = trees.filter(ownTree).map((t) => [t.x - cx, -(t.y - cy), (t.radiusFt || 6) + TREE_CUT_PAD_FT]);
         const skirtTex = gt.clone();
         skirtTex.needsUpdate = true;
-        const skirt = drapedGround(toScene(outerPoly), [], at, skirtTex, circles, true, publicWays);
+        // Under everything Real 3D cuts: the tree circles, and the strip from
+        // the lot across its street (Google's road there can sit above the
+        // model's ground and be cut with the cars on it).
+        const skirt = drapedGround(toScene(outerPoly), [], at, skirtTex, circles, true, publicWays, reach ? [[reach, LOT_BAND_FT]] : []);
         skirt.userData.ground = true;
         skirt.userData.skirt = true; // Real 3D only
         skirt.visible = false;
@@ -2650,7 +2731,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     // The plants were just rebuilt: their species discs follow them. (A call,
     // not a state change, so a rebuild never triggers another render.)
     speciesPlanBuildRef.current?.();
-  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, showLawn, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries, showReal, scansVersion, pools]);
+  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, showLawn, front, ownTree, reach, lawnLabel, terrainDone, maxDim, project, entries, showReal, scansVersion, pools]);
 
   // The camera's view for each project step, flown to when the step changes:
   // the overview for the scan and design, a lower look from the street that
