@@ -1540,32 +1540,41 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
     own.forEach((t) => circle(t.x - cx, -(t.y - cy), (t.radiusFt || 6) + TREE_CUT_PAD_FT));
     tctx.fillStyle = '#ffff00'; // the crown itself
     own.forEach((t) => circle(t.x - cx, -(t.y - cy), t.radiusFt || 6));
-    const fillTree = (pts) => {
-      tctx.fillStyle = '#00ff00';
-      tctx.beginPath();
-      pts.forEach(([x, z], i) => {
-        const px = ((x - nx0) / (nx1 - nx0)) * W;
-        const py = (1 - (z - nz0) / (nz1 - nz0)) * W;
-        if (i) tctx.lineTo(px, py);
-        else tctx.moveTo(px, py);
-      });
-      tctx.closePath();
-      tctx.fill();
-    };
-    if (front) fillTree(front);
     if (lotPts) {
-      // Added on top (blue), so the tree marks under it stay.
+      // Blue, added on top so the tree marks under it stay: only Google's ground
+      // is kept there. The lot, the strip to the street (driveway apron,
+      // sidewalk) and the street along the property: no parked cars, bins or
+      // trees standing between the street and the yard.
+      const tracePts = (pts) => {
+        tctx.beginPath();
+        pts.forEach(([x, z], i) => {
+          const px = ((x - nx0) / (nx1 - nx0)) * W;
+          const py = (1 - (z - nz0) / (nz1 - nz0)) * W;
+          if (i) tctx.lineTo(px, py);
+          else tctx.moveTo(px, py);
+        });
+        tctx.closePath();
+      };
       tctx.globalCompositeOperation = 'lighter';
       tctx.fillStyle = '#0000ff';
-      tctx.beginPath();
-      lotPts.forEach(([x, z], i) => {
-        const px = ((x - nx0) / (nx1 - nx0)) * W;
-        const py = (1 - (z - nz0) / (nz1 - nz0)) * W;
-        if (i) tctx.lineTo(px, py);
-        else tctx.moveTo(px, py);
-      });
-      tctx.closePath();
+      tracePts(lotPts);
       tctx.fill();
+      if (front) {
+        tracePts(front);
+        tctx.fill();
+        // The street, only where it runs along the property (the strip's box, widened across the road).
+        const fx = front.map((p) => p[0]);
+        const fz = front.map((p) => p[1]);
+        const pad = 30;
+        tctx.save();
+        tracePts([[Math.min(...fx) - pad, Math.min(...fz) - pad], [Math.max(...fx) + pad, Math.min(...fz) - pad], [Math.max(...fx) + pad, Math.max(...fz) + pad], [Math.min(...fx) - pad, Math.max(...fz) + pad]]);
+        tctx.clip();
+        paths.filter((q) => q && q.length >= 3 && ROAD_KINDS.has(q.kind)).forEach((q) => {
+          tracePts(q.map(([x, y]) => [x - cx, -(y - cy)]));
+          tctx.fill();
+        });
+        tctx.restore();
+      }
       // The house and its eaves are never cut: Google's real house stands there.
       tctx.globalCompositeOperation = 'multiply';
       tctx.fillStyle = '#000000';
