@@ -104,6 +104,16 @@ export function prepareFences(project) {
     .map((line) => line.map(([lat, lng]) => [(lng - minLng) * 364000 * cosLat, (lat - minLat) * 364000]));
 }
 
+// Swimming pools from the scan, as plan-feet outlines.
+export function preparePools(project) {
+  const origin = projectOrigin(project);
+  if (!origin || !Array.isArray(project?.pools)) return [];
+  const { minLat, minLng, cosLat } = origin;
+  return project.pools
+    .filter((ring) => Array.isArray(ring) && ring.length >= 3)
+    .map((ring) => ring.map(([lat, lng]) => [(lng - minLng) * 364000 * cosLat, (lat - minLat) * 364000]));
+}
+
 export function prepareTrees(project) {
   const origin = projectOrigin(project);
   const trees = project?.trees;

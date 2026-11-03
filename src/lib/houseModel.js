@@ -324,6 +324,10 @@ const GARAGE_SEAM = new THREE.MeshStandardMaterial({ color: 0xc9c4b8, roughness:
 const GARAGE_H = 7.5;
 const FOUNDATION = new THREE.MeshStandardMaterial({ color: 0x8f8b84, roughness: 1 });
 const MULLION = new THREE.MeshStandardMaterial({ color: 0xf4f1ea, roughness: 0.8, ...proud(-6) });
+// Modern houses (flat roofs): wide ribbon windows in thin dark frames, no
+// divided lights or sills.
+const MODERN_FRAME = new THREE.MeshStandardMaterial({ color: 0x2b2d2a, roughness: 0.6, metalness: 0.3, ...proud(-2) });
+const MODERN_WIDTH = 2.2; // times a standard window
 /** Shared geometries and materials, so the 3D view's disposal can skip them. */
 export const HOUSE_SHARED = [WINDOW_GEO, DOOR_GEO, GLASS, FRAME, DOOR, FRAME_GEO, MULLION_V, MULLION_H, BOX, TRIM, FOUNDATION, MULLION];
 
@@ -336,7 +340,11 @@ export const HOUSE_SHARED = [WINDOW_GEO, DOOR_GEO, GLASS, FRAME, DOOR, FRAME_GEO
 // groundAt(x, y): ground height (ft) at plan (x, y). With it, each block of
 // the house stands on the lowest ground under its own corners, so on a hillside
 // the house steps down the slope (like a split-level) instead of one floor
-// level burying the uphill side; the group's y is then 0.
+// level burying the uphill side; the group's y is then 0. The measured height
+// is the roof above the ground beside it, so the roof sits that high over the
+// block's average ground: the downhill walls run down past it (the extra
+// storey of a walkout), and windows and doors start from the ground where
+// they are, never underground.
 // roof: { color: '#rrggbb', shape: 'flat' | 'pitched' } measured by the scan.
 // garageAt: [x, y] plan point where the driveway meets the house: a garage
 // door goes on the nearest wall.
@@ -395,14 +403,19 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
     });
   }
 
+  const sharedEave = eave;
   blocks.forEach((b, bi) => {
     const block = new THREE.Group();
     let blockBase = 0;
+    let eave = sharedEave;
     if (groundAt) {
       const c = Math.cos(b.angle);
       const sn = Math.sin(b.angle);
       const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => [b.cx + ((u * b.w) / 2) * c - ((v * b.d) / 2) * sn, b.cy + ((u * b.w) / 2) * sn + ((v * b.d) / 2) * c]);
-      blockBase = Math.min(...corners.map(([x, y]) => groundAt(x, y)));
+      const grounds = [...corners, [b.cx, b.cy]].map(([x, y]) => groundAt(x, y));
+      blockBase = Math.min(...grounds);
+      const mean = grounds.reduce((a, g) => a + g, 0) / grounds.length;
+      eave = sharedEave + Math.min(30, mean - blockBase); // the walkout storey, at most a few floors
     }
     block.position.set(b.cx, blockBase, -b.cy);
     block.rotation.y = b.angle;
@@ -496,15 +509,16 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
         const yaw = Math.atan2(sd.nrm[0], sd.nrm[1]);
         const lx = sd.o[0] + sd.t[0] * garage.along + sd.nrm[0] * 0.14;
         const ln = sd.o[1] + sd.t[1] * garage.along + sd.nrm[1] * 0.14;
+        const gg = groundAt ? Math.max(0, groundAt(...local2plan(lx, ln)) - blockBase) : 0;
         const door = new THREE.Mesh(BOX, GARAGE);
         door.scale.set(garage.width, GARAGE_H, 0.2);
-        door.position.set(lx, GARAGE_H / 2 + 0.2, -ln);
+        door.position.set(lx, gg + GARAGE_H / 2 + 0.2, -ln);
         door.rotation.y = Math.PI - yaw;
         block.add(door);
         for (let k = 1; k <= 3; k++) {
           const seam = new THREE.Mesh(BOX, GARAGE_SEAM);
           seam.scale.set(garage.width - 0.4, 0.12, 0.24);
-          seam.position.set(lx, 0.2 + (GARAGE_H * k) / 4, -ln);
+          seam.position.set(lx, gg + 0.2 + (GARAGE_H * k) / 4, -ln);
           seam.rotation.y = Math.PI - yaw;
           block.add(seam);
         }
@@ -524,8 +538,16 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
         if (dot > bestDot) { bestDot = dot; doorSide = si; }
       });
     }
+    // Ground under a spot on this block's walls, above the block's base.
+    const groundHere = (lx, ln) => {
+      if (!groundAt) return 0;
+      const [px, py] = local2plan(lx, ln);
+      return Math.max(0, groundAt(px, py) - blockBase);
+    };
+    const blockFloors = Math.max(1, Math.min(10, Math.round((eave + 1) / STORY_FT)));
+    const modern = type === 'flat' && !big;
     sides.forEach((sd, si) => {
-      const count = Math.floor((sd.len - 4) / 9);
+      const count = Math.floor((sd.len - 4) / (modern ? 13 : 9));
       if (count < 1) return;
       const step = sd.len / (count + 1);
       const yaw = Math.atan2(sd.nrm[0], sd.nrm[1]); // plane faces +z before rotation; local z is -n
@@ -535,24 +557,31 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
         const ln = sd.o[1] + sd.t[1] * along + sd.nrm[1] * 0.12;
         if (coveredByOther(lx + sd.nrm[0], ln + sd.nrm[1])) continue;
         const isDoor = si === doorSide && k === Math.ceil(count / 2) && !inGarage(si, along);
-        for (let f = 0; f < floors; f++) {
+        const g = groundHere(lx, ln);
+        for (let f = 0; f < blockFloors; f++) {
           if (f === 0 && inGarage(si, along)) continue; // the garage door is here
           if (isDoor && f === 0) {
             const door = new THREE.Mesh(DOOR_GEO, DOOR);
-            door.position.set(lx, 3.5, -ln);
+            door.position.set(lx, g + 3.5, -ln);
             door.rotation.y = Math.PI - yaw;
             block.add(door);
             doorDone = true;
             continue;
           }
-          const y = f * STORY_FT + 4.6;
+          const y = g + f * STORY_FT + 4.6;
           if (y + 2.5 > eave) break;
-          const frame = new THREE.Mesh(FRAME_GEO, FRAME);
+          const frame = new THREE.Mesh(FRAME_GEO, modern ? MODERN_FRAME : FRAME);
           frame.position.set(lx, y, -ln);
           frame.rotation.y = Math.PI - yaw;
           const glass = new THREE.Mesh(WINDOW_GEO, GLASS);
           glass.position.set(lx + sd.nrm[0] * 0.08, y, -(ln + sd.nrm[1] * 0.08));
           glass.rotation.y = Math.PI - yaw;
+          if (modern) {
+            frame.scale.x = MODERN_WIDTH;
+            glass.scale.x = MODERN_WIDTH;
+            block.add(frame, glass);
+            continue;
+          }
           // Divided-light mullions and a sill, as on a typical double-hung window.
           const mv = new THREE.Mesh(MULLION_V, MULLION);
           const mh = new THREE.Mesh(MULLION_H, MULLION);

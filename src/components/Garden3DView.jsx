@@ -30,7 +30,7 @@ import { createWildlife } from '@/lib/wildlife';
 import { environmental } from '@/lib/landscapeMath';
 import { createPayoffStacks } from '@/lib/payoffStacks';
 import { speciesKey, OTHER_COLOR } from '@/lib/speciesColors';
-import { arrangePlants, prepareBuildings, prepareFences, prepareLot, preparePolys, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
+import { arrangePlants, prepareBuildings, prepareFences, prepareLot, preparePolys, preparePools, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
 
 // Module-level geometries, materials and textures are reused across scene
 // rebuilds and remounts; they're tracked here so disposal skips them.
@@ -1227,6 +1227,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   const trees = useMemo(() => prepareTrees(project), [project]);
   const paths = useMemo(() => preparePaths(project), [project]);
   const fences = useMemo(() => prepareFences(project), [project]);
+  const pools = useMemo(() => preparePools(project), [project]);
   const layout = useMemo(() => arrangePlants(polys, entries, pattern), [polys, entries, pattern]);
   const boundsAll = useMemo(() => {
     const model = (lot && lot.length >= 3) ? [lot] : polys;
@@ -2387,6 +2388,30 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
       }
     }
 
+    // Swimming pools from the scan: water a little below a stone edge, level
+    // with the lowest ground around it. The model's own; Real 3D shows the real one.
+    if (pools.length) {
+      const water = new THREE.MeshStandardMaterial({ color: 0x3f9fd8, roughness: 0.1, metalness: 0.15, emissive: 0x0b2c47, emissiveIntensity: 0.3 });
+      const stone = new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.9 });
+      for (const ring of pools) {
+        const pts = ring.map(([x, y]) => [x - cx, -(y - cy)]);
+        const y0 = Math.min(...pts.map(([x, z]) => at(x, z)));
+        const mx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+        const mz = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+        const size = Math.max(4, ...pts.map(([x, z]) => Math.hypot(x - mx, z - mz)));
+        const shapeOf = (k) => new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(mx + (x - mx) * k, -(mz + (z - mz) * k))));
+        for (const [shape, mat, lift] of [[shapeOf(1 + 1.6 / size), stone, 0.1], [shapeOf(1), water, 0.14]]) {
+          const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), mat);
+          mesh.rotation.x = -Math.PI / 2;
+          mesh.position.y = y0 + lift;
+          mesh.receiveShadow = true;
+          mesh.userData.ground = true;
+          mesh.userData.modelOnly = true;
+          scene.add(mesh);
+        }
+      }
+    }
+
     // Existing mature trees kept from the scan, sized to their scanned canopy.
     // Each stands on the lowest ground under its crown (never on a roof, wall or
     // lump in Google's mesh) and keeps its scanned height above that ground.
@@ -2470,7 +2495,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     // The plants were just rebuilt: their species discs follow them. (A call,
     // not a state change, so a rebuild never triggers another render.)
     speciesPlanBuildRef.current?.();
-  }, [layout, polys, pattern, lot, buildings, trees, paths, fences, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, showLawn, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries]);
+  }, [layout, polys, pattern, lot, buildings, trees, paths, fences, pools, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, showLawn, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries]);
 
   // The camera's view for each project step, flown to when the step changes:
   // the overview for the scan and design, a lower look from the street that

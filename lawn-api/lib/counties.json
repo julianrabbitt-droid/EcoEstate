@@ -912,5 +912,21 @@
       -121.009,
       39.639
     ]
+  },
+  {
+    "key": "king-wa",
+    "county": "King County, Washington",
+    "label": "King County parcel map",
+    "url": "https://gismaps.kingcounty.gov/arcgis/rest/services/Property/KingCo_Parcels/MapServer/0",
+    "source": "KingCo_Parcels",
+    "idField": "PIN",
+    "parcels": null,
+    "partial": false,
+    "extent": [
+      -122.545,
+      47.08,
+      -121.065,
+      47.78
+    ]
   }
 ]

@@ -48,7 +48,9 @@ function percentile(values, p) {
   return s[Math.min(s.length - 1, Math.floor(p * s.length))];
 }
 
-function buildingHeight(b, roof) {
+function buildingHeight(b, roof, lidarRoof) {
+  // Measured by lidar over this footprint (see lawn.js): the most direct.
+  if (lidarRoof?.heightM) return { heightM: lidarRoof.heightM, source: 'lidar' };
   if (Number(b.height) > 1) return { heightM: Number(b.height), source: 'overture_height' };
   if (Number(b.floors) >= 1) return { heightM: Number(b.floors) * FLOOR_M + ROOF_M, source: 'overture_floors' };
   // Canopy height model over the roof: only trusted when it reads most of the
@@ -69,7 +71,7 @@ function buildingHeight(b, roof) {
  * the canopy height model varies across the roof).
  * `labels` is rasterizeLabels() over `buildings` (same order).
  */
-export function describeBuildings(buildings, labels, canopy, naip = null) {
+export function describeBuildings(buildings, labels, canopy, naip = null, lidarRoofs = null) {
   // Canopy heights and photo colours over each roof, gathered in one pass.
   const roofs = buildings.map(() => ({ pixels: 0, heights: [], r: [], g: [], b: [] }));
   for (let k = 0; k < labels.length; k++) {
@@ -93,7 +95,7 @@ export function describeBuildings(buildings, labels, canopy, naip = null) {
   return {
     type: 'FeatureCollection',
     features: buildings.map((b, i) => {
-      const { heightM, source } = buildingHeight(b, roofs[i]);
+      const { heightM, source } = buildingHeight(b, roofs[i], lidarRoofs?.[i]);
       return {
         type: 'Feature',
         geometry: b.geometry,

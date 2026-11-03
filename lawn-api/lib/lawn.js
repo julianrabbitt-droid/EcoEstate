@@ -37,6 +37,8 @@ export const SETTINGS = {
   pavePatchBrightness: 92, // a patch this dark on average is shaded ground or planting, not pavement
   paveOpenM: 0.6, // specks and seams narrower than about twice this (1.2 m) are dropped; side walks are wider
   paveMinSqft: 80,
+  poolMinSqft: 150, // a small pool and up; smaller blue patches are spas, tarps, cars, toys
+  poolMaxSqft: 2500, // bigger blue water is a pond or a community pool, not a yard pool
   ndviMin: 0.2, // NDVI at or above this counts as green (healthy turf is usually 0.3+)
   // Aerial photos are flown mid-morning to early afternoon, never with the sun
   // straight overhead, so houses and trees cast shadows across lawns. Shaded
@@ -301,7 +303,7 @@ export function lidarHeights(grid, pts) {
       known[c] = seen;
     }
   }
-  return { known, obstacle, canopy, flat, groundInt };
+  return { known, obstacle, canopy, flat, groundInt, ground };
 }
 
 // Grass under a canopy: ground returns at least about as bright as the
@@ -738,7 +740,43 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   // Buildings over roads and paths over lawn: cut each higher layer out of the
   // ones below so nothing overlaps (simplified and rectangle outlines can
   // otherwise stray onto a path or roof).
-  const buildingLayer = describeBuildings(ownBuildings, roofLabels, canopy, naip);
+  // Each house's height from lidar where it covers the property: the roof top
+  // (95th percentile of the building returns over the footprint) above the
+  // average ground under it. On a slope the house is measured from its middle,
+  // and its downhill walls run down past that (a walkout storey), as the 3D
+  // model draws it; the canopy map only says how high the roof stands over
+  // the ground right beside it.
+  // Surveys that don't class buildings leave them unclassified (class 1):
+  // those count too, at a lower percentile so a tree over the roof doesn't.
+  let lidarRoofs = null;
+  const classed = lidar ? lidar.cls.some((c) => c === LIDAR_CLASS.building) : false;
+  if (lidar && measured) {
+    const tops = ownBuildings.map(() => []);
+    for (let k = 0; k < lidar.count; k++) {
+      if (lidar.cls[k] !== (classed ? LIDAR_CLASS.building : 1)) continue;
+      const [X, Y] = grid.fromLonLat([lidar.x[k], lidar.y[k]]);
+      const i = Math.floor((X - grid.x0) / grid.res);
+      const j = Math.floor((grid.y0 - Y) / grid.res);
+      if (i < 0 || j < 0 || i >= w || j >= h) continue;
+      const l = roofLabels[j * w + i];
+      if (l >= 1 && l <= ownBuildings.length) tops[l - 1].push(lidar.z[k]);
+    }
+    const under = ownBuildings.map(() => ({ s: 0, m: 0 }));
+    for (let c = 0; c < n; c++) {
+      const l = roofLabels[c];
+      if (l >= 1 && l <= ownBuildings.length && Number.isFinite(measured.ground[c])) {
+        under[l - 1].s += measured.ground[c];
+        under[l - 1].m++;
+      }
+    }
+    lidarRoofs = ownBuildings.map((_, i) => {
+      if (tops[i].length < 8 || !under[i].m) return null;
+      const sorted = Float64Array.from(tops[i]).sort();
+      const heightM = sorted[Math.min(sorted.length - 1, Math.floor((classed ? 0.95 : 0.85) * sorted.length))] - under[i].s / under[i].m;
+      return heightM >= 2.5 && heightM <= 80 ? { heightM } : null;
+    });
+  }
+  const buildingLayer = describeBuildings(ownBuildings, roofLabels, canopy, naip, lidarRoofs);
   // Which roofs and paths actually touch each lawn region and path, from the
   // rasters (pixels within 2 of each other count, to catch sub-pixel overlaps),
   // so only those are cut. Each path is walked over its own pixels, so crossing
@@ -814,6 +852,41 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
       .filter((f) => f.properties.areaSqft >= SETTINGS.paveMinSqft),
   };
 
+  // Swimming pools: clear blue water in the open (not under a roof or a tree),
+  // which reflects little near-infrared (NDVI below zero), in pool-sized
+  // patches. Drawn as water in the 3D model; never counted as lawn or paving.
+  const poolMask = new Uint8Array(n);
+  for (let k = 0; k < n; k++) {
+    if (!usable[k] || trees[k] || roofLabels[k]) continue;
+    const [r, g, b] = [naip.red[k], naip.green[k], naip.blue[k]];
+    if (b > r * 1.3 && g > r * 1.1 && b > 80 && ndvi[k] < 0) poolMask[k] = 1;
+  }
+  const poolPieces = labelRegions(dilate(erode(poolMask, w, h, 1), w, h, 1), w, h);
+  const poolKeep = Float64Array.from(poolPieces.labels, (l) => {
+    const sqft = l ? poolPieces.sizes[l] * pxSqft : 0;
+    return sqft >= SETTINGS.poolMinSqft && sqft <= SETTINGS.poolMaxSqft ? 1 : 0;
+  });
+  const [poolMulti] = contours().size([w, h]).thresholds([0.5])(poolKeep);
+  const pools = {
+    type: 'FeatureCollection',
+    features: poolMulti.coordinates
+      .map((rings) => ({ type: 'Polygon', coordinates: [rings[0].map(toLonLat)] }))
+      .map((geometry) => {
+        const simple = simplify({ type: 'Feature', properties: {}, geometry }, { tolerance: 0.000004, highQuality: true }).geometry;
+        return { type: 'Feature', geometry: simple, properties: { kind: 'pool', areaSqft: Math.round(turfArea(simple) * SQM_TO_SQFT) } };
+      })
+      // Pools are compact (a rectangle or a kidney fills most of its box); a
+      // long thin blue strip is a car or a tarp along a fence.
+      .filter((f) => {
+        if (f.properties.areaSqft < SETTINGS.poolMinSqft) return false;
+        const ring = f.geometry.coordinates[0];
+        const xs = ring.map((p) => p[0]);
+        const ys = ring.map((p) => p[1]);
+        const box = turfArea({ type: 'Polygon', coordinates: [[[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)], [Math.min(...xs), Math.max(...ys)], [Math.min(...xs), Math.min(...ys)]]] }) * SQM_TO_SQFT;
+        return f.properties.areaSqft / Math.max(1, box) >= 0.45;
+      }),
+  };
+
   // The aerial photo of the property, so the 3D model's ground looks like the
   // real yard: a small PNG of the grid (public-domain NAIP) and its corners.
   let groundImage = null;
@@ -850,6 +923,7 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     trees: [...detectTrees(grid, canopy, onParcelNotRoof), ...streetTrees],
     paths: layers.paths,
     paved,
+    pools,
     fences,
     groundImage,
     nearbyRoads,
