@@ -20,31 +20,38 @@ function polyAreaLocal(poly) {
   return Math.abs(a) / 2;
 }
 
+const hasLawn = (b) => Array.isArray(b) && b.length && Array.isArray(b[0]) && b[0].length >= 3;
+
 export function projectOrigin(project) {
+  // The lawns place the scene; a scan that found none is placed by its lot
+  // (or its buildings), so the house and yard still show around no lawn.
   const b = project?.boundary;
-  if (Array.isArray(b) && b.length && Array.isArray(b[0]) && b[0].length >= 3) {
-    const polys = Array.isArray(b[0][0]) ? b : [b];
-    const all = polys.flat();
-    const minLat = Math.min(...all.map((p) => p[0]));
-    const maxLat = Math.max(...all.map((p) => p[0]));
-    const minLng = Math.min(...all.map((p) => p[1]));
-    const latC = (minLat + maxLat) / 2;
-    const cosLat = Math.cos((latC * Math.PI) / 180) || 0.0001;
-    return { minLat, minLng, cosLat };
-  }
-  return null;
+  const lot = project?.lotOutline;
+  let all = null;
+  if (hasLawn(b)) all = (Array.isArray(b[0][0]) ? b : [b]).flat();
+  else if (Array.isArray(lot) && lot.length >= 3 && Array.isArray(lot[0])) all = lot;
+  else if (Array.isArray(project?.buildings) && project.buildings.length) all = project.buildings.flat();
+  if (!all?.length) return null;
+  const minLat = Math.min(...all.map((p) => p[0]));
+  const maxLat = Math.max(...all.map((p) => p[0]));
+  const minLng = Math.min(...all.map((p) => p[1]));
+  const latC = (minLat + maxLat) / 2;
+  const cosLat = Math.cos((latC * Math.PI) / 180) || 0.0001;
+  return { minLat, minLng, cosLat };
 }
 
 export function preparePolys(project) {
   const origin = projectOrigin(project);
-  if (origin) {
+  const b = project?.boundary;
+  if (origin && hasLawn(b)) {
     const { minLat, minLng, cosLat } = origin;
-    const b = project?.boundary;
     const polys = Array.isArray(b[0][0]) ? b : [b];
     return polys
       .map((poly) => poly.map((p) => [(p[1] - minLng) * 364000 * cosLat, (p[0] - minLat) * 364000]))
       .filter((poly) => poly.length >= 3);
   }
+  // A scanned property with no lawn: its lot and house, and nothing to convert.
+  if (origin) return [];
   const area = project?.breakdown?.turf || project?.totalSqft || 1200;
   const side = Math.sqrt(area);
   return [[[0, 0], [side, 0], [side, side], [0, side]]];
@@ -115,6 +122,16 @@ export function prepareLot(project) {
   if (!origin || !Array.isArray(lot) || lot.length < 3 || !Array.isArray(lot[0]) || lot[0].length < 2) return null;
   const { minLat, minLng, cosLat } = origin;
   return lot.map((p) => [(p[1] - minLng) * 364000 * cosLat, (p[0] - minLat) * 364000]);
+}
+
+// Swimming pools from the scan, in the same local coordinates as preparePolys.
+export function preparePools(project) {
+  const origin = projectOrigin(project);
+  if (!origin || !Array.isArray(project?.pools)) return [];
+  const { minLat, minLng, cosLat } = origin;
+  return project.pools
+    .filter((ring) => Array.isArray(ring) && ring.length >= 3)
+    .map((ring) => ring.map(([lat, lng]) => [(lng - minLng) * 364000 * cosLat, (lat - minLat) * 364000]));
 }
 
 export function prepareTrees(project) {

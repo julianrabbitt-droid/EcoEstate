@@ -98,6 +98,8 @@ function EditableLine({ corners, onChange }) {
   );
 }
 
+const OLD_PHOTO_MS = 2.5 * 365 * 86400000; // older than this, say so
+
 // Result of GET /v1/lawn. First the property in 3D as scanned (the house,
 // trees and the lawn found), with one question: is this right? If it isn't,
 // the scan is saved and opened in the next screen's editor (onFix); for an
@@ -159,6 +161,13 @@ export default function LawnApiResult({ data, preview, onConfirm, onFix, onEdit,
   const lawnCount = data.lawn?.features?.length || 0;
   const regionCount = data.lawn?.features?.filter((f) => f.properties?.kind !== 'scattered').length || 0;
   const scattered = data.lawn?.features?.find((f) => f.properties?.kind === 'scattered')?.properties;
+  // Aerial surveys are flown every two or three years (California's newest, in
+  // the 2022 drought, caught many watered lawns brown): say when the photo is
+  // old, so a missing lawn is added rather than taken for the truth.
+  const surveyed = new Date(`${data.surveyDate}T12:00:00`);
+  const oldPhoto = !Number.isNaN(surveyed.getTime()) && Date.now() - surveyed.getTime() > OLD_PHOTO_MS
+    ? surveyed.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    : null;
   const details = (
     <p className="mt-2 px-4 text-[11px] leading-relaxed text-muted-foreground">
       {data.address}
@@ -166,6 +175,7 @@ export default function LawnApiResult({ data, preview, onConfirm, onFix, onEdit,
       {lawnCount === 0 ? ' · No green lawn was detected on this property.' : ''}
       {scattered ? ` · includes ${scattered.areaSqft.toLocaleString()} sq ft in ${scattered.patches} small scattered patches (shown faintly)` : ''}
       {data.dormant?.sqft >= 50 ? ` · includes ${data.dormant.sqft.toLocaleString()} sq ft of lawn that was dry when the survey was flown` : ''}
+      {oldPhoto ? ` · The newest aerial photo here is from ${oldPhoto}, so a lawn that was brown then, or planted since, may be missing: add it if it’s there now.` : ''}
     </p>
   );
 

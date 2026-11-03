@@ -27,7 +27,7 @@ import { createWildlife } from '@/lib/wildlife';
 import { environmental } from '@/lib/landscapeMath';
 import { createPayoffStacks } from '@/lib/payoffStacks';
 import { speciesKey, OTHER_COLOR } from '@/lib/speciesColors';
-import { arrangePlants, prepareBuildings, prepareLot, preparePolys, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
+import { arrangePlants, prepareBuildings, prepareLot, preparePolys, preparePools, prepareTrees, preparePaths, projectOrigin } from '@/lib/gardenLayout';
 
 // Module-level geometries, materials and textures are reused across scene
 // rebuilds and remounts; they're tracked here so disposal skips them.
@@ -140,10 +140,10 @@ const LAWN_OUTLINE = 0xeadfbf; // warm cream: stands out on lawn and satellite w
 // lines a few pixels wide, drawn over everything, with a dark halo so they show
 // on bright roofs and dark trees alike. One shared resolution for all of them.
 const LINE_RESOLUTION = new THREE.Vector2(1, 1);
-function screenLine(points, { color, width, opacity = 1, dashed = false, order = 10 }) {
+function screenLine(points, { color, width, opacity = 1, dashed = false, order = 10, depthTest = false }) {
   const geometry = new LineGeometry();
   geometry.setPositions(points.flatMap((p) => [p.x, p.y, p.z]));
-  const material = new LineMaterial({ color, linewidth: width, transparent: true, opacity, depthTest: false, depthWrite: false, dashed, dashSize: 3, gapSize: 2 });
+  const material = new LineMaterial({ color, linewidth: width, transparent: true, opacity, depthTest, depthWrite: false, dashed, dashSize: 3, gapSize: 2 });
   material.uniforms.resolution.value = LINE_RESOLUTION;
   const line = new Line2(geometry, material);
   if (dashed) line.computeLineDistances();
@@ -152,11 +152,13 @@ function screenLine(points, { color, width, opacity = 1, dashed = false, order =
   return line;
 }
 /** A closed outline with its halo, as one group. */
-function haloOutline(points, color, width, { dashed = false, order = 10 } = {}) {
+// depthTest: hidden behind the house and trees (a lawn's outline would
+// otherwise read as a mark on the roof); the property line keeps it off.
+function haloOutline(points, color, width, { dashed = false, order = 10, depthTest = false } = {}) {
   const ring = [...points, points[0]];
   const group = new THREE.Group();
-  group.add(screenLine(ring, { color: 0x10231c, width: width + 3, opacity: 0.4, order }));
-  group.add(screenLine(ring, { color, width, opacity: 0.95, dashed, order: order + 1 }));
+  group.add(screenLine(ring, { color: 0x10231c, width: width + 3, opacity: 0.4, order, depthTest }));
+  group.add(screenLine(ring, { color, width, opacity: 0.95, dashed, order: order + 1, depthTest }));
   return group;
 }
 function clipTileMaterial(m) {
@@ -991,7 +993,22 @@ function roadLabel(name, axis) {
   );
   mesh.rotation.x = -Math.PI / 2;
   mesh.rotation.z = axis.angle; // after laying flat, z turns it within the ground plane
+  mesh.userData.roadLabel = axis.angle; // turned to read the right way up from the camera (see facingLabels)
   return mesh;
+}
+
+// Street names lie flat along their roads; each is turned end for end when the
+// camera looks at it from the other side, so it always reads the right way up.
+const _look = new THREE.Vector3();
+function facingLabels(scene, camera) {
+  camera.getWorldDirection(_look);
+  for (const o of scene.children) {
+    const a = o.userData?.roadLabel;
+    if (a === undefined) continue;
+    // The text's top, on the ground, points away from the camera when it reads upright.
+    const away = -Math.sin(a) * _look.x - Math.cos(a) * _look.z;
+    o.rotation.z = away >= 0 ? a : a + Math.PI;
+  }
 }
 
 // Sky: a soft, hazy blue overhead, fading to near-white at the horizon.
@@ -1178,7 +1195,7 @@ function buildPlant(plant, mature, detail = 'normal', { spacing = 0, real = fals
 // onWalkChange(walking): so a page can clear its panels away during a walk.
 // toolbarTop: on phones the view controls go at the top (the scan's result
 // panel takes the bottom of the screen there).
-export default function Garden3DView({ entries = NO_ENTRIES, project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady, fill = false, viewShift = null, scene: step = 'design', payoff = null, highlight = null, planView = false, arrangementsEl = null, onWalkChange, toolbarTop = false, toolsOpen: toolsOpenProp, onToolsOpenChange }) {
+export default function Garden3DView({ entries = NO_ENTRIES, project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady, fill = false, viewShift = null, scene: step = 'design', payoff = null, highlight = null, planView = false, arrangementsEl = null, onWalkChange, toolbarTop = false, toolsOpen: toolsOpenProp, onToolsOpenChange, initialReal = false }) {
   const fillRef = useRef(fill);
   const handoffKey = Array.isArray(project?.center) ? project.center.map((v) => Number(v).toFixed(6)).join(',') : null;
   const handoffKeyRef = useRef(handoffKey);
@@ -1262,7 +1279,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   const terrainRef = useRef(null);
   const groundBoxRef = useRef([-60, 60, -60, 60]); // scene box [x0, x1, z0, z1] Google's ground is measured over
   const [realGround, setRealGround] = useState(null); // { terrain, fix(x, z) } measured on Google's mesh
-  const [photoReal, setPhotoReal] = useState(false);
+  const [photoReal, setPhotoReal] = useState(initialReal);
   // Once Google 3D has loaded it stays loaded; the toggle only shows or hides
   // it (no reload, no new paid session). It loads hidden, behind the model, and
   // only shows once its tiles are in and the model stands on its ground.
@@ -1335,6 +1352,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   const buildings = useMemo(() => prepareBuildings(project), [project]);
   const trees = useMemo(() => prepareTrees(project), [project]);
   const paths = useMemo(() => preparePaths(project), [project]);
+  const pools = useMemo(() => preparePools(project), [project]);
   const layout = useMemo(() => arrangePlants(polys, entries, pattern), [polys, entries, pattern]);
   const boundsAll = useMemo(() => {
     const model = (lot && lot.length >= 3) ? [lot] : polys;
@@ -1660,7 +1678,10 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
           const u = c.userData;
           if (u && (u.satellite || u.offLot || u.surround)) c.visible = !t3;
           if (u && (u.realOnly || u.skirt)) c.visible = !!t3;
+          // Development review: only Google's world, nothing of the model's.
+          if (import.meta.env.DEV && t3 && window.__ecoQaReal && u && (u.ground || u.bed || u.building || u.path || u.existingTree || u.outline || u.payoff)) c.visible = false;
         }
+        facingLabels(scene, camera);
         // Scale render resolution with camera distance: full quality up close, coarser when zoomed far out.
         const dist = camera.position.distanceTo(controls.target);
         const near = maxDim * 0.12;
@@ -1787,7 +1808,9 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   useEffect(() => {
     const scene2 = (poly) => poly.map(([x, y]) => [x - cx, -(y - cy)]);
     const lotPts = lot && lot.length >= 3 ? scene2(lot) : null;
-    if (!lotPts) {
+    // Development review (DevRender ?real=1): Google's world whole, to compare with the model.
+    const qaWhole = import.meta.env.DEV && typeof window !== 'undefined' && window.__ecoQaReal;
+    if (!lotPts || qaWhole) {
       clipUniforms.uEcoBox.value.set(1e7, 1e7, 1, 1); // no lot: Google's mesh stays whole
       clipUniforms.uEcoNearBox.value.set(1e7, 1e7, 1, 1);
       threeRef.current?.markDirty?.();
@@ -2340,8 +2363,8 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
 
       // The lawn being converted, outlined in green over everything, so it's
       // found at a glance even under trees or on a big property.
-      const outlinePts = poly.map((p) => new THREE.Vector3(p[0] - cx, at(p[0] - cx, -(p[1] - cy)) + MULCH_Y + 0.1, -(p[1] - cy)));
-      const outline = haloOutline(outlinePts, LAWN_OUTLINE, 2.5, { order: 12 });
+      const outlinePts = poly.map((p) => new THREE.Vector3(p[0] - cx, at(p[0] - cx, -(p[1] - cy)) + MULCH_Y + 0.35, -(p[1] - cy))); // a little above the bed, so depth never hides it on the ground
+      const outline = haloOutline(outlinePts, LAWN_OUTLINE, 2.5, { order: 12, depthTest: true });
       outline.userData.bed = true;
       outline.userData.outline = true; // the model view only; Real 3D shows the property as it looks
       scene.add(outline);
@@ -2396,6 +2419,9 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     paths.forEach((poly) => {
       if (!poly || poly.length < 3) return;
       const road = ROAD_KINDS.has(poly.kind);
+      // The property stays simple: its driveway, patios and walks are left to
+      // the aerial photo on its ground; only the streets are modelled.
+      if (!road || (poly.kind === 'service' && onLot(poly.reduce((a, p) => a + p[0], 0) / poly.length, poly.reduce((a, p) => a + p[1], 0) / poly.length))) return;
       // Driveways, patios and walks the scan found as bare paving: flat on the ground.
       const paved = poly.kind === 'paved';
       const pmx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
@@ -2503,6 +2529,29 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
       }
     }
 
+    // Swimming pools from the scan: clear water a little below a pale stone
+    // edge, level with the lowest ground around it.
+    if (pools.length) {
+      const water = new THREE.MeshPhysicalMaterial({ color: 0x3f9fd8, roughness: 0.06, metalness: 0, clearcoat: 1, emissive: 0x0b2c47, emissiveIntensity: 0.25 });
+      const stone = new THREE.MeshStandardMaterial({ color: 0xe2ddd1, roughness: 0.9 });
+      for (const ring of pools) {
+        const pts = ring.map(([x, y]) => [x - cx, -(y - cy)]);
+        const y0 = Math.min(...pts.map(([x, z]) => at(x, z)));
+        const mx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+        const mz = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+        const size = Math.max(4, ...pts.map(([x, z]) => Math.hypot(x - mx, z - mz)));
+        const shapeOf = (k) => new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(mx + (x - mx) * k, -(mz + (z - mz) * k))));
+        for (const [shape, mat, lift] of [[shapeOf(1 + 1.6 / size), stone, MULCH_Y + 0.06], [shapeOf(1), water, MULCH_Y + 0.1]]) {
+          const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), mat);
+          mesh.rotation.x = -Math.PI / 2;
+          mesh.position.y = y0 + lift;
+          mesh.receiveShadow = true;
+          mesh.userData.ground = true;
+          scene.add(mesh);
+        }
+      }
+    }
+
     // Existing mature trees kept from the scan, sized to their scanned canopy.
     // Each stands on the lowest ground under its crown (never on a roof, wall or
     // lump in Google's mesh) and keeps its scanned height above that ground.
@@ -2601,7 +2650,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     // The plants were just rebuilt: their species discs follow them. (A call,
     // not a state change, so a rebuild never triggers another render.)
     speciesPlanBuildRef.current?.();
-  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, showLawn, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries, showReal, scansVersion]);
+  }, [layout, polys, pattern, lot, buildings, trees, paths, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, showLawn, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries, showReal, scansVersion, pools]);
 
   // The camera's view for each project step, flown to when the step changes:
   // the overview for the scan and design, a lower look from the street that

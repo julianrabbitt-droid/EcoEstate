@@ -19,6 +19,7 @@ import { autoDesign, financials, money } from '@/lib/landscapeMath';
 import { useAutoScanAccess } from '@/hooks/useAutoScanAccess';
 import { usePageMeta } from '@/hooks/usePageMeta';
 import { smoothNavigate } from '@/lib/smoothNavigate';
+import { projectFromScan, scannedStructures } from '@/lib/scanProject';
 import NearbyInstalls from '@/components/NearbyInstalls';
 // "920, Moreno Avenue, Palo Alto, Santa Clara County, …" -> "920 Moreno Avenue, Palo Alto".
 function shortAddress(label) {
@@ -39,7 +40,10 @@ function Backdrop({ center, zoom = 18 }) {
   const map = useMap();
   const [lat, lng] = center;
   useEffect(() => {
-    if (map.getCenter().distanceTo([lat, lng]) > GLIDE_MAX_M) map.setView([lat, lng], zoom, { animate: false });
+    const away = map.getCenter().distanceTo([lat, lng]);
+    // Already there (the first screen opens on it): stay perfectly still.
+    if (away < 5 && map.getZoom() === zoom) return;
+    if (away > GLIDE_MAX_M) map.setView([lat, lng], zoom, { animate: false });
     else map.flyTo([lat, lng], zoom, { duration: 1.4 });
   }, [map, lat, lng, zoom]);
   return null;
@@ -92,38 +96,6 @@ const US_ONLY = {
 };
 const isOutsideUS = (hit) => Boolean(hit?.countryCode) && hit.countryCode !== 'US';
 
-// Buildings and trees from the lawn API in the project's format: building
-// outlines with their measured heights (same order), trees with height and crown.
-function scannedStructures(d) {
-  const buildings = [];
-  const buildingHeightsFt = [];
-  const buildingRoofs = []; // { color, shape } from the aerial photo and canopy heights, same order
-  for (const f of d?.buildings?.features || []) {
-    const ring = geoJsonOuterRings(f.geometry)[0];
-    if (!ring) continue;
-    buildings.push(ring);
-    buildingHeightsFt.push(f.properties?.heightFt ?? null);
-    const p = f.properties || {};
-    buildingRoofs.push({
-      color: p.roofColor || null,
-      shape: p.roofShape || null,
-      // What mappers recorded (OpenStreetMap via Overture).
-      mappedShape: p.mappedRoofShape || null,
-      material: p.roofMaterial || null,
-      facadeMaterial: p.facadeMaterial || null,
-      facadeColor: p.facadeColor || null,
-      // The roof as lidar surveyed it, when it did (see the lawn API's roofHeightMap).
-      grid: p.roofGrid || null,
-    });
-  }
-  const trees = (d?.trees || []).map((t) => ({ latLng: [t.lat, t.lon], radiusFt: t.radiusFt, heightFt: t.heightFt }));
-  const paths = [...(d?.paths?.features || []), ...(d?.nearbyRoads?.features || []), ...(d?.paved?.features || [])]
-    .map((f) => ({ polygonLatLng: geoJsonOuterRings(f.geometry)[0], kind: f.properties?.kind, name: f.properties?.name || null }))
-    .filter((p) => p.polygonLatLng);
-  // The yard from above (public-domain NAIP), for the model's ground.
-  const groundImage = d?.groundImage ? { url: `data:image/png;base64,${d.groundImage.png}`, west: d.groundImage.west, south: d.groundImage.south, east: d.groundImage.east, north: d.groundImage.north } : null;
-  return { buildings, buildingHeightsFt, buildingRoofs, trees, paths, groundImage };
-}
 
 // Pollen motes over the hero: [left %, top %, seconds to drift, delay, sideways px].
 const POLLEN = [[8, 72, 15, 0, 30], [17, 58, 18, 3, -20], [26, 84, 13, 6, 45], [34, 66, 17, 1.5, 25], [43, 78, 16, 8, -35], [52, 62, 19, 4, 40], [61, 86, 14, 2, -25], [69, 70, 17, 9, 30], [77, 60, 15, 5, -40], [85, 80, 18, 0.5, 20], [92, 68, 16, 7, -30], [22, 92, 20, 10, 35], [58, 94, 17, 12, -20], [88, 92, 19, 11, 25]];
@@ -177,6 +149,13 @@ export default function Scan() {
   const lastScan = useRef(saved.lastScan || null); // { address, hit } of the scan last started
   const [stageEl, setStageEl] = useState(null); // where the 3D model is drawn, full screen
   const [modelShown, setModelShown] = useState(false);
+  // The opening aerial shows once its first tiles are in, as one still picture
+  // (never tile by tile).
+  const [aerialReady, setAerialReady] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setAerialReady(true), 2500); // slow or failing tiles: show what there is
+    return () => clearTimeout(t);
+  }, []);
   // What the scan is doing, told in turn while it runs.
   const [scanStage, setScanStage] = useState(0);
   useEffect(() => {
@@ -544,23 +523,8 @@ export default function Scan() {
 
   // The scan in the project's shape, for the 3D check before anything is saved.
   const previewProject = useMemo(() => {
-    const d = lawnData;
-    const boundary = d?.lawnSqft > 0 ? geoJsonOuterRings(d.lawn) : [];
-    if (!d?.location || !boundary.length) return null;
-    return {
-      address: d.address,
-      city: place?.city || '',
-      state: place?.state || '',
-      zip: place?.zip || '',
-      countryCode: 'US',
-      center: [d.location.lat, d.location.lon],
-      boundary,
-      totalSqft: d.lawnSqft,
-      breakdown: { turf: d.lawnSqft, beds: 0, bare: 0 },
-      lotOutline: geoJsonOuterRings(d.parcel?.geometry)[0] || null,
-      lotSizeSqft: d.parcel?.areaSqft || 0,
-      ...scannedStructures(d),
-    };
+    const p = projectFromScan(lawnData, place);
+    return p?.boundary.length ? p : null;
   }, [lawnData, place]);
   // Fetch the 3D view's code while the scan runs, so the check opens at once.
   useEffect(() => {
@@ -616,12 +580,13 @@ export default function Scan() {
       <div className="pointer-events-none fixed inset-0 -z-10" style={{ background: 'radial-gradient(120% 80% at 50% 0%, #e9e6dc 0%, #f1efe9 55%, #f5f3ee 100%)' }} aria-hidden={phase !== 'confirm'}>
         <div
           className={`absolute inset-0 transition-opacity duration-1000 ${phase === 'confirm' ? 'pointer-events-auto' : ''}`}
-          style={{ opacity: modelShown ? 0 : aerialOpacity, filter: scrollY > 0 ? `blur(${Math.min(6, (scrollY / viewH) * 8).toFixed(1)}px)` : 'none' }}
+          style={{ opacity: modelShown || !aerialReady ? 0 : aerialOpacity, filter: scrollY > 0 ? `blur(${Math.min(6, (scrollY / viewH) * 8).toFixed(1)}px)` : 'none' }}
         >
           <MapContainer
             center={HERO_VIEW}
             zoom={18}
             maxZoom={21}
+            fadeAnimation={false}
             zoomControl={false}
             attributionControl={false}
             dragging={false}
@@ -632,7 +597,7 @@ export default function Scan() {
             keyboard={false}
             className="h-full w-full"
           >
-            <TileLayer url={HERO_IMAGERY} maxNativeZoom={19} maxZoom={21} />
+            <TileLayer url={HERO_IMAGERY} maxNativeZoom={19} maxZoom={21} eventHandlers={{ load: () => setAerialReady(true) }} />
             {/* While the address is being looked up it stays put, then goes straight to the property. */}
             <Backdrop center={phase === 'idle' || phase === 'locating' ? HERO_VIEW : phase === 'confirm' && pin ? pin : center} zoom={phase === 'idle' || phase === 'locating' ? 18 : 19} />
             <PinLayer active={phase === 'confirm'} pin={pin} onPin={setPin} />

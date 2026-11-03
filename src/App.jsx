@@ -30,6 +30,7 @@ import Scan from '@/pages/Scan';
 const Admin = lazy(() => import('@/pages/Admin'));
 const ProjectStage = lazy(() => import('@/components/ProjectStage'));
 const Installs = lazy(() => import('@/pages/Installs'));
+const DevRender = import.meta.env.DEV ? lazy(() => import('@/pages/DevRender')) : null;
 const Install = lazy(() => import('@/pages/Install'));
 const Analysis = lazy(() => import('@/pages/Analysis'));
 const Design = lazy(() => import('@/pages/Design'));
@@ -120,6 +121,7 @@ const AuthenticatedApp = () => {
         <Route path="/cities" element={<Cities />} />
         <Route path="/beta" element={<Beta />} />
         <Route path="/installs" element={<Installs />} />
+        {DevRender && <Route path="/dev/render" element={<DevRender />} />}
         <Route path="/installs/:id" element={<Install />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
