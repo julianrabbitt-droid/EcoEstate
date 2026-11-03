@@ -49,7 +49,7 @@ export default function Impact() {
   const location = useLocation();
   const { project, loading } = useProject(id, location.state);
   const wide = useWide();
-  const { asideOpen } = useStagePanels();
+  const { asideOpen } = useStagePanels() || { asideOpen: true };
   const [fin, setFin] = useState(null);
   const [env, setEnv] = useState(null);
   const [error, setError] = useState('');

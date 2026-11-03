@@ -751,6 +751,7 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   // Surveys that don't class buildings leave them unclassified (class 1):
   // those count too, at a lower percentile so a tree over the roof doesn't.
   let lidarRoofs = null;
+  let under = []; // per own building: the ground under it (sum, count)
   const classed = lidar ? lidar.cls.some((c) => c === LIDAR_CLASS.building) : false;
   if (lidar && measured) {
     const tops = ownBuildings.map(() => []);
@@ -763,7 +764,7 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
       const l = roofLabels[j * w + i];
       if (l >= 1 && l <= ownBuildings.length) tops[l - 1].push(lidar.z[k]);
     }
-    const under = ownBuildings.map(() => ({ s: 0, m: 0 }));
+    under = ownBuildings.map(() => ({ s: 0, m: 0 }));
     for (let c = 0; c < n; c++) {
       const l = roofLabels[c];
       if (l >= 1 && l <= ownBuildings.length && Number.isFinite(measured.ground[c])) {
@@ -782,7 +783,98 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
       return heightM >= 2.5 && heightM <= tallest ? { heightM } : null;
     });
   }
-  const buildingLayer = describeBuildings(ownBuildings, roofLabels, canopy, naip, lidarRoofs);
+  // Chimneys: on a fine grid of the highest returns over each roof, small
+  // blocks (under ~4 m²) standing 0.9–4 m above the roof around them, away
+  // from the roof's edge (where branches hang over). At most two per house.
+  let chimneys = null;
+  if (lidar && measured) {
+    const cell = 0.5;
+    chimneys = ownBuildings.map((b, bi) => {
+      const xs = [];
+      const ys = [];
+      const zs = [];
+      for (let k = 0; k < lidar.count; k++) {
+        if (lidar.cls[k] !== (classed ? LIDAR_CLASS.building : 1)) continue;
+        const [X, Y] = grid.fromLonLat([lidar.x[k], lidar.y[k]]);
+        const i = Math.floor((X - grid.x0) / grid.res);
+        const j = Math.floor((grid.y0 - Y) / grid.res);
+        if (i < 0 || j < 0 || i >= w || j >= h || roofLabels[j * w + i] !== bi + 1) continue;
+        // Away from the roof's edge: every grid cell around this one is roof too.
+        let interior = true;
+        for (let dj = -1; dj <= 1 && interior; dj++) for (let di = -1; di <= 1; di++) {
+          const ii = i + di;
+          const jj = j + dj;
+          if (ii < 0 || jj < 0 || ii >= w || jj >= h || roofLabels[jj * w + ii] !== bi + 1) { interior = false; break; }
+        }
+        if (!interior) continue;
+        xs.push(X);
+        ys.push(Y);
+        zs.push(lidar.z[k]);
+      }
+      if (zs.length < 30 || !under[bi]?.m) return [];
+      const x0 = Math.min(...xs);
+      const y0 = Math.min(...ys);
+      const gw = Math.ceil((Math.max(...xs) - x0) / cell) + 1;
+      const gh = Math.ceil((Math.max(...ys) - y0) / cell) + 1;
+      if (gw * gh > 40000) return [];
+      const top = new Float32Array(gw * gh).fill(NaN);
+      for (let k = 0; k < zs.length; k++) {
+        const c = Math.floor((ys[k] - y0) / cell) * gw + Math.floor((xs[k] - x0) / cell);
+        if (!(top[c] >= zs[k])) top[c] = zs[k];
+      }
+      const found = [];
+      const used = new Uint8Array(gw * gh);
+      for (let c = 0; c < top.length; c++) {
+        if (Number.isNaN(top[c]) || used[c]) continue;
+        const ci = c % gw;
+        const cj = Math.floor(c / gw);
+        // The roof around: the median of the cells 1.5–3 m away.
+        const ring = [];
+        for (let dj = -6; dj <= 6; dj++) for (let di = -6; di <= 6; di++) {
+          const r = Math.max(Math.abs(di), Math.abs(dj));
+          if (r < 3) continue;
+          const ii = ci + di;
+          const jj = cj + dj;
+          if (ii < 0 || jj < 0 || ii >= gw || jj >= gh) continue;
+          const v = top[jj * gw + ii];
+          if (!Number.isNaN(v)) ring.push(v);
+        }
+        if (ring.length < 20) continue;
+        ring.sort((a, b) => a - b);
+        const roof = ring[Math.floor(ring.length / 2)];
+        const rise = top[c] - roof;
+        if (rise < 0.9 || rise > 4) continue;
+        // Its size: neighbouring cells that also stand well above the roof.
+        let size = 0;
+        let peak = top[c];
+        let px = 0;
+        let py = 0;
+        for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) {
+          const ii = ci + di;
+          const jj = cj + dj;
+          if (ii < 0 || jj < 0 || ii >= gw || jj >= gh) continue;
+          const v = top[jj * gw + ii];
+          if (Number.isNaN(v) || v - roof < 0.6) continue;
+          size++;
+          used[jj * gw + ii] = 1;
+          if (v >= peak) { peak = v; px = di; py = dj; }
+        }
+        if (size < 1 || size > 16) continue; // up to ~4 m²: bigger is a dormer, a second storey or a tree
+        const [lon, lat] = grid.toLonLat([x0 + (ci + px + 0.5) * cell, y0 + (cj + py + 0.5) * cell]);
+        found.push({ lat: Number(lat.toFixed(7)), lon: Number(lon.toFixed(7)), topFt: Math.round((peak - under[bi].s / under[bi].m) * 3.28084 * 10) / 10, rise });
+      }
+      // The strongest, and a second only when it's clearly its own chimney
+      // (well apart and standing as tall): a vent or the other end of the
+      // same stack otherwise.
+      found.sort((a, b) => b.rise - a.rise);
+      const keep = found.slice(0, 1);
+      const apartM = (a, b) => Math.hypot((a.lat - b.lat) * 111320, (a.lon - b.lon) * 111320 * Math.cos((a.lat * Math.PI) / 180));
+      const second = found.find((f) => f !== keep[0] && f.rise >= 1.2 && apartM(f, keep[0]) > 6);
+      if (second) keep.push(second);
+      return keep.map(({ lat, lon, topFt }) => ({ lat, lon, topFt }));
+    });
+  }
+  const buildingLayer = describeBuildings(ownBuildings, roofLabels, canopy, naip, lidarRoofs, chimneys);
   // Which roofs and paths actually touch each lawn region and path, from the
   // rasters (pixels within 2 of each other count, to catch sub-pixel overlaps),
   // so only those are cut. Each path is walked over its own pixels, so crossing

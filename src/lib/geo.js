@@ -87,31 +87,89 @@ export function cleanAddress(text) {
   return String(text || '').replace(/^(\s*\d+[a-z]?(?:-\d+[a-z]?)?),\s+/i, '$1 ');
 }
 
-/** Lightweight address suggestions as the user types (Nominatim, top 5). */
+// California first: EcoEstate scans US properties, and its parcel maps,
+// rebates and plant lists are Californian, so suggestions lean there.
+const CA_CENTER = { lat: 36.8, lon: -119.4 };
+const CA_VIEWBOX = '-124.48,42.01,-114.13,32.53'; // west,north,east,south (Nominatim)
+const US_BBOX = '-125,24,-66,50'; // the contiguous US (Photon: west,south,east,north)
+
+// A suggestion from Photon (OpenStreetMap search built for type-as-you-go).
+function photonHit(f) {
+  const p = f.properties || {};
+  const [lng, lat] = f.geometry?.coordinates || [];
+  const street = [p.housenumber, p.street || (p.housenumber ? '' : p.name)].filter(Boolean).join(' ');
+  const place = p.city || p.town || p.village || p.district || p.county || '';
+  const short = [street || p.name, place].filter(Boolean).join(', ');
+  const label = [street || p.name, place, [p.state, p.postcode].filter(Boolean).join(' '), p.country].filter(Boolean).join(', ');
+  return {
+    label,
+    short,
+    lat,
+    lng,
+    osm: p.osm_type && p.osm_id ? `${String(p.osm_type)[0].toUpperCase()}${p.osm_id}` : null,
+    zip: p.postcode || '',
+    city: place,
+    state: p.state || '',
+    countryCode: String(p.countrycode || '').toUpperCase(),
+    country: p.country || '',
+    isAddress: Boolean(p.housenumber),
+  };
+}
+
+function nominatimHit(hit) {
+  return {
+    label: hit.display_name,
+    short: streetLabel(hit.address),
+    lat: parseFloat(hit.lat),
+    lng: parseFloat(hit.lon),
+    // OpenStreetMap ID (e.g. "R12409275"): lets the lawn API use a campus's or park's whole outline.
+    osm: hit.osm_type && hit.osm_id ? `${hit.osm_type[0].toUpperCase()}${hit.osm_id}` : null,
+    zip: hit.address?.postcode || '',
+    city: hit.address?.city || hit.address?.town || hit.address?.village || '',
+    state: hit.address?.state || '',
+    countryCode: (hit.address?.country_code || '').toUpperCase(),
+    country: hit.address?.country || '',
+    isAddress: Boolean(hit.address?.house_number),
+  };
+}
+
+/**
+ * Address suggestions as the user types: US places only, California's
+ * first, street addresses before other places, up to 6. Photon (good with
+ * half-typed addresses), else Nominatim.
+ */
 export async function autocompleteAddresses(query) {
-  if (!query || query.trim().length < 3) return [];
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1&q=${encodeURIComponent(query)}`;
+  const q = String(query || '').trim();
+  if (q.length < 3) return [];
+  let hits = [];
   try {
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!res.ok) return [];
-    const data = await res.json();
-    if (!Array.isArray(data)) return [];
-    return data.map((hit) => ({
-      label: hit.display_name,
-      short: streetLabel(hit.address),
-      lat: parseFloat(hit.lat),
-      lng: parseFloat(hit.lon),
-      // OpenStreetMap ID (e.g. "R12409275"): lets the lawn API use a campus's or park's whole outline.
-      osm: hit.osm_type && hit.osm_id ? `${hit.osm_type[0].toUpperCase()}${hit.osm_id}` : null,
-      zip: hit.address?.postcode || '',
-      city: hit.address?.city || hit.address?.town || hit.address?.village || '',
-      state: hit.address?.state || '',
-      countryCode: (hit.address?.country_code || '').toUpperCase(),
-      country: hit.address?.country || '',
-    }));
+    const url = `https://photon.komoot.io/api/?${new URLSearchParams({ q, limit: '12', lang: 'en', bbox: US_BBOX, lat: String(CA_CENTER.lat), lon: String(CA_CENTER.lon), location_bias_scale: '0.3' })}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (res.ok) hits = ((await res.json())?.features || []).map(photonHit);
   } catch {
-    return [];
+    hits = [];
   }
+  if (!hits.some((h) => h.countryCode === 'US')) {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?${new URLSearchParams({ format: 'json', limit: '8', addressdetails: '1', countrycodes: 'us', viewbox: CA_VIEWBOX, bounded: '0', q })}`;
+      const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+      if (res.ok) hits = ((await res.json()) || []).map(nominatimHit);
+    } catch {
+      hits = [];
+    }
+  }
+  // A house number typed first: only results with that number, when any have it.
+  const number = q.match(/^(\d+[a-z]?)\b/i)?.[1];
+  const numbered = number ? hits.filter((h) => h.label.toLowerCase().startsWith(`${number.toLowerCase()} `)) : [];
+  if (numbered.length) hits = numbered;
+  const seen = new Set();
+  return hits
+    .filter((h) => h.countryCode === 'US' && Number.isFinite(h.lat) && Number.isFinite(h.lng))
+    .filter((h) => (seen.has(h.label) ? false : seen.add(h.label)))
+    .map((h, i) => ({ h, rank: (h.state === 'California' ? 0 : 2) + (h.isAddress ? 0 : 1), i }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i)
+    .slice(0, 6)
+    .map(({ h }) => h);
 }
 
 export async function reverseGeocodeLocation(center) {
@@ -124,7 +182,7 @@ export async function reverseGeocodeLocation(center) {
 }
 
 export async function geocodeAddress(query) {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&extratags=1&polygon_geojson=1&q=${encodeURIComponent(
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&extratags=1&polygon_geojson=1&countrycodes=us&viewbox=${CA_VIEWBOX}&bounded=0&q=${encodeURIComponent(
     query
   )}`;
   const res = await fetch(url, { headers: { Accept: 'application/json' } });

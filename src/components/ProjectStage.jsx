@@ -11,6 +11,7 @@ import Garden3DView from '@/components/Garden3DView';
 // with <StageOverlay>, and lays the rest of its content out below as usual.
 
 const StageContext = createContext(null);
+const NO_PANELS = { asideOpen: true, titleOpen: true, setAsideOpen: () => {}, setTitleOpen: () => {} };
 const NO_ENTRIES = [];
 
 // Edits that don't change the model itself (the design, which comes in as
@@ -41,13 +42,13 @@ export function StageOverlay({ children }) {
 // a panel folded away on one step stays folded on the next.
 export function useStagePanels() {
   const ctx = useContext(StageContext);
-  return ctx?.panels || { asideOpen: true, titleOpen: true, setAsideOpen: () => {}, setTitleOpen: () => {}, walking: false };
+  return ctx?.panels || null;
 }
 
 // The step's side panel (wide screens): a header that folds it away to a pill
 // at the top right, its contents, and a footer for the step's main buttons.
 export function StageAside({ label, summary, children, footer, width = 'w-[25rem]' }) {
-  const { asideOpen, setAsideOpen } = useStagePanels();
+  const { asideOpen, setAsideOpen } = useStagePanels() || NO_PANELS;
   if (!asideOpen) {
     return (
       <button
@@ -80,7 +81,7 @@ export function StageAside({ label, summary, children, footer, width = 'w-[25rem
 // title alone. Its "In depth" button scrolls to the step's details below the
 // view (the element with id="step-details").
 export function StageTitle({ title, children }) {
-  const { titleOpen, setTitleOpen } = useStagePanels();
+  const { titleOpen, setTitleOpen } = useStagePanels() || NO_PANELS;
   const toDetails = () => document.getElementById('step-details')?.scrollIntoView({ behavior: 'smooth' });
   return (
     <div className="pointer-events-auto mt-3 w-fit max-w-[min(34rem,calc(100vw-1.5rem))] rounded-2xl border border-border/60 bg-card/88 shadow-lg backdrop-blur-md lg:max-w-[calc(100vw-29rem)]">
@@ -119,7 +120,14 @@ export default function ProjectStage() {
   // Phones start with the title card folded: its details would cover the view.
   const [titleOpen, setTitleOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 640);
   const [walking, setWalking] = useState(false);
-  const panels = useMemo(() => ({ asideOpen, setAsideOpen, titleOpen, setTitleOpen, walking }), [asideOpen, titleOpen, walking]);
+  // The view controls too (phones start with them folded), so one button can
+  // fold or open every panel at once (setAll, in the step bar).
+  const [toolsOpen, setToolsOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 640);
+  const panels = useMemo(() => ({
+    asideOpen, setAsideOpen, titleOpen, setTitleOpen, toolsOpen, setToolsOpen, walking,
+    allOpen: asideOpen || titleOpen || toolsOpen,
+    setAll: (open) => { setAsideOpen(open); setTitleOpen(open); setToolsOpen(open); },
+  }), [asideOpen, titleOpen, toolsOpen, walking]);
   const next = props?.project || null;
   const key = modelKey(next);
   if (next && key !== model.current.key) model.current = { key, project: next };
@@ -148,6 +156,8 @@ export default function ProjectStage() {
               planView={Boolean(props.planView)}
               arrangementsEl={props.arrangementsEl || null}
               onWalkChange={setWalking}
+              toolsOpen={toolsOpen}
+              onToolsOpenChange={setToolsOpen}
             />
           ) : (
             <div className="flex h-full items-center justify-center" role="status" aria-label="Opening your property">

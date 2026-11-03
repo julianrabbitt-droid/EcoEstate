@@ -53,7 +53,7 @@ export default function Analysis() {
   // Edits save as they happen, so leaving via StepNav or the header keeps them.
   const fields = useMemo(() => ({ breakdown, turf, sun, soil, zip }), [breakdown, turf, sun, soil, zip]);
   const wide = useWide();
-  const { asideOpen } = useStagePanels();
+  const { asideOpen } = useStagePanels() || { asideOpen: true };
   // The steps' shared 3D view, showing today's lawn with its size and water.
   const lawnSqft = Number(breakdown.turf || 0);
   const gallons = Math.round(lawnSqft * (turf.galPerSqft ?? 46));

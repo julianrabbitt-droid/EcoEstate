@@ -72,7 +72,9 @@ function buildingHeight(b, roof, lidarRoof) {
  * the canopy height model varies across the roof).
  * `labels` is rasterizeLabels() over `buildings` (same order).
  */
-export function describeBuildings(buildings, labels, canopy, naip = null, lidarRoofs = null) {
+const GARAGE_USES = new Set(['garage', 'garages', 'carport', 'parking']);
+
+export function describeBuildings(buildings, labels, canopy, naip = null, lidarRoofs = null, chimneys = null) {
   // Canopy heights and photo colours over each roof, gathered in one pass.
   const roofs = buildings.map(() => ({ pixels: 0, heights: [], r: [], g: [], b: [] }));
   for (let k = 0; k < labels.length; k++) {
@@ -97,10 +99,19 @@ export function describeBuildings(buildings, labels, canopy, naip = null, lidarR
     type: 'FeatureCollection',
     features: buildings.map((b, i) => {
       const { heightM, source } = buildingHeight(b, roofs[i], lidarRoofs?.[i]);
+      // Mapped details, when someone recorded them, and chimneys found in lidar.
+      const mapped = {};
+      if (GARAGE_USES.has(String(b.use || '').toLowerCase())) mapped.use = 'garage';
+      else if (b.use) mapped.use = String(b.use);
+      if (b.roofShape) mapped.mappedRoofShape = String(b.roofShape);
+      if (b.roofMaterial) mapped.roofMaterial = String(b.roofMaterial);
+      if (b.facadeMaterial) mapped.facadeMaterial = String(b.facadeMaterial);
+      if (b.facadeColor) mapped.facadeColor = String(b.facadeColor);
+      if (chimneys?.[i]?.length) mapped.chimneys = chimneys[i];
       return {
         type: 'Feature',
         geometry: b.geometry,
-        properties: { id: b.id, heightFt: Math.round(heightM * M_TO_FT), heightSource: source, areaSqft: Math.round(b.areaM2 * SQM_TO_SQFT), ...look(roofs[i]) },
+        properties: { id: b.id, heightFt: Math.round(heightM * M_TO_FT), heightSource: source, areaSqft: Math.round(b.areaM2 * SQM_TO_SQFT), ...look(roofs[i]), ...mapped },
       };
     }),
   };

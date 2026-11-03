@@ -547,6 +547,10 @@ async function loadTerrain(planBounds, origin, cx, cy) {
 // marginFt]]) it sits just below the real ground so Google's ground wins
 // wherever it exists; elsewhere it sits deep, only filling gaps.
 const SKIRT_FT = 45; // reaches neighbours' yards, where Google often has canopy but no ground
+// Hillside grading under each house (see groundAt in Garden3DView).
+const PAD_MARGIN_FT = 3; // the level pad reaches this far past the walls (paths, patio edge)
+const PAD_BLEND_MIN_FT = 8; // then blends into the natural slope over at least this…
+const PAD_BLEND_MAX_FT = 45; // …and at most this, longer where the footprint spans more height
 const SKIRT_DROP_FT = 0.6; // just past the lot line…
 const SKIRT_DROP_MAX_FT = 2.5; // …sinking to this much lower further out
 const SKIRT_DEEP_FT = 8; // away from the cuts: below any pool or sunken patio Google draws
@@ -1089,7 +1093,7 @@ function buildPlant(plant, mature, detail = 'normal', { spacing = 0 } = {}) {
 // onWalkChange(walking): so a page can clear its panels away during a walk.
 // toolbarTop: on phones the view controls go at the top (the scan's result
 // panel takes the bottom of the screen there).
-export default function Garden3DView({ entries = NO_ENTRIES, project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady, fill = false, viewShift = null, scene: step = 'design', payoff = null, highlight = null, planView = false, arrangementsEl = null, onWalkChange, toolbarTop = false }) {
+export default function Garden3DView({ entries = NO_ENTRIES, project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady, fill = false, viewShift = null, scene: step = 'design', payoff = null, highlight = null, planView = false, arrangementsEl = null, onWalkChange, toolbarTop = false, toolsOpen: toolsOpenProp, onToolsOpenChange }) {
   const fillRef = useRef(fill);
   const stepRef = useRef(step);
   stepRef.current = step;
@@ -1113,7 +1117,10 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   const [showArr, setShowArr] = useState(false); // full screen: the arrangements panel
   // Full screen: the view controls, or just their pill. Phones start with the
   // pill on the project steps, where the panels already take the screen.
-  const [toolsOpen, setToolsOpen] = useState(() => !fill || mode === 'check' || typeof window === 'undefined' || window.innerWidth >= 640);
+  const [toolsOpenOwn, setToolsOpenOwn] = useState(() => !fill || mode === 'check' || typeof window === 'undefined' || window.innerWidth >= 640);
+  // A page that folds every panel at once (ProjectStage) holds this itself.
+  const toolsOpen = toolsOpenProp ?? toolsOpenOwn;
+  const setToolsOpen = (open) => (onToolsOpenChange ? onToolsOpenChange(open) : setToolsOpenOwn(open));
   const showLawn = checking || before;
   const wildlifeRef = useRef(null); // { group, counts, update } while the garden has visitors
   const [visitors, setVisitors] = useState(null);
@@ -1183,7 +1190,6 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     terrainRef.current = terrain;
     tilesRef.current?.refit?.();
   }, [terrain]);
-  const groundAt = useMemo(() => (terrain ? terrain.at : () => 0), [terrain]);
   // Google's ground lowered or raised onto the terrain, as a height texture.
   useEffect(() => {
     const fix = realGround && realGround.terrain === terrain ? realGround.fix : null;
@@ -1203,7 +1209,6 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     if (old.image?.width > 1) old.dispose();
     threeRef.current?.markDirty?.();
   }, [realGround, terrain]);
-  useEffect(() => { groundAtRef.current = groundAt; }, [groundAt]);
   const [photoCredit, setPhotoCredit] = useState('');
   const [custom, setCustom] = useState(null);
   const [prompt, setPrompt] = useState('');
@@ -1246,6 +1251,53 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   }, [lot, polys]);
   const cx = (boundsAll.minX + boundsAll.maxX) / 2;
   const cy = (boundsAll.minY + boundsAll.maxY) / 2;
+  // The ground the model stands on: the terrain, graded the way hillside lots
+  // are, with a level pad under each house (at its average ground, so as much
+  // is cut uphill as is filled downhill) that blends back into the natural
+  // slope over a distance that grows with how steep it is. Walls never run
+  // into the hillside, and nothing steps.
+  const groundAt = useMemo(() => {
+    if (!terrain) return () => 0;
+    const natural = terrain.at;
+    const pads = buildings.filter((b) => b && b.length >= 3).map((poly) => {
+      const pts = poly.map(([x, y]) => [x - cx, -(y - cy)]);
+      const mx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+      const mz = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+      const samples = [...pts, [mx, mz], ...pts.map((p, i) => [(p[0] + pts[(i + 1) % pts.length][0]) / 2, (p[1] + pts[(i + 1) % pts.length][1]) / 2])];
+      const hs = samples.map(([x, z]) => natural(x, z));
+      const relief = Math.max(...hs) - Math.min(...hs);
+      const blend = Math.max(PAD_BLEND_MIN_FT, Math.min(PAD_BLEND_MAX_FT, PAD_BLEND_MIN_FT + relief * 2.2));
+      const xs = pts.map((p) => p[0]);
+      const zs = pts.map((p) => p[1]);
+      const reach = PAD_MARGIN_FT + blend;
+      return { pts, level: hs.reduce((a, h) => a + h, 0) / hs.length, blend, box: [Math.min(...xs) - reach, Math.max(...xs) + reach, Math.min(...zs) - reach, Math.max(...zs) + reach] };
+    });
+    if (!pads.length) return natural;
+    return (x, z) => {
+      const g = natural(x, z);
+      let weight = 0;
+      let level = g;
+      for (const pad of pads) {
+        const [x0, x1, z0, z1] = pad.box;
+        if (x < x0 || x > x1 || z < z0 || z > z1) continue;
+        const d = insidePoly([x, z], pad.pts) ? 0 : Math.max(0, distToOutline([x, z], pad.pts) - PAD_MARGIN_FT);
+        if (d >= pad.blend) continue;
+        const t = 1 - d / pad.blend;
+        const w = t * t * (3 - 2 * t); // smoothstep: no crease where the grading meets the hillside
+        if (w > weight) { weight = w; level = pad.level; }
+      }
+      return g + weight * (level - g);
+    };
+  }, [terrain, buildings, cx, cy]);
+  useEffect(() => {
+    groundAtRef.current = groundAt;
+    // Real 3D lines Google's ground up with this same graded ground.
+    if (terrain) terrainAtRef.current = groundAt;
+    // For checking the grading from the console (dev, or ?debug3d).
+    if (threeRef.current && (import.meta.env.DEV || /[?&]debug3d\b/.test(window.location.search))) {
+      threeRef.current.debug = { groundAt, natural: terrain?.at || null, houses: buildings.filter((b) => b && b.length >= 3).map((poly) => poly.map(([x, y]) => [x - cx, -(y - cy)])) };
+    }
+  }, [groundAt, terrain, buildings, cx, cy]);
   const scenePoly = useCallback((poly) => poly.map(([x, y]) => [x - cx, -(y - cy)]), [cx, cy]);
   // In Real 3D a tree is ours (Google's is cut away whole and our model stands
   // there) when any of its crown reaches the property or the strip to the
@@ -2264,7 +2316,8 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
           if (d < gapBest) { gapBest = d; garageAt = [qx - cx, qy - cy]; }
         }
       }
-      const mesh = buildHouse(pts, heightFt, { wallColor: bAttr.wallColor, roofType: bAttr.roofType, front, groundAt: (x, y) => at(x, -y), roof: poly.roof, garageAt });
+      const roof = poly.roof && { ...poly.roof, chimneys: (poly.roof.chimneys || []).map((c) => ({ ...c, x: c.x - cx, y: c.y - cy })) };
+      const mesh = buildHouse(pts, heightFt, { wallColor: bAttr.wallColor, roofType: bAttr.roofType, front, groundAt: (x, y) => at(x, -y), roof, garageAt });
       mesh.userData.building = true;
       scene.add(mesh);
     });

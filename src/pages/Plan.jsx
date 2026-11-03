@@ -37,7 +37,7 @@ export default function Plan() {
   const { project, loading } = useProject(id, location.state);
   const rebates = useRebates(project);
   const wide = useWide();
-  const { asideOpen } = useStagePanels();
+  const { asideOpen } = useStagePanels() || { asideOpen: true };
   const { user, isAuthenticated, navigateToLogin } = useAuth();
   const [copied, setCopied] = useState(false);
   const [highlight, setHighlight] = useState(null);

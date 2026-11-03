@@ -102,7 +102,7 @@ export default function Design() {
   const onApplyArrangement = useCallback((arr) => applyRef.current?.(arr), []);
   // The side panel's two tabs: the planting list, and the arrangements (the
   // 3D view draws those into arrEl, in the panel, rather than over the garden).
-  const { asideOpen } = useStagePanels();
+  const { asideOpen } = useStagePanels() || { asideOpen: true };
   const [panelTab, setPanelTab] = useState('plants');
   const [arrEl, setArrEl] = useState(null);
   const panelShown = wide && asideOpen;

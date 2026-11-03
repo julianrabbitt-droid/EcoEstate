@@ -66,7 +66,11 @@ export function prepareBuildings(project) {
       if (!Array.isArray(poly) || poly.length < 3 || !Array.isArray(poly[0]) || poly[0].length < 2) return null;
       const pts = poly.map((p) => [(p[1] - minLng) * 364000 * cosLat, (p[0] - minLat) * 364000]);
       pts.heightFt = Number(heights[i]) > 0 ? Number(heights[i]) : null;
-      pts.roof = project?.buildingRoofs?.[i] || null; // { color, shape } from the scan, when known
+      const roof = project?.buildingRoofs?.[i] || null; // { color, shape, use, material, chimneys… } from the scan, when known
+      pts.roof = roof && {
+        ...roof,
+        chimneys: (roof.chimneys || []).map((c) => ({ x: (c.latLng[1] - minLng) * 364000 * cosLat, y: (c.latLng[0] - minLat) * 364000, topFt: c.topFt })),
+      };
       return pts;
     })
     .filter(Boolean);

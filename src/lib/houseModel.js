@@ -328,6 +328,8 @@ const MULLION = new THREE.MeshStandardMaterial({ color: 0xf4f1ea, roughness: 0.8
 // divided lights or sills.
 const MODERN_FRAME = new THREE.MeshStandardMaterial({ color: 0x2b2d2a, roughness: 0.6, metalness: 0.3, ...proud(-2) });
 const MODERN_WIDTH = 2.2; // times a standard window
+const CHIMNEY = new THREE.MeshStandardMaterial({ color: 0x8a4e3c, roughness: 0.95 });
+const CHIMNEY_CAP = new THREE.MeshStandardMaterial({ color: 0x5f5a54, roughness: 0.8 });
 /** Shared geometries and materials, so the 3D view's disposal can skip them. */
 export const HOUSE_SHARED = [WINDOW_GEO, DOOR_GEO, GLASS, FRAME, DOOR, FRAME_GEO, MULLION_V, MULLION_H, BOX, TRIM, FOUNDATION, MULLION];
 
@@ -348,13 +350,28 @@ export const HOUSE_SHARED = [WINDOW_GEO, DOOR_GEO, GLASS, FRAME, DOOR, FRAME_GEO
 // roof: { color: '#rrggbb', shape: 'flat' | 'pitched' } measured by the scan.
 // garageAt: [x, y] plan point where the driveway meets the house: a garage
 // door goes on the nearest wall.
+// roof also carries what the scan knows beyond the photo: use ('garage': a
+// detached garage, all door and no windows), mappedShape (OpenStreetMap's
+// roof:shape), material (roof:material), facadeMaterial and facadeColor
+// (building:material and colour), and chimneys [{ x, y, topFt }] found in lidar
+// (plan feet; their tops in feet above the ground under the house).
 export function buildHouse(points, heightFt, { wallColor, roofType, front, groundAt = null, roof = null, garageAt = null } = {}) {
   const group = new THREE.Group();
   const total = area(points);
   const blocks = blocksFor(points);
   const big = total > 8000; // shops, schools, apartment blocks: flat roofs read as conventional
-  const type = big || roofType === 'flat' || roof?.shape === 'flat' ? 'flat' : roofType === 'gable' ? 'gable' : 'hip';
-  const wallHex = WALL_COLORS[wallColor] ?? WALL_COLORS.gray;
+  const isGarage = roof?.use === 'garage';
+  // A shape someone mapped beats one read from the canopy model.
+  const mapped = { gabled: 'gable', hipped: 'hip', pyramidal: 'hip', half_hipped: 'hip', gambrel: 'gable', mansard: 'hip', flat: 'flat', skillion: 'flat', saltbox: 'gable' }[String(roof?.mappedShape || '').toLowerCase()];
+  const type = big ? 'flat' : mapped || (roofType === 'flat' || roof?.shape === 'flat' ? 'flat' : roofType === 'gable' ? 'gable' : 'hip');
+  const facade = (() => {
+    try {
+      return roof?.facadeColor ? new THREE.Color(roof.facadeColor).getHex() : null;
+    } catch {
+      return null;
+    }
+  })();
+  const wallHex = facade ?? WALL_COLORS[wallColor] ?? WALL_COLORS.gray;
   // The roof's own colour from the aerial photo (brightened a little: the
   // survey is taken from high up, through haze), else a typical one.
   const scanned = roof?.color ? new THREE.Color(roof.color) : null;
@@ -370,11 +387,17 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
   // Photographed surface relief (CC0, Poly Haven) over the wall colour: plaster
   // for stucco, painted boards for siding, real brick for brick; clay tile roofs
   // on stucco houses, as on most California Mediterranean homes.
-  const look = wallColor === 'brick' || wallColor === 'red' ? 'brick' : STUCCO_COLORS.has(wallColor) ? 'stucco' : 'siding';
+  const material = String(roof?.facadeMaterial || '').toLowerCase();
+  const look = material === 'brick' || wallColor === 'brick' || wallColor === 'red'
+    ? 'brick'
+    : /plaster|stucco|concrete|cement|stone/.test(material) || (!material && STUCCO_COLORS.has(wallColor))
+      ? 'stucco'
+      : 'siding';
   const wallPhoto = { brick: 'brick_wall_001', stucco: 'beige_wall_002', siding: 'brown_planks_05' }[look];
   wallMat.normalMap = photo(wallPhoto, 'nor_gl', wallTile);
   if (look === 'brick') wallMat.map = photo('brick_wall_001', 'diffuse', wallTile);
-  if (type !== 'flat' && (scanned ? terracotta : look === 'stucco')) {
+  const roofMaterial = String(roof?.material || '').toLowerCase();
+  if (type !== 'flat' && (/tile|clay/.test(roofMaterial) || (!roofMaterial && (scanned ? terracotta : look === 'stucco')))) {
     roofMat.map = photo('clay_roof_tiles_02', 'diffuse', roofTile);
     roofMat.normalMap = photo('clay_roof_tiles_02', 'nor_gl', roofTile);
   }
@@ -404,6 +427,8 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
   }
 
   const sharedEave = eave;
+  // A detached garage: its door faces the driveway, or else the street.
+  if (isGarage && !garageAt && front) garageAt = front;
   blocks.forEach((b, bi) => {
     const block = new THREE.Group();
     let blockBase = 0;
@@ -528,6 +553,7 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
 
     // The side whose outward normal points most toward the street gets the door.
     let doorSide = -1;
+    if (isGarage) doorDone = true; // a garage's door is the garage door
     if (!doorDone && bi === 0) {
       const [fx, fy] = front;
       let bestDot = -Infinity;
@@ -547,6 +573,7 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
     const blockFloors = Math.max(1, Math.min(10, Math.round((eave + 1) / STORY_FT)));
     const modern = type === 'flat' && !big;
     sides.forEach((sd, si) => {
+      if (isGarage) return; // no windows on a garage
       const count = Math.floor((sd.len - 4) / (modern ? 13 : 9));
       if (count < 1) return;
       const step = sd.len / (count + 1);
@@ -598,5 +625,25 @@ export function buildHouse(points, heightFt, { wallColor, roofType, front, groun
     });
     group.add(block);
   });
+
+  // Chimneys found in lidar: brick, from below the eaves up to their measured
+  // top (above the ground under the house), with a cap.
+  for (const c of roof?.chimneys || []) {
+    if (!(c.topFt > 0)) continue;
+    const base = groundAt ? groundAt(c.x, c.y) : 0;
+    // Its measured top, but always clear of the model's roof (chimneys must
+    // stand above the roof around them; the model's ridge can sit higher).
+    const top = base + Math.max(c.topFt, sharedEave + rise + 0.8);
+    const bottom = base + Math.max(2, sharedEave - 2);
+    if (top - bottom < 1) continue;
+    const stack = new THREE.Mesh(BOX, CHIMNEY);
+    stack.scale.set(2.4, top - bottom, 2.4);
+    stack.position.set(c.x, (top + bottom) / 2, -c.y);
+    stack.castShadow = true;
+    const cap = new THREE.Mesh(BOX, CHIMNEY_CAP);
+    cap.scale.set(2.9, 0.35, 2.9);
+    cap.position.set(c.x, top + 0.17, -c.y);
+    group.add(stack, cap);
+  }
   return group;
 }

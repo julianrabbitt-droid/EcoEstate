@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, ChevronDown, Crosshair, Loader2 } from 'lucide-react';
+import { ArrowRight, ChevronDown, Crosshair, Loader2, Maximize2, Minus } from 'lucide-react';
 import L from 'leaflet';
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { getLawn, getLawnForParcel, locateAddress, measureArea, mergeLawnOutlines } from '@/api/lawnApi';
@@ -97,7 +97,18 @@ function scannedStructures(d) {
     if (!ring) continue;
     buildings.push(ring);
     buildingHeightsFt.push(f.properties?.heightFt ?? null);
-    buildingRoofs.push({ color: f.properties?.roofColor || null, shape: f.properties?.roofShape || null });
+    const p = f.properties || {};
+    buildingRoofs.push({
+      color: p.roofColor || null,
+      shape: p.roofShape || null,
+      // What mappers recorded (OpenStreetMap via Overture), and chimneys found in lidar.
+      use: p.use || null,
+      mappedShape: p.mappedRoofShape || null,
+      material: p.roofMaterial || null,
+      facadeMaterial: p.facadeMaterial || null,
+      facadeColor: p.facadeColor || null,
+      chimneys: (p.chimneys || []).map((c) => ({ latLng: [c.lat, c.lon], topFt: c.topFt })),
+    });
   }
   const trees = (d?.trees || []).map((t) => ({ latLng: [t.lat, t.lon], radiusFt: t.radiusFt, heightFt: t.heightFt }));
   const paths = [...(d?.paths?.features || []), ...(d?.nearbyRoads?.features || []), ...(d?.paved?.features || [])]
@@ -152,6 +163,8 @@ export default function Scan() {
   const lastScan = useRef(saved.lastScan || null); // { address, hit } of the scan last started
   const [stageEl, setStageEl] = useState(null); // where the 3D model is drawn, full screen
   const [modelShown, setModelShown] = useState(false);
+  // The scan check's panel folds away to a pill, to see the whole property.
+  const [checkOpen, setCheckOpen] = useState(true);
   const [pin, setPin] = useState(null); // the pin being checked on the aerial view
   // Scrolling down fades the aerial into the page's green.
   const [scrollY, setScrollY] = useState(0);
@@ -687,7 +700,16 @@ export default function Scan() {
         {phase === 'lawn' && previewProject && (
           // Over the 3D model: the question and the numbers, at the side (below on phones).
           <div className="flex min-h-[calc(100svh-var(--header-h,4rem))] items-end justify-end p-3 duration-700 animate-in fade-in slide-in-from-right-8 sm:p-6 lg:items-center">
-            <div className="pointer-events-auto max-h-[78svh] w-full overflow-y-auto rounded-3xl border border-border/60 bg-card/92 shadow-2xl backdrop-blur-md sm:max-w-md">
+            {!checkOpen && (
+              <button type="button" onClick={() => setCheckOpen(true)} aria-expanded={false} className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/92 px-4 py-2.5 text-[13px] shadow-lg backdrop-blur-md">
+                <Maximize2 className="h-4 w-4" aria-hidden />Is this scan right?
+              </button>
+            )}
+            {/* Folded, it only hides: the 3D view is drawn from inside it. */}
+            <div className={`pointer-events-auto relative max-h-[calc(100svh-var(--header-h,4rem)-9rem)] w-full overflow-y-auto rounded-3xl lg:max-h-[78svh] border border-border/60 bg-card/92 shadow-2xl backdrop-blur-md sm:max-w-md ${checkOpen ? '' : 'hidden'}`}>
+              <button type="button" onClick={() => setCheckOpen(false)} aria-label="Fold the panel away" title="Fold away" className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground">
+                <Minus className="h-4 w-4" />
+              </button>
               <LawnApiResult
                 data={lawnData}
                 preview={previewProject}

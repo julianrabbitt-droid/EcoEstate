@@ -105,9 +105,23 @@ const overlaps = (b, [w, s, e, n]) => b.xmin <= e && b.xmax >= w && b.ymin <= n 
  */
 export async function buildingsInBox(box) {
   const out = new Map();
-  for (const row of await rowsInBox(BUILDINGS, box, ['id', 'bbox', 'geometry', 'height', 'num_floors'])) {
+  // What mappers recorded about each building (OpenStreetMap via Overture),
+  // where they did: its use (a garage, a shed), roof shape and materials.
+  const columns = ['id', 'bbox', 'geometry', 'height', 'num_floors', 'class', 'roof_shape', 'roof_material', 'roof_color', 'facade_material', 'facade_color'];
+  for (const row of await rowsInBox(BUILDINGS, box, columns)) {
     if (row.geometry && /Polygon$/.test(row.geometry.type)) {
-      out.set(row.id, { id: row.id, geometry: row.geometry, height: row.height ?? null, floors: row.num_floors ?? null });
+      out.set(row.id, {
+        id: row.id,
+        geometry: row.geometry,
+        height: row.height ?? null,
+        floors: row.num_floors ?? null,
+        use: row.class ?? null,
+        roofShape: row.roof_shape ?? null,
+        roofMaterial: row.roof_material ?? null,
+        roofColor: row.roof_color ?? null,
+        facadeMaterial: row.facade_material ?? null,
+        facadeColor: row.facade_color ?? null,
+      });
     }
   }
   return [...out.values()];
@@ -163,6 +177,8 @@ async function rowsInBox(collectionPath, box, columns) {
   const reads = [];
   for (const { file, metadata, starts } of footersRead) {
     const cols = metadata.row_groups[0].columns.map((c) => c.meta_data.path_in_schema.join('.'));
+    // Optional columns (a release may lack some): read only those it has.
+    const present = columns.filter((c) => cols.some((k) => k === c || k.startsWith(`${c}.`)));
     const ix = ['bbox.xmin', 'bbox.xmax', 'bbox.ymin', 'bbox.ymax'].map((name) => cols.indexOf(name));
     for (const [i, rg] of metadata.row_groups.entries()) {
       const [xmin, xmax, ymin, ymax] = ix.map((j, k) => Number(rg.columns[j].meta_data.statistics[k % 2 ? 'max_value' : 'min_value']));
@@ -180,7 +196,7 @@ async function rowsInBox(collectionPath, box, columns) {
           }
         });
         if (first < 0) return [];
-        return parquetReadObjects({ file, metadata, columns, rowStart: starts[i] + first, rowEnd: starts[i] + last + 1, compressors });
+        return parquetReadObjects({ file, metadata, columns: present, rowStart: starts[i] + first, rowEnd: starts[i] + last + 1, compressors });
       });
     }
   }
