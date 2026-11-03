@@ -1029,6 +1029,7 @@ function buildPlant(plant, mature, detail = 'normal', { spacing = 0 } = {}) {
 // view never cover it (e.g. [-240, 0] when a panel takes the right side).
 export default function Garden3DView({ entries = [], project, activeArrangement, onApplyArrangement, mode = 'design', lawnLabel = null, onReady, fill = false, viewShift = null }) {
   const fillRef = useRef(fill);
+  const tiltedRef = useRef(false);
   const viewShiftRef = useRef(viewShift);
   viewShiftRef.current = viewShift;
   const shiftKey = viewShift ? viewShift.join(',') : '';
@@ -2374,7 +2375,11 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
       const done = onReadyRef.current;
       onReadyRef.current = null;
       requestAnimationFrame(() => requestAnimationFrame(() => done()));
-      if (fillRef.current) setTimeout(() => focusOnRef.current?.(-1), 900); // tilt down into 3D
+    }
+    // Full screen opens straight above, like the aerial it follows, then tilts into 3D once.
+    if (terrainDone && fillRef.current && !tiltedRef.current) {
+      tiltedRef.current = true;
+      setTimeout(() => focusOnRef.current?.(-1), 900);
     }
   }, [layout, polys, pattern, lot, buildings, trees, paths, fences, cx, cy, mature, boundsAll, origin, terrain, groundAt, checking, showLawn, front, ownTree, lawnLabel, terrainDone, maxDim, project, entries]);
 
@@ -2674,7 +2679,7 @@ export default function Garden3DView({ entries = [], project, activeArrangement,
 
   return (
     <div className={fill ? 'absolute inset-0' : ''}>
-      <div className={fill ? 'absolute bottom-5 left-4 z-20 flex flex-wrap items-center gap-2 sm:left-6' : 'flex flex-wrap items-center justify-between gap-3'}>
+      <div className={fill ? 'absolute bottom-4 left-3 z-20 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2 rounded-2xl border border-white/15 bg-[#14211a]/75 p-1.5 shadow-xl backdrop-blur-md sm:left-5 lg:max-w-[calc(100%-29rem)]' : 'flex flex-wrap items-center justify-between gap-3'}>
         <div className={`inline-flex rounded-full border border-border bg-card/90 p-0.5 backdrop-blur ${checking ? 'hidden' : ''}`}>
           {[{ k: 'before', l: 'Today’s lawn' }, { k: 'new', l: 'Newly planted' }, { k: 'mature', l: 'Native garden, grown' }].map((o) => {
             const on = o.k === 'before' ? before : !before && (o.k === 'mature') === mature;
