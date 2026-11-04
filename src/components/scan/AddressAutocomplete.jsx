@@ -32,6 +32,12 @@ export default function AddressAutocomplete({value, onChange, onSelect, onSugges
     const handle = setTimeout(async () => {
       setFetching(true);
       const hits = await autocompleteAddresses(q);
+      // A slower answer to earlier typing must not replace a newer one
+      // (the newer search, if one is running, turns the spinner off itself).
+      if (lastQuery.current !== q) {
+        if (lastQuery.current === (valueRef.current || '').trim()) setFetching(false);
+        return;
+      }
       setSuggestions(hits);
       onSuggestions?.(hits);
       setFetching(false);

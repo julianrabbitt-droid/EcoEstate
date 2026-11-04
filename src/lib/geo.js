@@ -117,8 +117,12 @@ function photonHit(f) {
 }
 
 function nominatimHit(hit) {
+  const a = hit.address || {};
+  const street = streetLabel(a);
   return {
-    label: hit.display_name,
+    // An address reads like Photon's ("716 North Northcape Avenue, San Dimas,
+    // California 91773, United States"); other places keep Nominatim's name.
+    label: a.house_number && street ? [street, [a.state, a.postcode].filter(Boolean).join(' '), a.country].filter(Boolean).join(', ') : hit.display_name,
     short: streetLabel(hit.address),
     lat: parseFloat(hit.lat),
     lng: parseFloat(hit.lon),
@@ -133,14 +137,40 @@ function nominatimHit(hit) {
   };
 }
 
+const DIRECTIONS = new Set(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw', 'north', 'south', 'east', 'west']);
+
+// Nominatim's usage policy: at most one request a second. Suggestions wait
+// their turn, and a query already asked is answered from memory.
+let nominatimAt = 0;
+const nominatimSeen = new Map();
+async function nominatimSuggest(q) {
+  if (nominatimSeen.has(q)) return nominatimSeen.get(q);
+  const wait = nominatimAt + 1100 - Date.now();
+  nominatimAt = Math.max(Date.now(), nominatimAt + 1100);
+  if (wait > 0) await new Promise((done) => setTimeout(done, wait));
+  const url = `https://nominatim.openstreetmap.org/search?${new URLSearchParams({ format: 'json', limit: '8', addressdetails: '1', countrycodes: 'us', viewbox: CA_VIEWBOX, bounded: '0', q })}`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+  if (!res.ok) return [];
+  const hits = ((await res.json()) || []).map(nominatimHit);
+  if (nominatimSeen.size > 100) nominatimSeen.clear();
+  nominatimSeen.set(q, hits);
+  return hits;
+}
+
 /**
  * Address suggestions as the user types: US places only, California's
  * first, street addresses before other places, up to 6. Photon (good with
- * half-typed addresses), else Nominatim.
+ * half-typed addresses), and Nominatim when Photon lacks the typed house.
  */
 export async function autocompleteAddresses(query) {
   const q = String(query || '').trim();
   if (q.length < 3) return [];
+  // A house number typed first, and the street's name (its first word that
+  // isn't N, S, E or W): "716 N Northcape Ave" → 716, "northcape".
+  const number = q.match(/^(\d+[a-z]?)\b/i)?.[1]?.toLowerCase();
+  const word = number ? (q.slice(number.length).toLowerCase().match(/[a-z0-9]+/g) || []).find((w) => !DIRECTIONS.has(w.replace(/\.$/, ''))) || '' : '';
+  const withNumber = (h) => new RegExp(`^${number}\\b`, 'i').test(h.label);
+  const onStreet = (h) => !word || h.label.toLowerCase().includes(word);
   let hits = [];
   try {
     const url = `https://photon.komoot.io/api/?${new URLSearchParams({ q, limit: '12', lang: 'en', bbox: US_BBOX, lat: String(CA_CENTER.lat), lon: String(CA_CENTER.lon), location_bias_scale: '0.3' })}`;
@@ -149,19 +179,21 @@ export async function autocompleteAddresses(query) {
   } catch {
     hits = [];
   }
-  if (!hits.some((h) => h.countryCode === 'US')) {
+  // Photon often has the street but not the house (716 N Northcape Ave, San
+  // Dimas: OpenStreetMap maps the house, Photon's copy only the street), so
+  // Nominatim is asked too whenever the typed house isn't among Photon's.
+  const houseMissing = number && word.length >= 3 && !hits.some((h) => h.isAddress && withNumber(h) && onStreet(h));
+  if (houseMissing || !hits.some((h) => h.countryCode === 'US')) {
     try {
-      const url = `https://nominatim.openstreetmap.org/search?${new URLSearchParams({ format: 'json', limit: '8', addressdetails: '1', countrycodes: 'us', viewbox: CA_VIEWBOX, bounded: '0', q })}`;
-      const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
-      if (res.ok) hits = ((await res.json()) || []).map(nominatimHit);
+      hits = [...(await nominatimSuggest(q)), ...hits];
     } catch {
-      hits = [];
+      // Photon's suggestions stand.
     }
   }
-  // A house number typed first: only results with that number, when any have it.
-  const number = q.match(/^(\d+[a-z]?)\b/i)?.[1];
-  const numbered = number ? hits.filter((h) => h.label.toLowerCase().startsWith(`${number.toLowerCase()} `)) : [];
-  if (numbered.length) hits = numbered;
+  // A house number typed first: only results with that number, when any have
+  // it, and of those the ones on the typed street.
+  const numbered = number ? hits.filter(withNumber) : [];
+  if (numbered.length) hits = numbered.some(onStreet) ? numbered.filter(onStreet) : numbered;
   const seen = new Set();
   return hits
     .filter((h) => h.countryCode === 'US' && Number.isFinite(h.lat) && Number.isFinite(h.lng))
