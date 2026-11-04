@@ -29,7 +29,9 @@ fs.mkdirSync(outDir, { recursive: true });
 const BASE = process.env.APP_URL || 'http://localhost:5173';
 const MODEL = Boolean(process.env.MODEL);
 const settleMs = Number(process.env.SETTLE_MS || 10000);
-const page = await openPage({ width: 1280, height: 800 });
+// RENDER_SIZE=1280x800 for full size; smaller by default to spare memory.
+const [RW, RH] = (process.env.RENDER_SIZE || '1024x640').split('x').map(Number);
+const page = await openPage({ width: RW, height: RH });
 
 // In the page: one view, rendered as shown and again on magenta to find holes.
 function inPage(spec) {
@@ -43,7 +45,9 @@ function inPage(spec) {
     const pos = [...spec.pos];
     const tgt = [...spec.tgt];
     // The street view: out from the house toward the street until off the lot,
-    // then across the sidewalk to the far side of the road, looking back at the house.
+    // then on across the strip Real 3D clears to the street (blue in the near
+    // mask: only ground there) to its far edge, looking back at the house.
+    // Where the strip doesn't run that way, a sidewalk's width past the lot.
     if (spec.street && clip?.uEcoMask.value.image?.getContext) {
       const lotC = clip.uEcoMask.value.image;
       const lb = clip.uEcoBox.value;
@@ -56,8 +60,20 @@ function inPage(spec) {
       };
       let r = 0;
       while (r < 400 && onLot(spec.street[0] * r, spec.street[1] * r)) r += 2;
-      pos[0] = spec.street[0] * (r + 30);
-      pos[2] = spec.street[1] * (r + 30);
+      const nearC = clip.uEcoNear.value.image;
+      const nb = clip.uEcoNearBox.value;
+      const nctx = nearC?.getContext ? nearC.getContext('2d') : null;
+      const inStrip = (x, z) => {
+        const u = (x - nb.x) / nb.z;
+        const v = (z - nb.y) / nb.w;
+        if (!nctx || u <= 0 || u >= 1 || v <= 0 || v >= 1) return false;
+        return nctx.getImageData(Math.floor(u * nearC.width), Math.floor((1 - v) * nearC.height), 1, 1).data[2] > 127;
+      };
+      let out = 0;
+      for (let k = 2; k <= 90; k += 2) if (inStrip(spec.street[0] * (r + k), spec.street[1] * (r + k))) out = k; else if (k > 8) break;
+      const past = out > 14 ? out - 3 : 12;
+      pos[0] = spec.street[0] * (r + past);
+      pos[2] = spec.street[1] * (r + past);
     }
     // Heights given above the ground there (the street view stands on it).
     if (spec.eye) {

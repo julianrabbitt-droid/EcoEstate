@@ -19,6 +19,10 @@ export async function openPage({ width = 1280, height = 800, mobile = false, por
   const chrome = spawn(CHROME, [
     '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, `--window-size=${width},${height}`,
     '--hide-scrollbars', '--mute-audio', '--no-first-run', '--no-default-browser-check', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader',
+    // Light on memory (the tests run beside the person's own browser): one
+    // renderer process, a capped script heap, nothing running in the background.
+    '--renderer-process-limit=1', '--js-flags=--max-old-space-size=768', '--disable-extensions', '--disable-background-networking',
+    '--disable-component-update', '--disable-default-apps', '--disable-sync', '--disk-cache-size=33554432', '--disable-features=Translate,MediaRouter,OptimizationHints',
     // HEADLESS_GL=swiftshader: software WebGL (slower; headless Chrome's GPU
     // path can leave photographed textures white).
     ...(process.env.HEADLESS_GL ? [`--use-angle=${process.env.HEADLESS_GL}`] : []),
