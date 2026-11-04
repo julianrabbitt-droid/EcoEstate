@@ -39,6 +39,7 @@ export const SETTINGS = {
   walkBrightness: 85, // mixed with the planting beside it, a walk's pixels read a little darker than a patio's
   bushNdviMin: 0.12, // shrubs read at least faintly green, even in a drought summer; walls, cars and fences don't
   bushMinM: 0.5, // shorter is groundcover or a low bed planting
+  neighbourNearM: 4, // neighbours' buildings this close to the lot are returned (for Real 3D)
   houseMaxM2: 600, // ~6,500 sq ft: footprints up to this are houses…
   houseMaxHeightM: 15, // …and no house roof here stands over ~50 ft above its average ground
   neighbourHeightMin: 2, // a house the survey predates takes the median height of at least this many neighbouring houses
@@ -308,6 +309,7 @@ async function findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBui
 
 const ROOF_MAP_MAX_CELLS = 5000; // per building: a house gets 0.75 m cells, a stadium ~3 m
 const ROOF_MAP_SPIKE_M = 1.2; // further than this from the cells around it is a spike, not roof
+const ROOF_MAX_SLOPE = 1.2; // a 'roof' whose flattest quarter slopes more than this (rise per run) is a tree over it
 const ROOF_MAP_SKIP = new Set([LIDAR_CLASS.lowVeg, LIDAR_CLASS.medVeg, LIDAR_CLASS.highVeg, LIDAR_CLASS.noise, LIDAR_CLASS.water, LIDAR_CLASS.highNoise]);
 
 const inRing = ([x, y], ring) => {
@@ -333,6 +335,31 @@ const inRing = ([x, y], ring) => {
  * decimetres, row 0 south, one cell of margin round the footprint), or null
  * where lidar saw too little of the roof.
  */
+// The photo's colours with the tree crowns in it turned to the shaded ground
+// under them (mostly an earthy shade, a little of the photo's own colour kept
+// so the yard doesn't read flat): crowns laid flat on the ground otherwise
+// read as a green sheet round the house the model's own trees stand on.
+const UNDER_CROWN_RGB = [92, 88, 68];
+const UNDER_CROWN_KEEP = 0.3;
+function groundUnderCrowns(naip, crowns, n) {
+  const rgb = new Uint8Array(n * 3);
+  for (let k = 0; k < n; k++) {
+    const px = [naip.red[k], naip.green[k], naip.blue[k]];
+    for (let c = 0; c < 3; c++) rgb[k * 3 + c] = crowns[k] ? Math.round(UNDER_CROWN_KEEP * px[c] + (1 - UNDER_CROWN_KEEP) * UNDER_CROWN_RGB[c]) : px[c];
+  }
+  return rgb;
+}
+
+// Whether a survey records each pulse's number of returns (some don't).
+function singleReturns(lidar) {
+  if (lidar.wholePulses === undefined) {
+    let ones = 0;
+    for (let k = 0; k < lidar.count && ones < 50; k++) if (lidar.nret[k] === 1) ones++;
+    lidar.wholePulses = ones >= 50;
+  }
+  return lidar.wholePulses;
+}
+
 function roofHeightMap(b, lidar, classed, baseZ, tallestM) {
   const polys = b.geometry?.type === 'Polygon' ? [b.geometry.coordinates] : b.geometry?.type === 'MultiPolygon' ? b.geometry.coordinates : [];
   if (!polys.length) return null;
@@ -365,10 +392,14 @@ function roofHeightMap(b, lidar, classed, baseZ, tallestM) {
   }
   if (!insideCount) return null;
   const lists = Array.from({ length: N }, () => []);
+  // Unclassed surveys: whole pulses only (see lidarRoofs), so a tree over the
+  // roof leaves a gap, filled from the roof around it, never a peak.
+  const wholeOnly = !classed && singleReturns(lidar);
   for (let k = 0; k < lidar.count; k++) {
     const i = Math.floor((lidar.x[k] - lon0) / dLon);
     const j = Math.floor((lidar.y[k] - lat0) / dLat);
     if (i < 0 || j < 0 || i >= cols || j >= rows || ROOF_MAP_SKIP.has(lidar.cls[k])) continue;
+    if (wholeOnly && lidar.cls[k] !== LIDAR_CLASS.ground && lidar.nret[k] !== 1) continue;
     if (inside[j * cols + i]) lists[j * cols + i].push(lidar.z[k] - baseZ);
   }
   const pct = classed ? 0.9 : 0.75; // unclassified surveys: lower, so a branch over the roof doesn't count
@@ -434,6 +465,19 @@ function roofHeightMap(b, lidar, classed, baseZ, tallestM) {
     const vals = box(med, c);
     return Math.max(...vals) - Math.min(...vals) < 0.8 ? vals.reduce((a, x) => a + x, 0) / vals.length : v;
   });
+  // A roof has faces: its flattest quarter slopes no more than the steepest
+  // pitches built (about 14 in 12). Steeper all over is a tree's crown over
+  // the footprint, which the survey measured instead of the roof.
+  const slopes = [];
+  for (let j = 1; j < rows - 1; j++) {
+    for (let i = 1; i < cols - 1; i++) {
+      const c = j * cols + i;
+      if (!inside[c]) continue;
+      slopes.push(Math.hypot(out[c + 1] - out[c - 1], out[c + cols] - out[c - cols]) / (2 * cell));
+    }
+  }
+  slopes.sort((x, y) => x - y);
+  if (slopes.length >= 12 && slopes[Math.floor(slopes.length / 4)] > ROOF_MAX_SLOPE) return { tree: true };
   return {
     lon0: Number(lon0.toFixed(8)),
     lat0: Number(lat0.toFixed(8)),
@@ -1030,8 +1074,12 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     // a house built since the survey is measured by the houses around it.
     const inView = [...ownBuildings, ...nearbyBuildings.filter((b) => !ownIds.has(b.id))];
     const tops = inView.map(() => []);
+    // Unclassed: only whole pulses (one return), as a roof gives back and a
+    // tree mostly doesn't, so a tree over a footprint isn't measured as its roof.
+    const wholeOnly = !classed && singleReturns(buildingLidar);
     for (let k = 0; k < buildingLidar.count; k++) {
       if (buildingLidar.cls[k] !== (classed ? LIDAR_CLASS.building : 1)) continue;
+      if (wholeOnly && buildingLidar.nret[k] !== 1) continue;
       const [X, Y] = grid.fromLonLat([buildingLidar.x[k], buildingLidar.y[k]]);
       const i = Math.floor((X - grid.x0) / grid.res);
       const j = Math.floor((grid.y0 - Y) / grid.res);
@@ -1077,6 +1125,12 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   const roofMaps = buildingLidar && buildingMeasured
     ? ownBuildings.map((b, i) => (under[i]?.m && lidarRoofs[i]?.heightM && !lidarRoofs[i].source ? roofHeightMap(b, buildingLidar, classed, under[i].s / under[i].m, b.areaM2 < SETTINGS.houseMaxM2 ? SETTINGS.houseMaxHeightM : 80) : null))
     : null;
+  // A tree measured in place of the roof: neither its height nor its shape is the house's.
+  roofMaps?.forEach((m, i) => {
+    if (!m?.tree) return;
+    roofMaps[i] = null;
+    lidarRoofs[i] = null;
+  });
   const buildingLayer = describeBuildings(ownBuildings, roofLabels, canopy, naip, lidarRoofs, roofMaps);
   // Which roofs and paths actually touch each lawn region and path, from the
   // rasters (pixels within 2 of each other count, to catch sub-pixel overlaps),
@@ -1209,10 +1263,15 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
 
   // The aerial photo of the property, so the 3D model's ground looks like the
   // real yard: a small PNG of the grid (public-domain NAIP) and its corners.
+  // The model stands its own trees on it, so the crowns the photo shows from
+  // above are turned to the shaded ground beneath them (see groundUnderCrowns).
   let groundImage = null;
   try {
     const img = blank(w, h);
-    for (let k = 0; k < n; k++) img.rgb.set([naip.red[k], naip.green[k], naip.blue[k]], k * 3);
+    // Crowns: anything tree-high, by the lidar where it surveyed, else the canopy map; never a roof.
+    const crowns = Uint8Array.from(trees, (v, k) => (!roofLabels[k] && (v || (measured?.known[k] ? measured.canopy[k] : canopy.known[k] && canopy.height[k] > 2.5)) ? 1 : 0));
+    const ground = groundUnderCrowns(naip, crowns, n);
+    for (let k = 0; k < n; k++) img.rgb.set([ground[k * 3], ground[k * 3 + 1], ground[k * 3 + 2]], k * 3);
     const [west, north] = grid.toLonLat([grid.x0, grid.y0]);
     const [east, south] = grid.toLonLat([grid.x0 + w * grid.res, grid.y0 - h * grid.res]);
     if (w * h <= 250000) groundImage = { png: png(img).toString('base64'), west, south, east, north };
@@ -1304,6 +1363,22 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   }
   const bushes = detectBushes(grid, bushMask, bushTop);
 
+  // The neighbours' houses beside the lot (any within neighbourNearM of it),
+  // so Real 3D can leave them whole: a row house or a garage on the line
+  // shouldn't be sliced open where the lot's surroundings are trimmed.
+  const nearLot = dilate(parcel, w, h, Math.round(SETTINGS.neighbourNearM / grid.res));
+  const neighbourIdx = new Set();
+  for (let k = 0; k < n; k++) if (nearLot[k] && roofLabels[k] > ownBuildings.length) neighbourIdx.add(roofLabels[k] - 1 - ownBuildings.length);
+  const others = nearbyBuildings.filter((b) => !ownIds.has(b.id));
+  const neighbours = {
+    type: 'FeatureCollection',
+    features: [...neighbourIdx].slice(0, 60).map((i) => others[i]).filter(Boolean).map((b) => ({
+      type: 'Feature',
+      properties: {},
+      geometry: simplify({ type: 'Feature', properties: {}, geometry: b.geometry }, { tolerance: 0.000003, highQuality: true }).geometry,
+    })),
+  };
+
   const streetTrees = grid.res <= SETTINGS.streetMaxResM ? await findStreetTrees(grid, box, parcelGeometry, nearbyRoads, nearbyBuildings) : [];
   // Not worth holding the scan long for: without it the 3D view fetches coarser terrain itself.
   const terrain = await Promise.race([terrainLoad, new Promise((done) => setTimeout(() => done(null), SETTINGS.terrainExtraWaitMs))]);
@@ -1326,6 +1401,7 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     terrain,
     trees: [...treeList, ...streetTrees],
     bushes,
+    neighbours,
     paths: layers.paths,
     paved,
     pools,

@@ -24,6 +24,10 @@ export const STRUCTURES = {
   crownPerHeight: 0.28, // crown radius ≈ 0.28 × height
   minCrownM: 1.5,
   maxCrownM: 9,
+  maxSpreadM: 15, // a measured crown (see detectTrees) up to this radius: a big oak's
+  crownEdgeShare: 0.4, // a crown ends where the canopy falls below this share of its height…
+  crownRiseM: 1.5, // …or climbs more than this from the lowest point so far (into the next crown)
+  spreadPerHeight: 0.35, // and its radius is at most this share of the tree's height
   maxTrees: 800, // the tallest are kept on very large properties
   maxBuildings: 600, // the largest are kept on very large properties
   maxPaths: 1500,
@@ -162,9 +166,39 @@ export function detectTrees(grid, canopy, include) {
   // Tallest first; skip peaks inside an accepted tree's crown.
   peaks.sort((a, b) => b.heightM - a.heightM);
   const crown = (hm) => Math.min(STRUCTURES.maxCrownM, Math.max(STRUCTURES.minCrownM, STRUCTURES.crownPerHeight * hm));
+  // Each crown's spread as the canopy map shows it: out from the peak in 16
+  // directions while the canopy stays tree-high and doesn't climb into the
+  // next crown; the median reach, so a gap or a neighbour on one side doesn't
+  // decide it. A broad oak spreads far wider than its height suggests. The
+  // estimate from height stands in where the map shows too little.
+  const spread = (p) => {
+    const floor = Math.max(STRUCTURES.minTreeM, p.heightM * STRUCTURES.crownEdgeShare);
+    const reaches = [];
+    for (let a = 0; a < 16; a++) {
+      const [dx, dy] = [Math.cos((a * Math.PI) / 8), Math.sin((a * Math.PI) / 8)];
+      let low = H[p.j * w + p.i];
+      let s = 1;
+      for (; ; s++) {
+        const i = Math.round(p.i + dx * s);
+        const j = Math.round(p.j + dy * s);
+        if (i < 0 || j < 0 || i >= w || j >= h) break;
+        const q = j * w + i;
+        // Out past its edge, or climbing again out of the dip between it and
+        // the next crown (a row of street trees reads as one long canopy).
+        if (!canopy.known[q] || H[q] < floor || H[q] > low + STRUCTURES.crownRiseM) break;
+        low = Math.min(low, H[q]);
+      }
+      reaches.push((s - 0.5) * res);
+    }
+    reaches.sort((x, y) => x - y);
+    const measured = reaches[8];
+    // At most as wide as the tree is tall: small trees whose canopies run together
+    // at one height would otherwise read as a single broad crown.
+    return measured >= STRUCTURES.minCrownM ? Math.min(STRUCTURES.maxSpreadM, STRUCTURES.spreadPerHeight * p.heightM, measured) : crown(p.heightM);
+  };
   const trees = [];
   for (const p of peaks) {
-    const radiusM = crown(p.heightM);
+    const radiusM = spread(p);
     let nearest = Infinity;
     let inside = false;
     for (const t of trees) {

@@ -236,6 +236,7 @@ async function lawnResponse({ address, location, parcel, parcelSource, query }) 
     buildings: detection.buildings,
     trees: detection.trees,
     bushes: detection.bushes || [],
+    neighbours: detection.neighbours || null,
     lidar: detection.lidar,
     dormant: detection.dormant,
     paths: detection.paths,
