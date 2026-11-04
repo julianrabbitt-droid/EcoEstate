@@ -497,7 +497,13 @@ export default function Scan() {
       ),
       building: editSeed?.building || null,
       trees: result.trees?.length ? result.trees : (editSeed?.trees || []),
+      bushes: result.bushes || editSeed?.bushes || [],
       paths: editSeed?.paths || [],
+      // What the scan found that the editor doesn't change: kept for the 3D view.
+      pools: editSeed?.pools || [],
+      neighbours: editSeed?.neighbours || [],
+      groundImage: editSeed?.groundImage || null,
+      terrain: editSeed?.terrain || null,
       lawnImpact: merged?.impact || areaCalc.impact || null,
     });
     clearSavedScan();
@@ -813,6 +819,7 @@ export default function Scan() {
                   lotOutline={editSeed?.lotOutline || null}
                   initialShapes={editSeed?.initialShapes || null}
                   initialTrees={editSeed?.trees || null}
+                  initialBushes={editSeed?.bushes || null}
                   initialBuildings={editSeed?.buildings || null}
                   measuredSqft={areaCalc.lawnSqft}
                   onResult={setResult}

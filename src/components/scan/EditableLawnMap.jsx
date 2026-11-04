@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import { Circle, MapContainer, Marker, Polygon, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { House, PenLine, Plus, RotateCcw, Sprout, Trash2, TreePine } from 'lucide-react';
+import { House, PenLine, Plus, RotateCcw, Shrub, Sprout, Trash2, TreePine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { polygonAreaSqFt } from '@/lib/geo';
 
@@ -110,8 +110,9 @@ function MapInteraction({ picking, placingTree, editingLot, onPick, onTrace, onP
 
 let counter = 0;
 const newId = () => `s${++counter}`;
+const BUSH_RADIUS_FT = 2.5; // a new bush: 5 ft across
 
-export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lotOutline = null, initialShapes = null, initialTrees = null, initialBuildings = null, measuredSqft = null, onResult }) {
+export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lotOutline = null, initialShapes = null, initialTrees = null, initialBushes = null, initialBuildings = null, measuredSqft = null, onResult }) {
   const [viewCenter, setViewCenter] = useState(center);
   const [propCenter, setPropCenter] = useState(center);
   const [shapes, setShapes] = useState(() => {
@@ -121,15 +122,17 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
   });
   const [active, setActive] = useState(null);
   const [picking, setPicking] = useState(false);
-  // One layer is edited at a time (lawns, buildings, trees or the property
-  // line); the others stay on the map, faint, and ignore clicks.
+  // One layer is edited at a time (lawns, buildings, trees, bushes or the
+  // property line); the others stay on the map, faint, and ignore clicks.
   const [layer, setLayer] = useState('lawn');
-  const placingTree = layer === 'tree';
+  const placingTree = layer === 'tree' || layer === 'bush';
   const editingLot = layer === 'lot';
   const lastAdded = useRef(null); // { kind: 'tree', id } — what Undo takes back when nothing is selected
-  const [trees, setTrees] = useState(
-    () => (initialTrees || []).filter((t) => Array.isArray(t?.latLng)).map((t, i) => ({ id: `tseed${i}`, latLng: t.latLng, radiusFt: Math.max(2, Number(t.radiusFt) || 6), heightFt: t.heightFt ?? null })),
-  );
+  // Trees and bushes: placed, moved, sized and deleted the same way (kind says which).
+  const [trees, setTrees] = useState(() => [
+    ...(initialTrees || []).filter((t) => Array.isArray(t?.latLng)).map((t, i) => ({ id: `tseed${i}`, kind: 'tree', latLng: t.latLng, radiusFt: Math.max(2, Number(t.radiusFt) || 6), heightFt: t.heightFt ?? null })),
+    ...(initialBushes || []).filter((b) => Array.isArray(b?.latLng)).map((b, i) => ({ id: `bush${i}`, kind: 'bush', latLng: b.latLng, radiusFt: Math.max(1, Number(b.radiusFt) || BUSH_RADIUS_FT), heightFt: b.heightFt ?? null })),
+  ]);
   const [activeTree, setActiveTree] = useState(null);
   const [showLot, setShowLot] = useState(true);
   const [lot, setLot] = useState(() => (lotOutline && lotOutline.length >= 3 ? lotOutline.map((p) => [...p]) : null));
@@ -156,7 +159,8 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
       boundary: shapes.filter((s) => s.type === 'lawn').map((s) => s.points),
       features: shapes.map((s) => ({ type: s.type, points: s.points, area: polygonAreaSqFt(s.points) })),
       buildings: shapes.filter((s) => s.type === 'building').map((s) => s.points),
-      trees: trees.map((t) => ({ latLng: t.latLng, radiusFt: t.radiusFt, heightFt: t.heightFt ?? null })),
+      trees: trees.filter((t) => t.kind === 'tree').map((t) => ({ latLng: t.latLng, radiusFt: t.radiusFt, heightFt: t.heightFt ?? null })),
+      bushes: trees.filter((t) => t.kind === 'bush').map((t) => ({ latLng: t.latLng, radiusFt: t.radiusFt, heightFt: t.heightFt ?? null })),
       lotOutline: lot,
       center: propCenter,
     });
@@ -199,7 +203,7 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
   const placeTree = (latlng) => {
     const id = newId();
     lastAdded.current = { kind: 'tree', id };
-    setTrees((prev) => [...prev, { id, latLng: latlng, radiusFt: 6 }]);
+    setTrees((prev) => [...prev, { id, kind: layer, latLng: latlng, radiusFt: layer === 'bush' ? BUSH_RADIUS_FT : 6 }]);
     setActiveTree(id);
     setActive(null);
   };
@@ -228,7 +232,7 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
     }
     // Nothing selected: undo the most recent change (the last tree placed, or
     // the last corner of the last shape traced).
-    if (layer === 'tree') {
+    if (placingTree) {
       const recentTree = lastAdded.current?.kind === 'tree' && trees.some((t) => t.id === lastAdded.current.id);
       if (!recentTree) return;
       const treeId = lastAdded.current.id;
@@ -296,7 +300,8 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
           {[
             { k: 'lawn', label: 'Lawns', Icon: Sprout, n: shapes.filter((sh) => sh.type === 'lawn').length },
             { k: 'building', label: 'Buildings', Icon: House, n: buildingCount },
-            { k: 'tree', label: 'Trees', Icon: TreePine, n: trees.length },
+            { k: 'tree', label: 'Trees', Icon: TreePine, n: trees.filter((t) => t.kind === 'tree').length },
+            { k: 'bush', label: 'Bushes', Icon: Shrub, n: trees.filter((t) => t.kind === 'bush').length },
             { k: 'lot', label: 'Property line', Icon: PenLine, n: null },
           ].map(({ k, label, Icon, n }) => (
             <button
@@ -319,11 +324,11 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
               <Plus className="mr-1.5 h-3.5 w-3.5" /> {layer === 'lawn' ? 'New lawn' : 'New building'}
             </Button>
           )}
-          {layer === 'tree' && selectedTree && (
+          {placingTree && selectedTree && (
             <span className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1">
-              <span className="text-[12px] text-muted-foreground">Canopy</span>
-              <input type="range" min={3} max={20} value={selectedTree.radiusFt} onChange={(e) => setTreeRadius(Number(e.target.value))} className="garden-slider w-24" aria-label="Canopy radius" />
-              <span className="text-[11px] tabular-nums text-muted-foreground">{selectedTree.radiusFt} ft</span>
+              <span className="text-[12px] text-muted-foreground">{layer === 'bush' ? 'Width' : 'Canopy'}</span>
+              <input type="range" min={layer === 'bush' ? 1 : 3} max={layer === 'bush' ? 8 : 20} step={layer === 'bush' ? 0.5 : 1} value={selectedTree.radiusFt} onChange={(e) => setTreeRadius(Number(e.target.value))} className="garden-slider w-24" aria-label={layer === 'bush' ? 'Bush radius' : 'Canopy radius'} />
+              <span className="text-[11px] tabular-nums text-muted-foreground">{layer === 'bush' ? `${Math.round(selectedTree.radiusFt * 2)} ft across` : `${selectedTree.radiusFt} ft`}</span>
             </span>
           )}
           {layer === 'lot' && lotSizeSqft > 0 && (
@@ -331,11 +336,11 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
               {showLot ? 'Hide estimate' : 'Show estimate'}
             </Button>
           )}
-          <Button size="sm" variant="ghost" onClick={undo} className="rounded-full text-muted-foreground" disabled={picking || (layer === 'lot' ? !lot : layer === 'tree' ? !(lastAdded.current?.kind === 'tree') : !shapes.some((sh) => sh.type === layer && sh.points.length))}>
+          <Button size="sm" variant="ghost" onClick={undo} className="rounded-full text-muted-foreground" disabled={picking || (layer === 'lot' ? !lot : placingTree ? !(lastAdded.current?.kind === 'tree') : !shapes.some((sh) => sh.type === layer && sh.points.length))}>
             <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> {layer === 'lot' || layer === 'lawn' || layer === 'building' ? 'Undo corner' : 'Undo'}
           </Button>
-          <Button size="sm" variant="ghost" onClick={removeActive} className="rounded-full text-muted-foreground" disabled={picking || (layer === 'lot' ? !lot : layer === 'tree' ? !activeTree : !(activeShape && activeShape.type === layer))}>
-            <Trash2 className="mr-1.5 h-3.5 w-3.5" /> {layer === 'lot' ? 'Clear line' : layer === 'tree' ? 'Delete tree' : layer === 'lawn' ? 'Delete lawn' : 'Delete building'}
+          <Button size="sm" variant="ghost" onClick={removeActive} className="rounded-full text-muted-foreground" disabled={picking || (layer === 'lot' ? !lot : placingTree ? !activeTree : !(activeShape && activeShape.type === layer))}>
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" /> {layer === 'lot' ? 'Clear line' : layer === 'tree' ? 'Delete tree' : layer === 'bush' ? 'Delete bush' : layer === 'lawn' ? 'Delete lawn' : 'Delete building'}
           </Button>
           <div className="ml-auto flex items-baseline gap-1.5 rounded-full bg-secondary px-3.5 py-1.5">
             <span className="font-display text-lg leading-none tracking-tight">
@@ -386,10 +391,12 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
               center={t.latLng}
               radius={t.radiusFt * 0.3048}
               interactive={false}
-              pathOptions={{ color: '#3f5d2e', weight: 1, opacity: layer === 'tree' ? 1 : 0.4, fillColor: '#5a7344', fillOpacity: t.id === activeTree ? 0.45 : layer === 'tree' ? 0.3 : 0.12 }}
+              pathOptions={t.kind === 'bush'
+                ? { color: '#5f7d2a', weight: 1, dashArray: '3 2', opacity: layer === 'bush' ? 1 : 0.4, fillColor: '#8aa84a', fillOpacity: t.id === activeTree ? 0.55 : layer === 'bush' ? 0.38 : 0.14 }
+                : { color: '#3f5d2e', weight: 1, opacity: layer === 'tree' ? 1 : 0.4, fillColor: '#5a7344', fillOpacity: t.id === activeTree ? 0.45 : layer === 'tree' ? 0.3 : 0.12 }}
             />
           ))}
-          {layer === 'tree' && trees.map((t) => (
+          {placingTree && trees.filter((t) => t.kind === layer).map((t) => (
             <Marker
               key={`t-${t.id}`}
               position={t.latLng}
@@ -444,6 +451,7 @@ export default function EditableLawnMap({ center, zoom = 19, lotSizeSqft = 0, lo
                 lawn: 'Click to add a lawn’s corners (each joins the nearest edge) · drag corners to adjust · New lawn starts another',
                 building: 'Click to add a building’s corners (each joins the nearest edge) · drag corners to adjust · New building starts another',
                 tree: 'Click the map to add a tree · drag to move · click one to resize or delete it',
+                bush: 'Click the map to add a bush (a few side by side make a hedge) · drag to move · click one to resize or delete it',
                 lot: 'Click to add property-line corners (each joins the nearest edge) · drag corners to adjust',
               }[layer]}
         </div>

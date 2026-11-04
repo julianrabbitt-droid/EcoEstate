@@ -1,6 +1,6 @@
 import EditableLawnMap from '@/components/scan/EditableLawnMap';
 
-export default function SatelliteMethod({ center, zoom, lotSizeSqft, lotOutline, initialShapes, initialTrees, initialBuildings, measuredSqft, onResult }) {
+export default function SatelliteMethod({ center, zoom, lotSizeSqft, lotOutline, initialShapes, initialTrees, initialBushes, initialBuildings, measuredSqft, onResult }) {
     return (
     <EditableLawnMap
       center={center}
@@ -9,6 +9,7 @@ export default function SatelliteMethod({ center, zoom, lotSizeSqft, lotOutline,
       lotOutline={lotOutline}
       initialShapes={initialShapes}
       initialTrees={initialTrees}
+      initialBushes={initialBushes}
       initialBuildings={initialBuildings}
       measuredSqft={measuredSqft ?? null}
       onResult={onResult}

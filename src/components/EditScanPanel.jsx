@@ -57,6 +57,7 @@ export default function EditScanPanel({ project, onApplied, defaultOpen = false 
       buildingHeightsFt: carryBuildingHeights(result.buildings, project.buildings, project.buildingHeightsFt),
       buildingRoofs: carryBuildingRoofs(result.buildings, project.buildings, project.buildingRoofs),
       trees: result.trees || [],
+      bushes: result.bushes || [],
       lotOutline: result.lotOutline || project.lotOutline || null,
       totalSqft: turf + beds + bare,
       breakdown: { turf, beds, bare },
@@ -99,6 +100,7 @@ export default function EditScanPanel({ project, onApplied, defaultOpen = false 
               lotOutline={project.lotOutline || null}
               initialShapes={project.boundary || []}
               initialTrees={project.trees || []}
+              initialBushes={project.bushes || []}
               initialBuildings={project.buildings || []}
               onResult={setResult}
             />
