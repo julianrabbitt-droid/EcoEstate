@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { applyPayoffInputs, breakEvenYears, PAYOFF_FIELDS, payoffEstimates, readPayoffInputs, savedBy, savePayoffInputs } from '@/lib/payoffNumbers';
-import { peopleFor, purchaseFor } from '@/lib/payoffStacks';
+import { carsText, peopleFor, purchaseFor } from '@/lib/payoffStacks';
 import { StageAside, StageOverlay, StageTitle, useStage, useStagePanels, useWide } from '@/components/ProjectStage';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useProject } from '@/hooks/useProjects';
@@ -126,7 +126,7 @@ export default function Impact() {
   const entries = useMemo(() => (project ? designOrDefault(project) : []), [project]);
   const point = projection?.series[horizon];
   const payoff = useMemo(
-    () => (fin && point ? { dollars: point.saved, gallons: fin.gallonsSaved * horizon, years: horizon } : null),
+    () => (fin && point ? { dollars: point.saved, gallons: fin.gallonsSaved * horizon, co2: point.co2, years: horizon } : null),
     [fin, point, horizon],
   );
   useStage(
@@ -281,7 +281,7 @@ export default function Impact() {
         >
           <div className="space-y-4">
             <div>
-              <p className="text-[12.5px] text-muted-foreground">Beside your house: the money and the water this garden saves (the water at its true size), and what the money could buy.</p>
+              <p className="text-[12.5px] text-muted-foreground">Beside your house: the money and the water this garden saves (the water at its true size), what the money could buy, and the cars whose driving its carbon undoes, in glass.</p>
             </div>
             {horizonSwitch}
             {figures}
@@ -304,6 +304,7 @@ export default function Impact() {
               <div className="rounded-2xl border border-border/60 bg-background/40 p-3">
                 <p className="text-muted-foreground">CO₂ drawn down</p>
                 <p className="mt-0.5 font-display text-[1.25rem]">{num(series[horizon].co2)} lb</p>
+                {series[horizon].co2 > 0 && <p className="mt-0.5 text-[11px] text-muted-foreground">Undoes {carsText(series[horizon].co2)}</p>}
               </div>
             </div>
           </div>
@@ -463,7 +464,7 @@ export default function Impact() {
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile label="Water saved" value={`${num(series[horizon].water)} gal`} sub={`${num(fin.gallonsSaved)} gal a year · ${fin.reductionPct}% less irrigation`} />
-          <StatTile label="CO₂ drawn down" value={`${num(series[horizon].co2)} lb`} sub={`${num(projection.co2PerYear)} lb a year at maturity`} />
+          <StatTile label="CO₂ drawn down" value={`${num(series[horizon].co2)} lb`} sub={`${num(projection.co2PerYear)} lb a year at maturity · undoes ${carsText(series[horizon].co2) || 'no driving'}`} />
           <StatTile label="Native species" value={`+${env.speciesAdded}`} sub={`${env.pollinators} support pollinators · ${env.birds} feed birds`} />
           <StatTile label="Biodiversity" value={`${env.before} → ${env.after}`} sub={`Out of 100, mature in ${sched.establishYears} year${sched.establishYears > 1 ? 's' : ''}`} />
         </div>

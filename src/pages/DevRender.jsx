@@ -10,7 +10,7 @@ import { designOrDefault } from '@/lib/landscapeMath';
 // scans' renders side by side with the real property.
 //   /dev/render?src=http://127.0.0.1:8767/torrance&n=12&view=design
 //   (&real=1: in Real 3D, as the app shows it; &qa=1: Google's own 3D, uncut and without the model;
-//   &dollars=1200&gallons=30000&years=1: the Payoff step's stacks for those savings)
+//   &dollars=1200&gallons=30000&co2=12000&years=1: the Payoff step's stacks for those savings)
 export default function DevRender() {
   const [params] = useSearchParams();
   const src = params.get('src');
@@ -22,7 +22,8 @@ export default function DevRender() {
   const dollars = Number(params.get('dollars')) || 0;
   const gallons = Number(params.get('gallons')) || 30000;
   const years = Number(params.get('years')) || 1;
-  const payoff = useMemo(() => (dollars ? { dollars, gallons, years } : null), [dollars, gallons, years]);
+  const co2 = Number(params.get('co2')) || 0;
+  const payoff = useMemo(() => (dollars ? { dollars, gallons, co2, years } : null), [dollars, gallons, co2, years]);
   window.__ecoQaReal = qa;
   window.__ecoDevRender = true;
   const [scan, setScan] = useState(null);

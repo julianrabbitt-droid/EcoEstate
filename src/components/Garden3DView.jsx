@@ -3031,11 +3031,11 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   }, []);
   flyToStepRef.current = flyToStep;
 
-  // Payoff: the money and water saved, standing beside the property and
+  // Payoff: the money, water and carbon saved, standing beside the property and
   // building up when they first appear or the years change.
   const payoffRef = useRef(payoff);
   payoffRef.current = payoff;
-  const payoffKey = payoff ? `${Math.round(payoff.dollars)}:${Math.round(payoff.gallons)}:${payoff.years}` : '';
+  const payoffKey = payoff ? `${Math.round(payoff.dollars)}:${Math.round(payoff.gallons)}:${Math.round(payoff.co2 || 0)}:${payoff.years}` : '';
   useEffect(() => {
     const three = threeRef.current;
     if (!three) return;
@@ -3050,7 +3050,8 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     if (step !== 'payoff') setPayoffZones(null);
     if (step === 'payoff' && data && terrainDone) {
       const main = buildings.filter((b) => b && b.length >= 3).reduce((a, b) => (!a || polyArea(b) > polyArea(a) ? b : a), null);
-      const built = createPayoffStacks({ ...data, lotPts: lot && lot.length >= 3 ? scenePoly(lot) : null, house: main ? scenePoly(main) : null, front: three.front, at: groundAtRef.current });
+      const avoid = [...neighbours, ...buildings.filter((b) => b && b.length >= 3 && b !== main)].map(scenePoly);
+      const built = createPayoffStacks({ ...data, lotPts: lot && lot.length >= 3 ? scenePoly(lot) : null, house: main ? scenePoly(main) : null, avoid, front: three.front, at: groundAtRef.current });
       for (const it of built.items) it.obj.visible = false;
       three.scene.add(built.group);
       payoffGroupRef.current = built.group;
@@ -3060,7 +3061,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
       if (tiltDoneRef.current) flyToStep(1100);
     }
     three.markDirty?.();
-  }, [step, payoffKey, terrainDone, lot, buildings, scenePoly, groundAt, flyToStep]);
+  }, [step, payoffKey, terrainDone, lot, buildings, neighbours, scenePoly, groundAt, flyToStep]);
 
   // A new step, or the plan view switched, once the model is up: glide there.
   // (The first tilt into 3D goes to the step's view by itself.)

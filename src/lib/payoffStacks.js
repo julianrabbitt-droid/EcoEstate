@@ -135,7 +135,13 @@ export function tagSprite(lines, width) {
   ctx.textBaseline = 'middle';
   lines.forEach((line, i) => {
     ctx.fillStyle = i ? '#5d6159' : '#141613';
-    ctx.font = i ? '500 30px "Inter Tight", Helvetica, Arial, sans-serif' : '600 46px "Inter Tight", Helvetica, Arial, sans-serif';
+    // A long line shrinks to fit inside the tag rather than run off its edges.
+    const font = (px) => `${i ? 500 : 600} ${px}px "Inter Tight", Helvetica, Arial, sans-serif`;
+    const size = i ? 30 : 46;
+    ctx.font = font(size);
+    const room = W - 64;
+    const wide = ctx.measureText(line).width;
+    if (wide > room) ctx.font = font(Math.floor((size * room) / wide));
     ctx.fillText(line, W / 2, 50 + i * 46);
   });
   const tex = new THREE.CanvasTexture(c);
@@ -476,6 +482,93 @@ function stripeTexture() {
   return stripeTex;
 }
 
+function insidePoly([x, z], pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, zi] = pts[i];
+    const [xj, zj] = pts[j];
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+// Carbon as cars: a typical gasoline passenger car puts out about 4.6
+// metric tons of CO2 a year (EPA, "Greenhouse Gas Emissions from a Typical
+// Passenger Vehicle"), so the CO2 a garden draws down undoes that many years
+// of a car's driving.
+export const CAR_LB_CO2_YEAR = 4.6 * 2204.62; // about 10,140 lb
+const CARS_MAX_FIGURES = 12; // past this, each car stands for 2, 5, 10, 20, 50… cars
+
+/** How many cars' driving for a year the CO2 (lb) undoes, and how many each drawn car stands for. */
+export function carsFor(co2Lb) {
+  const cars = Math.max(0, co2Lb || 0) / CAR_LB_CO2_YEAR;
+  // Steps of 1, 2 and 5 keep a big property at 5 to 12 cars, never one.
+  let unit = 1;
+  for (let i = 1; Math.round(cars / unit) > CARS_MAX_FIGURES; i++) unit = [1, 2, 5][i % 3] * 10 ** Math.floor(i / 3);
+  return { cars, unit, figures: cars > 0 ? Math.max(1, Math.round(cars / unit)) : 0 };
+}
+
+/** What the CO2 (lb) undoes: "1.2 cars driven a year", "7 months of one car’s driving", or ''. */
+export function carsText(co2Lb) {
+  const { cars } = carsFor(co2Lb);
+  if (cars <= 0) return '';
+  if (cars < 0.95) {
+    const months = Math.max(1, Math.round(cars * 12));
+    return `${months} month${months === 1 ? '' : 's'} of one car’s driving`;
+  }
+  const n = cars < 9.95 ? Math.round(cars * 10) / 10 : Math.round(cars);
+  return `${n.toLocaleString('en-US')} car${n === 1 ? '' : 's'} driven a year`;
+}
+
+// A sedan in pale glass, its outline drawn in: the car the garden undoes,
+// there and not there. Length along local x with the nose at +x, standing on
+// y = 0. Feet; about a midsize sedan (16 ft by 6, 4 ft 9 in tall).
+const CAR = { len: 15.8, wid: 6.1, tall: 4.75 };
+const ghostParts = (() => {
+  const wheelR = 1.05;
+  const box = (w, h, d, x, y) => new THREE.BoxGeometry(w, h, d).translate(x, y, 0);
+  const cabin = new THREE.BoxGeometry(7, 1.75, CAR.wid - 0.7);
+  // Slope the windscreen and rear window: pull the cabin's top corners in.
+  const p = cabin.attributes.position;
+  for (let i = 0; i < p.count; i++) if (p.getY(i) > 0) p.setX(i, p.getX(i) * 0.72 + (p.getX(i) > 0 ? -0.15 : 0.1));
+  cabin.computeVertexNormals();
+  cabin.translate(-0.5, 2.95 + 0.875, 0);
+  // The body's top edge rounds down a little at the nose and the tail.
+  const body = new THREE.BoxGeometry(CAR.len, 1.55, CAR.wid);
+  const b = body.attributes.position;
+  for (let i = 0; i < b.count; i++) if (b.getY(i) > 0) b.setX(i, b.getX(i) * 0.93);
+  body.computeVertexNormals();
+  body.translate(0, 0.75 + 0.775 + 0.6, 0);
+  return {
+    wheelR,
+    body,
+    skirt: box(8, 0.6, CAR.wid - 0.3, 0, 1.05),
+    cabin,
+    tyre: new THREE.CylinderGeometry(wheelR, wheelR, 0.7, 24).rotateX(Math.PI / 2),
+  };
+})();
+function ghostCar() {
+  const g = new THREE.Group();
+  const shell = new THREE.MeshPhysicalMaterial({ color: 0xc6dacb, roughness: 0.3, metalness: 0, transparent: true, opacity: 0.72, clearcoat: 1, depthWrite: false });
+  const glass = new THREE.MeshPhysicalMaterial({ color: 0x6f8b7c, roughness: 0.1, transparent: true, opacity: 0.58, clearcoat: 1, depthWrite: false });
+  const line = new THREE.LineBasicMaterial({ color: 0x2c4536, transparent: true, opacity: 0.9 });
+  for (const [geo, m] of [[ghostParts.body, shell], [ghostParts.skirt, shell], [ghostParts.cabin, glass]]) {
+    const mesh = new THREE.Mesh(geo, m);
+    mesh.renderOrder = 3;
+    mesh.castShadow = geo === ghostParts.body; // a soft footing, so it stands on the ground
+    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 20), line));
+    g.add(mesh);
+  }
+  for (const x of [-5.1, 5.1]) for (const z of [-(CAR.wid / 2 - 0.25), CAR.wid / 2 - 0.25]) {
+    const tyre = new THREE.Mesh(ghostParts.tyre, glass);
+    tyre.position.set(x, ghostParts.wheelR, z);
+    tyre.renderOrder = 3;
+    tyre.add(new THREE.LineSegments(new THREE.EdgesGeometry(ghostParts.tyre, 30), line));
+    g.add(tyre);
+  }
+  return g;
+}
+
 const SIZE = { // footprint [long, deep]
   pizza: [1.6, 1.6], dinner: [6, 3], tv: [5.4, 1.6], phone: [1.6, 1.6], vacation: [8, 6], hottub: [7.5, 8.8],
   car: [14.6, 7.4], carNew: [14.6, 7.4], suv: [16.4, 8], sailboat: [30, 10], plane: [28, 36], yacht: [96, 20], jet: [60, 52],
@@ -484,18 +577,20 @@ const SIZE = { // footprint [long, deep]
 const TALL = { pizza: 1.4, dinner: 3.7, tv: 4.7, phone: 3.9, vacation: 6.9, hottub: 3.4, car: 5.4, carNew: 5.4, suv: 6.5, sailboat: 44, plane: 10, yacht: 30, jet: 22 };
 
 /**
- * dollars, gallons: saved over `years`. lotPts: the lot in scene feet [[x, z]];
- * house: the main building's outline there, if known. front: { dx, dz }, the
+ * dollars, gallons: saved over `years`; co2: lb of CO2 drawn down then. lotPts: the lot in scene feet [[x, z]];
+ * house: the main building's outline there, if known; avoid: other buildings'
+ * outlines (neighbours', a garage), kept clear of the cars. front: { dx, dz }, the
  * unit direction from the property toward its street. at(x, z): ground height.
  * The cash, what it could buy, the water and the people it serves stand in
  * one row on one side of the house, outward from it in that order, their
- * fronts in line with the house front. Without a house they stand at the front
+ * fronts in line with the house front; the cars whose driving the CO2
+ * undoes stand on the house's other side. Without a house they stand at the front
  * corners of the lot. Returns { group, items, zones, bounds }: items are the bundles
  * and water layers in the order they appear ({ obj, at: 0..1 }); zones are
  * their footprints with room around them ([[x, z] x 4] each); bounds
  * frames the house and everything beside it for the camera.
  */
-export function createPayoffStacks({ dollars, gallons, years, lotPts, house, front, at }) {
+export function createPayoffStacks({ dollars, gallons, co2 = 0, years, lotPts, house, avoid = [], front, at }) {
   const group = new THREE.Group();
   group.userData.payoff = true;
   const items = [];
@@ -680,6 +775,65 @@ export function createPayoffStacks({ dollars, gallons, years, lotPts, house, fro
     labels.push({ sprite: label, top, world: true });
     framed.push(place(first + 1, frontLine), place(first - width, frontLine - 1 - rows * step));
     zone(first - width - 3, first + 3, frontLine - rows * step - 4, frontLine + VIEW_FT);
+    nextAt = first - width - GAP_FT;
+  }
+
+  // The carbon it draws down, as the cars whose driving that undoes: pale
+  // glass sedans at true size, a typical car's year of driving each (or 10,
+  // 100… for big properties), angle-parked in rows on the house's other
+  // side, noses toward the street, so the house stands between what the
+  // garden saves and what it undoes.
+  const carbon = carsFor(co2);
+  if (carbon.figures > 0) {
+    const tilt = 0.9; // the cars' angle to the street, radians
+    const [cos, sin] = [Math.cos(tilt), Math.sin(tilt)];
+    const acrossOne = CAR.len * cos + CAR.wid * sin; // one car's reach along the street
+    const deepOne = CAR.len * sin + CAR.wid * cos; // and toward it
+    const pitch = CAR.wid / sin + 1.4; // stall to stall along the street
+    const perRow = Math.min(carbon.figures, 4);
+    const rows = Math.ceil(carbon.figures / perRow);
+    const rowStep = deepOne + 2.5;
+    const span = acrossOne + (perRow - 1) * pitch;
+    const depth = deepOne + (rows - 1) * rowStep;
+    // Where they park: the house's other side if that's open, else at the
+    // end of the savings row; never in a neighbour's house or a garage
+    // (Real 3D keeps those whole). dir: which way the row runs from `from`.
+    const maxS = Math.max(...anchor.map((p) => along(p, s)));
+    const hits = (from, dir) => {
+      let n = 0;
+      for (let i = 0; i <= 8; i++) for (let j = 0; j <= 4; j++) {
+        const pt = place(from + dir * (-2 + ((span + 4) * i) / 8), frontLine + 2 - ((depth + 4) * j) / 4);
+        if (avoid.some((q) => insidePoly(pt, q))) n++;
+      }
+      return n;
+    };
+    const spots = [{ from: maxS + GAP_FT, dir: 1 }, { from: nextAt, dir: -1 }].map((o) => ({ ...o, hits: hits(o.from, o.dir) }));
+    const { from, dir } = spots.find((o) => o.hits === 0) || spots.reduce((a, b) => (b.hits < a.hits ? b : a));
+    const first = from + dir * (acrossOne / 2);
+    let top = 0;
+    for (let k = 0; k < carbon.figures; k++) {
+      const [cxk, czk] = place(first + dir * (k % perRow) * pitch, frontLine - deepOne / 2 - Math.floor(k / perRow) * rowStep);
+      const [lo, hi] = lowHigh(cxk, czk, acrossOne / 2, deepOne / 2);
+      const car = ghostCar();
+      car.position.set(cxk, hi > lo + 1.5 ? lo : (lo + hi) / 2, czk);
+      // Nose toward the street, angled away from the house.
+      car.rotation.y = dir > 0 ? facing - Math.PI + tilt : facing - tilt;
+      car.visible = false;
+      group.add(car);
+      items.push({ obj: car, at: 0.45 + (0.55 * (k + 1)) / carbon.figures });
+      top = Math.max(top, car.position.y + CAR.tall);
+    }
+    const last = first + dir * (perRow - 1) * pitch;
+    const headline = `Undoes ${carsText(co2)}`;
+    const sub = carbon.unit > 1 ? `each glass car stands for ${fmt(carbon.unit)} cars’ yearly CO₂` : 'each glass car: a typical car’s CO₂ for a year (EPA)';
+    const label = tagSprite([headline, `${fmt(co2)} lb of CO₂ drawn down over ${years} year${years === 1 ? '' : 's'}`, sub], 15);
+    const [lx, lz] = place((first + last) / 2, frontLine - deepOne / 2 - ((rows - 1) * rowStep) / 2);
+    label.position.set(lx, 0, lz);
+    group.add(label);
+    labels.push({ sprite: label, top, world: true });
+    const [a, b] = [Math.min(first, last) - acrossOne / 2, Math.max(first, last) + acrossOne / 2];
+    framed.push(place(a, frontLine), place(b, frontLine - depth));
+    zone(a - 3, b + 3, frontLine - depth - 3, frontLine + VIEW_FT);
   }
 
   // The cash and water labels in one row, just above the taller of the two;
