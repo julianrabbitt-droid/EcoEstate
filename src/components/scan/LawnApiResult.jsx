@@ -384,13 +384,15 @@ export default function LawnApiResult({ data, preview, onConfirm, onFix, onEdit,
             <Button variant={data.lawnSqft > 0 && !preview ? 'outline' : 'default'} onClick={onEdit} className="flex-1 rounded-full whitespace-normal text-center leading-tight">
               <Pencil className="mr-1.5 h-4 w-4 shrink-0" />{data.lawnSqft > 0 ? 'Edit the plan' : 'Draw lawn'}
             </Button>
-            {data.parcelSource === 'county' ? (
-              <Button variant="outline" onClick={onRescan} className="flex-1 rounded-full whitespace-normal text-center leading-tight">
-                <RefreshCw className="mr-1.5 h-4 w-4 shrink-0" />Re-scan
-              </Button>
-            ) : (
+            {data.parcelSource !== 'county' && (
               <Button variant="outline" onClick={() => setAdjusting(true)} className="flex-1 rounded-full whitespace-normal text-center leading-tight">
                 <Ruler className="mr-1.5 h-4 w-4 shrink-0" />Adjust property line
+              </Button>
+            )}
+            {/* Always offered when nothing was found: a scan that came back empty can be a passing outage. */}
+            {(data.parcelSource === 'county' || !(data.lawnSqft > 0)) && (
+              <Button variant="outline" onClick={onRescan} className="flex-1 rounded-full whitespace-normal text-center leading-tight">
+                <RefreshCw className="mr-1.5 h-4 w-4 shrink-0" />Re-scan
               </Button>
             )}
           </div>

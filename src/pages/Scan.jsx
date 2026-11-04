@@ -279,7 +279,8 @@ export default function Scan() {
       setMethod('satellite');
       setUnavailable({
         title: err.code === 'not_configured' ? 'Automatic lawn detection isn’t set up yet' : 'We couldn’t measure this lawn',
-        detail: `${err.message} You can still outline your lawn manually below.`,
+        detail: `${err.message} You can scan again, or outline your lawn manually below.`,
+        retry: err.code !== 'not_configured',
       });
       setPhase('manual');
     } finally {
@@ -778,7 +779,11 @@ export default function Scan() {
             <>
               {unavailable && (
                 <div className="border-b border-border/70">
-                  <AutoScanNotice title={unavailable.title} detail={unavailable.detail} />
+                  <AutoScanNotice
+                    title={unavailable.title}
+                    detail={unavailable.detail}
+                    onRetry={unavailable.retry && lastScan.current?.address ? () => { setUnavailable(null); scanAddress(lastScan.current.address, lastScan.current.hit); } : null}
+                  />
                 </div>
               )}
               {phase === 'idle' && (
