@@ -125,11 +125,12 @@ export function prepareLot(project) {
 }
 
 // Swimming pools from the scan, in the same local coordinates as preparePolys.
-export function preparePools(project) {
+// Pools (or, key 'neighbours', the neighbours' houses) as plan-feet outlines.
+export function preparePools(project, key = 'pools') {
   const origin = projectOrigin(project);
-  if (!origin || !Array.isArray(project?.pools)) return [];
+  if (!origin || !Array.isArray(project?.[key])) return [];
   const { minLat, minLng, cosLat } = origin;
-  return project.pools
+  return project[key]
     .filter((ring) => Array.isArray(ring) && ring.length >= 3)
     .map((ring) => ring.map(([lat, lng]) => [(lng - minLng) * 364000 * cosLat, (lat - minLat) * 364000]));
 }

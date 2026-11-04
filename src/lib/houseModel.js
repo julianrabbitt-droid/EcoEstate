@@ -315,6 +315,7 @@ const MAX_PITCH = 14 / 12;
 // flat roof: measured flat roofs read 0.07 at most with their lidar noise,
 // pitched ones 0.11 and up (2 in 12 is 0.17).
 const FLAT_GRADIENT = 0.09;
+const TREE_GRADIENT = 1.2; // a block whose flattest quarter slopes more than this has a tree over it, not a roof
 
 // Wall and roof materials: the wall colour (or the mapped facade colour) with
 // a photographed relief (CC0, Poly Haven) for its look, plaster for stucco,
@@ -481,6 +482,9 @@ function surveyBlock(b, heightAt) {
   const swap = across > along + 1;
   const len = swap ? b.d : b.w;
   const ends = swap ? (at(0, len / 2 - 1.5) + at(0, -len / 2 + 1.5)) / 2 : (at(len / 2 - 1.5, 0) + at(-len / 2 + 1.5, 0)) / 2;
+  // Steeper all over than any roof is built: a tree over this part of the
+  // footprint, measured in place of its roof.
+  if (grads.length >= 8 && pct(grads, 0.25) > TREE_GRADIENT) return { tree: true };
   return { type: ends - eave > 0.6 * (top - eave) ? 'gable' : 'hip', eave, rise: top - eave, swap };
 }
 
@@ -608,7 +612,7 @@ export function buildHouse(points, heightFt, { wallColor, roofType, groundAt = n
   // Each block as the survey measured it, its ridge turned to run the way the survey found.
   const blocks = blocksFor(points).map((b) => {
     const s = heightAt && surveyBlock(b, heightAt);
-    if (!s) return { ...b, survey: null };
+    if (!s || s.tree) return { ...b, survey: null, underTree: Boolean(s?.tree) };
     return s.swap ? { ...b, w: b.d, d: b.w, angle: b.angle + Math.PI / 2, survey: s } : { ...b, survey: s };
   });
   // A shape someone mapped beats one read from the canopy model.
@@ -622,7 +626,13 @@ export function buildHouse(points, heightFt, { wallColor, roofType, groundAt = n
   const main = blocks[0];
   const rise = type === 'flat' ? 0 : Math.min(9, (main.d / 2) * PITCH);
   let sharedEave;
-  if (heightFt > 0) sharedEave = Math.max(MIN_EAVE_FT, heightFt - rise);
+  // A part under a tree takes the walls the survey measured on the rest of the
+  // house (the building's measured height there is the tree's).
+  // With no part measured, the storeys its size suggests.
+  const measuredBlock = blocks.find((b) => b.survey);
+  const treeOver = blocks.some((b) => b.underTree);
+  if (treeOver && measuredBlock) sharedEave = Math.max(MIN_EAVE_FT, measuredBlock.survey.eave);
+  else if (heightFt > 0 && !treeOver) sharedEave = Math.max(MIN_EAVE_FT, heightFt - rise);
   else sharedEave = Math.max(1, Math.min(4, Math.round(total / 1600))) * STORY_FT - 1;
   // Surveyed heights are above the average ground under the building, where
   // the 3D view levels its pad.
