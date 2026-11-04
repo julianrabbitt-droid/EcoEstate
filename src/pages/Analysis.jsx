@@ -144,6 +144,7 @@ export default function Analysis() {
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3 sm:p-5">
           <div className="pointer-events-auto inline-block max-w-full"><StepNav projectId={id} project={project} current="scan" /></div>
           <StageTitle
+            below={[{ label: 'Lawn breakdown', heading: 'Landscape breakdown' }, { label: 'What grows there', heading: 'What grows there' }, { label: 'Site conditions', heading: 'Site conditions' }]}
             title={(
               <h1 className="font-display text-[1.5rem] leading-tight tracking-tight sm:text-[1.9rem]">{cleanAddress(project.address)}</h1>
             )}

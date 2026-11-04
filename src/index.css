@@ -266,3 +266,11 @@
     display: none;
   }
 }
+
+/* A step's sections, reached from its title card's "Scroll down for" links:
+   they stop just under the floating header, not behind it. */
+#step-details h2,
+#step-details h3,
+#step-details .label-xs {
+  scroll-margin-top: calc(var(--header-h, 4rem) + 1rem);
+}

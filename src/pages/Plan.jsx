@@ -193,6 +193,7 @@ export default function Plan() {
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3 sm:p-5 print:hidden">
           <div className="pointer-events-auto inline-block max-w-full"><StepNav projectId={id} project={project} current="plan" /></div>
           <StageTitle
+            below={[{ label: 'Materials', heading: 'Bill of materials' }, { label: 'Step-by-step', heading: 'Installation sequence' }, { label: 'Timeline', heading: 'Build timeline' }]}
             title={(
               <h1 className="font-display text-[1.5rem] leading-tight tracking-tight sm:text-[1.9rem]">
                 Make this garden <em className="italic text-primary">real</em>

@@ -246,6 +246,7 @@ export default function Impact() {
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3 sm:p-5">
           <div className="pointer-events-auto inline-block max-w-full"><StepNav projectId={id} project={project} current="impact" /></div>
           <StageTitle
+            below={[{ label: 'Your numbers', heading: 'Your numbers' }, { label: 'Where the money goes', heading: 'Where the money goes' }, { label: 'Environmental impact', heading: 'Environmental impact' }]}
             title={(
               <h1 className="font-display text-[1.5rem] leading-tight tracking-tight sm:text-[1.9rem]">
                 {money(fin.outOfPocket)} in, <em className="italic text-primary">{money(fin.annualSavings)} back</em> every year

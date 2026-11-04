@@ -81,11 +81,20 @@ export function StageAside({ label, summary, children, footer, width = 'w-[23.5r
 }
 
 // Top left: the steps, and the step's title card, which folds down to its
-// title alone. Its "In depth" button scrolls to the step's details below the
-// view (the element with id="step-details").
-export function StageTitle({ title, children }) {
+// title alone. Below it, what the step covers further down the page (below:
+// [{ label, heading, only }]), each a link that glides to its section in
+// id="step-details" (found by its heading's text), so it's plain there is
+// more to read and where. only: 'phone' or 'wide', for a section shown on one
+// of them alone (on wide screens the planting list is in the side panel).
+export function StageTitle({ title, children, below = [] }) {
   const { titleOpen, setTitleOpen } = useStagePanels() || NO_PANELS;
-  const toDetails = () => document.getElementById('step-details')?.scrollIntoView({ behavior: 'smooth' });
+  const toSection = (heading) => {
+    const details = document.getElementById('step-details');
+    const target = heading && details
+      ? [...details.querySelectorAll('h2, h3, p.label-xs')].find((h) => h.getClientRects().length && h.textContent.trim().startsWith(heading))
+      : null;
+    (target || details)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   // Its arrow bobs until the page has been scrolled once.
   const [scrolled, setScrolled] = useState(() => typeof window !== 'undefined' && window.scrollY > 40);
   useEffect(() => {
@@ -103,12 +112,22 @@ export function StageTitle({ title, children }) {
         </button>
       </div>
       {titleOpen && children && <div className="px-3.5 pt-1">{children}</div>}
-      <div className="px-3.5 pb-2.5 pt-2">
-        {/* Everything about the step is below the view: this says so, and takes you there. */}
-        <button type="button" onClick={toDetails} className="group inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/50 px-3 py-1 text-[11.5px] text-muted-foreground transition hover:border-foreground/40 hover:text-foreground">
-          Scroll for the details <ChevronDown className={`h-3.5 w-3.5 ${scrolled ? '' : 'scroll-cue'}`} aria-hidden />
+      {/* Everything about the step is below the view: this says what, and takes you there. */}
+      <nav aria-label="More about this step, further down" className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/50 px-3.5 pb-2.5 pt-2 text-[11.5px]">
+        <button type="button" onClick={() => toSection(null)} className="group inline-flex items-center gap-1.5 text-muted-foreground transition hover:text-foreground">
+          <span className={`flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary ${scrolled ? '' : 'scroll-cue'}`}>
+            <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+          </span>
+          Scroll down for
         </button>
-      </div>
+        {below.length > 0
+          ? below.map(({ label, heading, only }) => (
+            <button key={label} type="button" onClick={() => toSection(heading)} className={`${only === 'phone' ? 'lg:hidden' : only === 'wide' ? 'hidden lg:inline-block' : ''} rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 font-medium text-foreground transition hover:border-primary/40 hover:bg-primary/5 hover:text-primary`}>
+              {label}
+            </button>
+          ))
+          : <button type="button" onClick={() => toSection(null)} className="font-medium text-foreground">the details</button>}
+      </nav>
     </div>
   );
 }

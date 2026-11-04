@@ -219,6 +219,7 @@ export default function Design() {
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-3 sm:p-5">
           <div className="pointer-events-auto inline-block max-w-full"><StepNav projectId={id} project={project} current="design" /></div>
           <StageTitle
+            below={[{ label: 'Planting list', heading: 'Your planting list', only: 'phone' }, { label: 'Before & after', heading: 'Before / after' }, { label: 'Plants for your area', heading: 'Species worth planting here' }, { label: 'Trees & shrubs', heading: 'Larger plants & trees', only: 'wide' }]}
             title={(
               <h1 className="font-display text-[1.6rem] leading-tight tracking-tight sm:text-[2rem]">
                 {propertyName}, <em className="italic text-accent">reimagined</em>
