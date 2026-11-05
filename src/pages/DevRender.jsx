@@ -36,7 +36,10 @@ export default function DevRender() {
       .then((d) => setScan({ ...d, groundImage: d.groundImage ? { ...d.groundImage, url: `${src}/${n}.png` } : null }))
       .catch((e) => setError(e.message));
   }, [src, n]);
-  const project = useMemo(() => (scan ? { ...projectFromScan(scan), id: `dev-${n}` } : null), [scan, n]);
+  // Saved scans carry no city or ZIP; the test homes are Californian (or pass
+  // &state= and &zip=), so the design has the region's plants as in the app.
+  const place = useMemo(() => ({ state: params.get('state') || 'California', zip: params.get('zip') || String(scan?.address || '').match(/\b9\d{4}\b/)?.[0] || '' }), [params, scan]);
+  const project = useMemo(() => (scan ? { ...projectFromScan(scan, place), id: `dev-${n}` } : null), [scan, n, place]);
   const entries = useMemo(() => (project && view === 'design' ? designOrDefault(project) : []), [project, view]);
   if (error) return <p className="p-6 text-destructive">{error}</p>;
   if (!project) return <p className="p-6 text-muted-foreground">Loading {n}…</p>;
