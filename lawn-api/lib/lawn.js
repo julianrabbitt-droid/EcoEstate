@@ -16,7 +16,9 @@ import { findNaip, readNaip } from './naip.js';
 import { terrainGrid } from './terrain.js';
 import { osmLawnShapes, PATH_WIDTH_M } from './osmLawns.js';
 import { dilate, distanceTo, erode, labelRegions, localStats } from './raster.js';
-import { regionShape } from './shapes.js';
+import { eachPixelIn, ellipseOf, inwardCorners, minRectangle, selfIntersects, sharpCorners, simplifyRing, smoothRing, squareUp } from './shapes.js';
+import difference from '@turf/difference';
+import intersect from '@turf/intersect';
 import { separateLayers } from './layers.js';
 import { blank, png } from '../scripts/render.mjs';
 import { buildingsOnParcel, describeBuildings, describeNearbyRoads, describePaths, detectBushes, detectTrees, NEARBY, STRUCTURES } from './structures.js';
@@ -108,6 +110,17 @@ export const SETTINGS = {
   minLawnSqft: 75, // drop fragments smaller than this (slivers along edges and fences)…
   minLawnPx: 12, // …or than this many pixels, whichever is larger (matters on coarse grids)
   minHoleSqft: 25, // fill gaps smaller than this inside a lawn
+  // Lawn shapes. Real lawns are rectangles, ovals, simple polygons and smooth
+  // curves, not the staircase a pixel trace leaves: each lawn takes the
+  // simplest of those that covers it (shapeMinCover of its lawn), is mostly
+  // lawn (shapeMinLawn of the shape) and barely touches a roof, path, tree or
+  // the property line (shapeMaxBlocked). Its area stays the lawn measured.
+  // A clean shape covering most of the lawn beats a ragged one tracing all of it.
+  shapeMinCover: 0.7,
+  shapeMinLawn: 0.78,
+  shapeMaxBlocked: 0.05,
+  shapeMaxCorners: 10, // a simple polygon has at most this many corners (big lawns 16)
+  shapeHoleMinSqft: 120, // a hole (a tree, a bed) smaller than this is left out of the shape
   textureRadiusPx: 3, // window for the tree texture check (7x7 px, ~4 m at 0.6 m)
   // Near-infrared variation among neighbouring green pixels, as % of their mean.
   // Calibrated on 8 test sites (scripts/calibrate.mjs): open turf mostly 1-3%,
@@ -1028,10 +1041,117 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
   const lawnPx = new Float64Array(outlines.length);
   for (let k = 0; k < n; k++) if (green[k] && regionOf[k]) lawnPx[regionOf[k] - 1]++;
 
-  const buildingCentres = ownBuildings.map((b) => {
-    const ring = polygonsOf(b.geometry)[0][0].slice(0, -1);
-    return [ring.reduce((a, p) => a + p[0], 0) / ring.length, ring.reduce((a, p) => a + p[1], 0) / ring.length];
-  });
+  // Each region's shape (see shapeMinCover): candidates in pixel units, scored
+  // against the lawn found, the simplest that fits taken.
+  const ringPxSqft = (ring) => {
+    let a = 0;
+    for (let e = 0; e < ring.length - 1; e++) a += ring[e][0] * ring[e + 1][1] - ring[e + 1][0] * ring[e][1];
+    return (Math.abs(a) / 2) * pxSqft;
+  };
+  // The simplest shape that fits: rectangles and ovals first, then curves,
+  // squared-up and plain polygons, each inward corner counting against it.
+  const pick = (cands, fits) => {
+    const cost = (c) => c.complexity + 5 * (1 - c.f1) + 25 * c.F;
+    const ok = cands.filter(fits);
+    const pool = ok.length ? ok : cands.filter((c) => c.F <= 2 * SETTINGS.shapeMaxBlocked);
+    return (pool.length ? pool : cands).reduce((a, b) => (!a || cost(b) < cost(a) ? b : a), null);
+  };
+  // Candidate shapes for a ring: its rectangle, the oval of `pixels`, and the
+  // ring simplified to fewer corners, each also as a smooth curve.
+  const candidates = (ring, pixels, score, maxCorners) => {
+    const out = [];
+    const add = (r, shape, complexity) => {
+      if (r && r.length >= 4 && !selfIntersects(r)) out.push({ ring: r, shape, complexity, ...score(r) });
+    };
+    const rect = minRectangle(ring.slice(0, -1));
+    add(rect, 'rectangle', 0.3);
+    add(ellipseOf(pixels, 20), 'oval', 0.6);
+    // The rectangle's long side: the axis a squared-up polygon is turned to.
+    const axis = rect && (() => {
+      const [a, b, c] = rect;
+      const [d1, d2] = [Math.hypot(b[0] - a[0], b[1] - a[1]), Math.hypot(c[0] - b[0], c[1] - b[1])];
+      const [p, q] = d1 >= d2 ? [a, b] : [b, c];
+      const len = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
+      return [(q[0] - p[0]) / len, (q[1] - p[1]) / len];
+    })();
+    const scale = Math.max(1, Math.sqrt(pixels.length) / 40); // bigger lawns tolerate coarser corners
+    const seen = new Set();
+    for (const tol of [0.8, 1.2, 1.8, 2.5, 3.5, 5, 7, 10, 14]) {
+      const r = simplifyRing(ring, tol * scale);
+      const corners = r.length - 1;
+      if (corners < 3 || corners > maxCorners || seen.has(corners)) continue;
+      seen.add(corners);
+      // Inward corners make zig-zags and sharp corners spikes; a triangle is a spike too.
+      add(r, 'polygon', Math.max(corners, 5) / 4 + 1.2 * inwardCorners(r) + 0.8 * sharpCorners(r));
+      // Two rounds of rounding: smooth at yard scale, few enough points to edit.
+      if (corners >= 4 && corners <= 10) add(smoothRing(r, 2), 'curve', 0.8 + corners / 8 + 0.4 * inwardCorners(r) + 0.4 * sharpCorners(r));
+      if (axis && corners >= 4) {
+        const sq = squareUp(r, axis[0], axis[1]);
+        if (sq) add(sq, sq.length === 5 ? 'rectangle' : 'polygon', 0.4 + (sq.length - 1) / 6);
+      }
+    }
+    return out;
+  };
+  const toPolygon = (ring) => ({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring.map(toLonLat)] } });
+  const largest = (g) => (g?.type === 'MultiPolygon' ? { type: 'Polygon', coordinates: g.coordinates.reduce((a, c) => (turfArea({ type: 'Polygon', coordinates: c }) > turfArea({ type: 'Polygon', coordinates: a }) ? c : a)) } : g);
+  const lawnShape = (i, traced) => {
+    const label = i + 1;
+    const [outer, ...holes] = multi.coordinates[i];
+    const isLawn = (k) => green[k] && regionOf[k] === label;
+    const blocked = (k) => !parcel[k] || roofLabels[k] || pathMask[k] || trees[k] || (green[k] && regionOf[k] && regionOf[k] !== label);
+    // Holes big enough to matter (a tree, a bed) stay holes; their pixels
+    // don't count against the outline.
+    const keptHoles = holes.filter((r) => ringPxSqft(r) >= SETTINGS.shapeHoleMinSqft);
+    const holePx = new Set();
+    for (const r of keptHoles) eachPixelIn(r, w, h, (k) => holePx.add(k));
+    const pixels = [];
+    eachPixelIn(outer, w, h, (k) => { if (isLawn(k)) pixels.push([(k % w) + 0.5, Math.floor(k / w) + 0.5]); });
+    const total = Math.max(1, pixels.length);
+    const score = (r) => {
+      let inside = 0;
+      let lawn = 0;
+      let bad = 0;
+      eachPixelIn(r, w, h, (k) => {
+        if (holePx.has(k)) return;
+        inside++;
+        if (isLawn(k)) lawn++;
+        else if (blocked(k)) bad++;
+      });
+      const R = lawn / total;
+      const P = inside ? lawn / inside : 0;
+      return { R, P, F: inside ? bad / inside : 1, f1: R + P ? (2 * R * P) / (R + P) : 0 };
+    };
+    const maxCorners = pixels.length * pxSqft > 5000 ? 16 : SETTINGS.shapeMaxCorners;
+    const cands = candidates(outer, pixels, score, maxCorners);
+    const best = pick(cands, (c) => c.R >= SETTINGS.shapeMinCover && c.P >= SETTINGS.shapeMinLawn && c.F <= SETTINGS.shapeMaxBlocked);
+    if (!best) return { geometry: traced, shape: 'outline' };
+    // Each kept hole as a simple shape too, fitted to the non-lawn inside it.
+    const holeShapes = keptHoles.map((r) => {
+      const target = new Set();
+      const pts = [];
+      eachPixelIn(r, w, h, (k) => { if (!isLawn(k)) { target.add(k); pts.push([(k % w) + 0.5, Math.floor(k / w) + 0.5]); } });
+      const holeScore = (c) => {
+        let inside = 0;
+        let hit = 0;
+        let lawn = 0;
+        eachPixelIn(c, w, h, (k) => { inside++; if (target.has(k)) hit++; else if (isLawn(k)) lawn++; });
+        const R = hit / Math.max(1, target.size);
+        const P = inside ? hit / inside : 0;
+        return { R, P, F: inside ? lawn / inside : 1, f1: R + P ? (2 * R * P) / (R + P) : 0 };
+      };
+      return pick(candidates(r, pts, holeScore, 8), (c) => c.R >= 0.75 && c.P >= 0.75 && c.F <= 0.15)?.ring;
+    }).filter(Boolean);
+    try {
+      let shaped = toPolygon(best.ring);
+      for (const hr of holeShapes) shaped = difference({ type: 'FeatureCollection', features: [shaped, toPolygon(hr)] }) || shaped;
+      const clipped = intersect({ type: 'FeatureCollection', features: [shaped, { type: 'Feature', properties: {}, geometry: parcelGeometry }] });
+      const geometry = largest(clipped?.geometry);
+      if (geometry?.type === 'Polygon') return { geometry, shape: best.shape };
+    } catch {
+      /* fall back to the traced outline */
+    }
+    return { geometry: traced, shape: 'outline' };
+  };
   const minSqft = Math.max(SETTINGS.minLawnSqft, SETTINGS.minLawnPx * pxSqft);
   // Isolated patches below this size (scaled to the property, so a home's
   // small lawns never count) are shown together as one "scattered" layer.
@@ -1044,11 +1164,11 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     const lawnSqft = lawnPx[i] * pxSqft;
     if (lawnSqft < minSqft) return;
     if (lawnSqft < scatteredBelow) {
-      scattered.push(geometry.coordinates);
+      scattered.push(lawnShape(i, geometry).geometry.coordinates);
       scatteredSqft += lawnSqft;
       return;
     }
-    const { geometry: shaped, shape } = regionShape(geometry, lawnSqft, parcelGeometry, buildingCentres, { resM: grid.res });
+    const { geometry: shaped, shape } = lawnShape(i, geometry);
     features.push({
       type: 'Feature',
       geometry: shaped,
@@ -1443,6 +1563,6 @@ export async function detectLawn(parcelGeometry, { debug = false } = {}) {
     groundImage,
     nearbyRoads,
   };
-  if (debug) result.debug = { grid, naip, canopy, ndvi, parcel, green, trees, rough, laserTurf: laserTurfMask, texture, roofs: roofLabels, measured, newerTurf, underCanopy, tall, grassInt, prevNaip, usable, lidar: buildingLidar, measuredB: buildingMeasured, under, ownCount: ownBuildings.length };
+  if (debug) result.debug = { flatTrees, grid, naip, canopy, ndvi, parcel, green, trees, rough, laserTurf: laserTurfMask, texture, roofs: roofLabels, measured, newerTurf, underCanopy, tall, grassInt, prevNaip, usable, lidar: buildingLidar, measuredB: buildingMeasured, under, ownCount: ownBuildings.length };
   return result;
 }
