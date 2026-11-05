@@ -28,16 +28,21 @@ export default function Design() {
   const [entries, setEntries] = useState([]);
   const [goals, setGoals] = useState([]);
   const [arrangement, setArrangement] = useState(null);
+  // The arrangement is saved with the design, so later steps and a return
+  // visit lay the plants out the same way (drifts, rows, clusters…).
+  const arrangementRef = useRef(null);
+  arrangementRef.current = arrangement;
   // Edits save as they happen, so leaving via StepNav or the header keeps them.
-  const autosave = useAutosave(entries, (design) => updateProject(id, { design, nativeListAdjusted: false }));
+  const autosave = useAutosave(entries, (design) => updateProject(id, { design, arrangement: arrangementRef.current, nativeListAdjusted: false }));
 
   useEffect(() => {
     if (!project) return;
     if (project.design?.length) {
       setEntries(fitDesignToArea(project.design, project.breakdown?.turf || 0));
+      setArrangement(project.arrangement ?? null);
       return;
     }
-    // A new design: small lawns start from the fullest planting formation.
+    // A new design starts as pollinator drifts.
     const plan = autoPlan(project);
     setEntries(fitDesignToArea(plan.entries, project.breakdown?.turf || 0));
     setArrangement(plan.arrangement?.id ?? null);
@@ -198,7 +203,7 @@ export default function Design() {
 
   const save = async () => {
     autosave.cancel();
-    const next = await updateProject(id, { design: entries, nativeListAdjusted: false });
+    const next = await updateProject(id, { design: entries, arrangement, nativeListAdjusted: false });
     navigate(`/project/${id}/impact`, { state: { project: next } });
   };
 

@@ -1512,10 +1512,13 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
   const regionPlantIds = useMemo(() => new Set(regionPlants.map((p) => p.id)), [regionPlants]);
   // Curated mixes where their species are native; otherwise mixes built from the region's own natives.
   const regionArrangements = useMemo(() => arrangementsFor(regionPlants, regionForProject(project)?.name), [regionPlants, project]);
-  const arrangement = useMemo(() => regionArrangements.find((a) => a.id === activeArrangement) || null, [regionArrangements, activeArrangement]);
+  // The step's arrangement, else the one saved with the design; without
+  // either, plants are laid out in pollinator drifts (the starting design).
+  const arrangementId = activeArrangement ?? project?.arrangement ?? null;
+  const arrangement = useMemo(() => regionArrangements.find((a) => a.id === arrangementId) || null, [regionArrangements, arrangementId]);
   const fittingArrangements = regionArrangements.filter((a) => !a.minArea || (project?.breakdown?.turf || 0) >= a.minArea);
-  const activeArr = activeArrangement === 'type-design' ? custom : arrangement;
-  const pattern = activeArr?.pattern || 'rows';
+  const activeArr = arrangementId === 'type-design' ? custom : arrangement;
+  const pattern = activeArr?.pattern || 'drifts';
   const turfSqft = project?.breakdown?.turf || 0;
 
   const polys = useMemo(() => preparePolys(project), [project]);
@@ -3669,7 +3672,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
               key={a.id}
               type="button"
               onClick={() => onApplyArrangement?.(a)}
-              className={`rounded-full border px-3 py-1.5 text-[11.5px] transition ${a.id === activeArrangement ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-foreground'}`}
+              className={`rounded-full border px-3 py-1.5 text-[11.5px] transition ${a.id === arrangementId ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-foreground'}`}
             >
               {a.name}
             </button>

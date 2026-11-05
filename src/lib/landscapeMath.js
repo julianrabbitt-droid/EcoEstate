@@ -166,25 +166,24 @@ export function autoDesign(project) {
   return autoPlan(project).entries;
 }
 
-// Lawns smaller than this start from whichever planting formation fits the most
-// plants, so a small yard renders as a full garden rather than a sparse few.
-export const SMALL_LAWN_SQFT = 1500;
-
-const plantCount = (entries) => entries.reduce((sum, e) => sum + (e.quantity || 0), 0);
+// Every garden starts as pollinator drifts: the curated California mix where
+// its plants are native, else the one built from the region's own natives.
+export const STARTING_ARRANGEMENTS = ['pollinator-drifts', 'regional-pollinator'];
 
 /**
- * The starting design and, for small lawns, the arrangement it came from:
- * { entries, arrangement } (arrangement is null for the default mix).
+ * The starting design and the arrangement it came from: { entries,
+ * arrangement } (arrangement is null where no pollinator mix fits the region,
+ * and the default mix is used instead).
  */
 export function autoPlan(project) {
   const sqft = project?.breakdown?.turf || 1200;
   const toEntries = (picks) => picks.map(({ speciesId, share }) => ({ speciesId, quantity: quantityForShare(share, speciesId, sqft) }));
-  const base = { entries: toEntries(defaultMixForProject(project)), arrangement: null };
-  if (!project || sqft >= SMALL_LAWN_SQFT) return base;
-  const options = arrangementsFor(plantsForProject(project), regionForProject(project)?.name)
-    .filter((a) => !a.minArea || sqft >= a.minArea)
-    .map((a) => ({ entries: toEntries(a.species), arrangement: a }));
-  return options.reduce((best, o) => (plantCount(o.entries) > plantCount(best.entries) ? o : best), base);
+  if (project) {
+    const options = arrangementsFor(plantsForProject(project), regionForProject(project)?.name);
+    const drifts = STARTING_ARRANGEMENTS.map((id) => options.find((a) => a.id === id)).find(Boolean);
+    if (drifts) return { entries: toEntries(drifts.species), arrangement: drifts };
+  }
+  return { entries: toEntries(defaultMixForProject(project)), arrangement: null };
 }
 
 // The design the later steps (Payoff, Build, Legacy) show: the saved one, or —
