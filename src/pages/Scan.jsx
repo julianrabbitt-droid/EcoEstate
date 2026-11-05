@@ -153,6 +153,14 @@ export default function Scan() {
   // The opening aerial shows once its first tiles are in, as one still picture
   // (never tile by tile).
   const [aerialReady, setAerialReady] = useState(false);
+  // The hero's backdrop stays dark until the aerial photo has faded in (1 s),
+  // so its white words never sit on the pale page colour while it loads.
+  const [aerialShown, setAerialShown] = useState(false);
+  useEffect(() => {
+    if (!aerialReady) return undefined;
+    const t = setTimeout(() => setAerialShown(true), 1200);
+    return () => clearTimeout(t);
+  }, [aerialReady]);
   useEffect(() => {
     const t = setTimeout(() => setAerialReady(true), 2500); // slow or failing tiles: show what there is
     return () => clearTimeout(t);
@@ -585,7 +593,8 @@ export default function Scan() {
           aerial view, a neighbourhood at first, then the property (the pin is
           checked on it directly), crossfading into the property's 3D model once
           it is built; scrolling down fades it into the page's bone. */}
-      <div className="pointer-events-none fixed inset-0 -z-10" style={{ background: 'radial-gradient(120% 80% at 50% 0%, #e9e6dc 0%, #f1efe9 55%, #f5f3ee 100%)' }} aria-hidden={phase !== 'confirm'}>
+      {/* Dark under the hero's white words until the aerial photo has faded in, so they read while it loads. */}
+      <div className="pointer-events-none fixed inset-0 -z-10" style={{ background: phase === 'idle' && !aerialShown ? 'linear-gradient(180deg, #232a23 0%, #2e372d 100%)' : 'radial-gradient(120% 80% at 50% 0%, #e9e6dc 0%, #f1efe9 55%, #f5f3ee 100%)' }} aria-hidden={phase !== 'confirm'}>
         <div
           className={`absolute inset-0 transition-opacity duration-1000 ${phase === 'confirm' ? 'pointer-events-auto' : ''}`}
           style={{ opacity: modelShown || !aerialReady ? 0 : aerialOpacity, filter: scrollY > 0 ? `blur(${Math.min(6, (scrollY / viewH) * 8).toFixed(1)}px)` : 'none' }}
@@ -610,7 +619,9 @@ export default function Scan() {
             <Backdrop center={phase === 'idle' || phase === 'locating' ? HERO_VIEW : phase === 'confirm' && pin ? pin : center} zoom={phase === 'idle' || phase === 'locating' ? 18 : 19} />
             <PinLayer active={phase === 'confirm'} pin={pin} onPin={setPin} />
           </MapContainer>
-          <div className={`pointer-events-none absolute inset-0 ${phase === 'confirm' ? 'bg-gradient-to-b from-black/35 via-transparent to-black/40' : 'bg-gradient-to-b from-black/45 via-black/30 to-black/65'}`} />
+          <div className={`pointer-events-none absolute inset-0 ${phase === 'confirm' ? 'bg-gradient-to-b from-black/35 via-transparent to-black/40' : 'bg-gradient-to-b from-black/55 via-black/45 to-black/70'}`} />
+          {/* A soft shade behind the hero's words, so white text reads over bright roofs and pavement. */}
+          {phase === 'idle' && <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(ellipse 62% 58% at 50% 50%, rgba(8,12,9,0.42) 0%, rgba(8,12,9,0.18) 60%, transparent 85%)' }} />}
         </div>
       </div>
 
@@ -633,21 +644,21 @@ export default function Scan() {
           </div>
         )}
         {phase === 'idle' && (
-          <div className="pointer-events-auto mx-auto flex min-h-[calc(100svh-var(--header-h,4rem))] w-full max-w-3xl flex-col items-center justify-center px-5 pb-20 pt-10 text-center text-white duration-500 animate-in fade-in">
+          <div className="hero-copy pointer-events-auto mx-auto flex min-h-[calc(100svh-var(--header-h,4rem))] w-full max-w-3xl flex-col items-center justify-center px-5 pb-20 pt-10 text-center text-white duration-500 animate-in fade-in">
             <h1 className="font-display text-[3rem] leading-[0.95] tracking-[-0.045em] drop-shadow sm:text-[5.4rem]">
               Your lawn could be <em>doing more.</em>
             </h1>
-            <p className="mx-auto mt-5 max-w-xl text-[16.5px] leading-relaxed text-white/90 drop-shadow">
+            <p className="mx-auto mt-5 max-w-xl text-[16.5px] leading-relaxed text-white/95">
               <span className="font-medium text-white">Native plants grew where you live long before lawns did.</span> They feed the
               local bees, butterflies and birds, and once settled need a fraction of the water grass does.
             </p>
-            <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-white/85 drop-shadow">
+            <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-white/90">
               Enter your address. We find your lawn from above, design a native garden for it in 3D, and show what it
               would save in water and money.
             </p>
             <div className="mt-8 w-full max-w-xl text-left text-foreground">{addressForm(true)}</div>
-            {note && <p className="mx-auto mt-3 max-w-xl text-[13px] text-white/90">{note}</p>}
-            <p className="mx-auto mt-4 max-w-xl text-[13px] leading-relaxed text-white/80">
+            {note && <p className="mx-auto mt-3 max-w-xl text-[13px] text-white/95">{note}</p>}
+            <p className="mx-auto mt-4 max-w-xl text-[13px] leading-relaxed text-white/90">
               Free to try, no account needed.{' '}
               <Link to={loginPath()} className="font-medium text-white underline underline-offset-4">Sign in</Link> any time to keep
               and track your properties.{' '}
@@ -657,7 +668,7 @@ export default function Scan() {
               {' · '}
               <Link to="/examples" className="font-medium text-white underline underline-offset-4">See real examples</Link>
             </p>
-            <p className="mx-auto mt-10 max-w-xl text-[14px] text-white/90">
+            <p className="mx-auto mt-10 max-w-xl text-[14px] text-white/95">
               Typical lawns save about{' '}
               <span className="font-display text-[1.35rem] text-white">{money(sampleRange.save[0])}–{money(sampleRange.save[1])}</span> a
               year in water and upkeep.
