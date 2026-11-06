@@ -149,6 +149,15 @@ const LOT_SINK_FT = 0.1; // …and the ground is laid this far under the model's
 // than being pulled up and stretched across from the points beside the lot.
 const LOT_BELOW_FT = 4;
 const LOT_GROUND_UP = 0.7; // a face of Google's mesh on the lot is ground when it slopes less than 45°
+// Those cuts are for where the garden goes: the lawn (and LAWN_CUT_PAD_FT
+// round it) and round the houses. Elsewhere on the lot Google's real shrubs,
+// hedges and beds stay whole: only its ground itself (within this of the
+// model's) is laid level, so nothing is torn out round them.
+const LAWN_CUT_PAD_FT = 2;
+const LOT_KEEP_GROUND_FT = 1.2;
+// Up to this high, though: tree crowns above it are the model's trees' (a
+// piece of Google's reaching past their cut would float over the yard).
+const LOT_KEEP_UP_TO_FT = 10;
 // The model's own lot ground goes just under Google's (the aerial photo of the
 // yard this far, the plain ground under it a little further): it shows only
 // where Google has no ground, as under its trees, level with the rest (lowered
@@ -232,9 +241,13 @@ float ecoGroundAt(vec2 xz) {
     // On the lot, Google's ground is laid on the model's (its own lumps and
     // tilt never bury a bed); what stands higher is cut in the fragment shader.
     vec2 ecoLot = (vEcoWorld.xz - uEcoBox.xy) / uEcoBox.zw;
-    if (ecoLot.x > 0.0 && ecoLot.x < 1.0 && ecoLot.y > 0.0 && ecoLot.y < 1.0 && textureLod(uEcoMask, ecoLot, 0.0).r > 0.5) {
+    vec4 ecoLotV = (ecoLot.x > 0.0 && ecoLot.x < 1.0 && ecoLot.y > 0.0 && ecoLot.y < 1.0) ? textureLod(uEcoMask, ecoLot, 0.0) : vec4(0.0);
+    if (ecoLotV.r > 0.5) {
       float ecoG = ecoGroundAt(vEcoWorld.xz);
-      if (vEcoWorld.y < ecoG + ${LOT_GROUND_FT.toFixed(1)} && vEcoWorld.y > ecoG - ${LOT_BELOW_FT.toFixed(1)}) vEcoWorld.y = ecoG - ${LOT_SINK_FT.toFixed(1)};
+      // Where the garden goes, what stands low on the ground is laid flat with
+      // it; elsewhere only the ground itself, so real shrubs keep their shape.
+      float ecoUpTo = (ecoLotV.b > 0.5 || ecoLotV.g > 0.25) ? ${LOT_GROUND_FT.toFixed(1)} : ${LOT_KEEP_GROUND_FT.toFixed(1)};
+      if (vEcoWorld.y < ecoG + ecoUpTo && vEcoWorld.y > ecoG - ${LOT_BELOW_FT.toFixed(1)}) vEcoWorld.y = ecoG - ${LOT_SINK_FT.toFixed(1)};
     }
     gl_Position = projectionMatrix * viewMatrix * vec4(vEcoWorld, 1.0);
   }`,
@@ -266,11 +279,13 @@ float ecoGroundAt(vec2 xz) {
   vec2 ecoUv = (vEcoWorld.xz - uEcoBox.xy) / uEcoBox.zw;
   if (ecoUv.x > 0.0 && ecoUv.x < 1.0 && ecoUv.y > 0.0 && ecoUv.y < 1.0) {
     vec4 ecoLot = texture2D(uEcoMask, ecoUv);
-    if (ecoLot.g > 0.75 || (ecoLot.r > 0.5 && (!ecoNearIn || vEcoWorld.y > ecoGround + ${LOT_GROUND_FT.toFixed(1)}))) discard;
+    // Where the garden goes: the lawn (blue) and round the houses (green).
+    bool ecoGarden = ecoLot.b > 0.5 || ecoLot.g > 0.25;
+    if (ecoLot.g > 0.75 || (ecoLot.r > 0.5 && (!ecoNearIn || vEcoWorld.y > ecoGround + (ecoGarden ? ${LOT_GROUND_FT.toFixed(1)} : ${LOT_KEEP_UP_TO_FT.toFixed(1)})))) discard;
     // Only the ground itself: the steep sides of what stands on it (a car, a
     // low wall, a planter) would lie flattened on the yard as smears. Beside
     // the houses, only ground that's nearly level (a flared wall's foot isn't).
-    if (ecoLot.r > 0.5) {
+    if (ecoLot.r > 0.5 && ecoGarden) {
       vec3 ecoN = cross(dFdx(vEcoOrig), dFdy(vEcoOrig));
       float ecoLen = length(ecoN);
       float ecoUp = ecoLot.g > 0.25 ? ${HOUSE_GROUND_UP.toFixed(2)} : ${LOT_GROUND_UP.toFixed(2)};
@@ -1907,7 +1922,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
             // Its pull toward the camera (over the plain ground) would put it over Google's ground too.
             if (u.yardPhoto) c.material.polygonOffset = !t3;
           }
-          if (u?.lotPaving) c.visible = !t3;
+          if (u?.lotPaving || u?.bush) c.visible = !t3;
           // Development review: only Google's world, nothing of the model's.
           if (import.meta.env.DEV && t3 && window.__ecoQaReal && u && (u.ground || u.bed || u.building || u.path || u.existingTree || u.outline || u.payoff)) c.visible = false;
         }
@@ -2121,6 +2136,10 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     houses.forEach((h) => { trace(h); ctx.stroke(); });
     ctx.fillStyle = '#00ff00';
     houses.forEach((h) => { trace(h); ctx.fill(); });
+    // Blue: the lawn, where the garden goes, and a margin round it (see LAWN_CUT_PAD_FT).
+    ctx.strokeStyle = ctx.fillStyle = '#0000ff';
+    ctx.lineWidth = (2 * LAWN_CUT_PAD_FT * W) / (maxX - minX);
+    polys.filter((q) => q && q.length >= 3).map(scene2).forEach((q) => { trace(q); ctx.fill(); ctx.stroke(); });
     ctx.restore();
     const lotTex = new THREE.CanvasTexture(c);
     lotTex.magFilter = THREE.NearestFilter; // a crisp line, never a soft blend of cut and kept
@@ -2173,6 +2192,12 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     traceOn(bctx, lotPts);
     bctx.lineWidth = (2 * LOT_BAND_FT * W) / (nx1 - nx0);
     bctx.stroke();
+    // Both stop at the property line: on the lot the garden decides (see
+    // LOT_KEEP_GROUND_FT), and Google's real shrubs off the lawn stay whole.
+    bctx.globalCompositeOperation = 'destination-out';
+    traceOn(bctx, lotPts);
+    bctx.fill();
+    bctx.globalCompositeOperation = 'source-over';
     (payoffZones || []).forEach((zp) => { traceOn(bctx, zp); bctx.fill(); });
     bctx.globalCompositeOperation = 'destination-out';
     bctx.lineWidth = (2 * NEIGHBOUR_KEEP_FT * W) / (nx1 - nx0);
@@ -2199,7 +2224,7 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     if (oldGround.image?.width > 1) oldGround.dispose();
     threeRef.current?.markDirty?.();
     return undefined;
-  }, [lot, buildings, neighbours, trees, groundAt, reach, ownTree, cx, cy, payoffZones]);
+  }, [lot, buildings, neighbours, trees, polys, groundAt, reach, ownTree, cx, cy, payoffZones]);
 
   // Google Photorealistic 3D Tiles around the garden, while the toggle is on.
   // The tileset is placed so the scene origin is the property's centre, east
@@ -2896,11 +2921,12 @@ export default function Garden3DView({ entries = NO_ENTRIES, project, activeArra
     // on the lowest ground under them. Not where a bed now goes (the design
     // replaces the lawn only, but a bed's edge may reach one).
     bushes.filter((b) => onLot(b.x, b.y) && !polys.some((q) => q && q.length >= 3 && insidePoly([b.x, b.y], q))).forEach((b) => {
-      const mesh = buildPlant({ ...EXISTING_BUSH, w: b.radiusFt * 2, h: b.heightFt || b.radiusFt * 1.6 }, true); // drawn in Real 3D too: the shrub scans are sparse, a bush is dense
+      const mesh = buildPlant({ ...EXISTING_BUSH, w: b.radiusFt * 2, h: b.heightFt || b.radiusFt * 1.6 }, true);
       const [bx, bz] = [b.x - cx, -(b.y - cy)];
       const base = Math.min(at(bx, bz), ...[0, 1, 2, 3].map((k) => at(bx + b.radiusFt * 0.6 * Math.cos((k * Math.PI) / 2), bz + b.radiusFt * 0.6 * Math.sin((k * Math.PI) / 2))));
       mesh.position.set(bx, base + MULCH_Y, bz);
       mesh.userData.existingTree = true;
+      mesh.userData.bush = true; // the model's only: Real 3D keeps Google's real shrubs off the lawn (see LOT_KEEP_GROUND_FT)
       scene.add(mesh);
     });
 
